@@ -84,6 +84,20 @@ Quit LiquidCode, delete `/Applications/LiquidCode.app`, and optionally remove:
 - `~/Library/Logs/LiquidCode`
 - `~/Library/Preferences/moe.aili.LiquidCode.plist`
 
+## Development quality gate
+
+Install the pinned local tooling and enable the tracked Git hook before committing:
+
+```bash
+brew bundle install
+./scripts/install-git-hooks.sh
+```
+
+The pre-commit hook runs `./scripts/quality-check.sh`. It fails closed when
+`swiftlint`, `swiftformat`, or `periphery` is missing, then runs SwiftLint,
+SwiftFormat lint mode, and Periphery. It intentionally does not run XCTest;
+use the build/test commands below for full verification.
+
 ### Build & test
 
 ```bash

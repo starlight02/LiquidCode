@@ -6,22 +6,32 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		A20000000000000000000017 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9E88446A3F44B57E975BE17B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 95E02616FD9FA97DEBC6A20B;
+			remoteInfo = LiquidCode;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
-		EC8041DC4691BF74F25B1327 /* LiquidCode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LiquidCode.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		47C3AAC97E5B7C32E7CC1D61 /* LiquidCode.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LiquidCode.entitlements; sourceTree = "<group>"; };
 		A20000000000000000000016 /* LiquidCodeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiquidCodeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBABCC81998DC9B30C36E39B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		47C3AAC97E5B7C32E7CC1D61 /* LiquidCode.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LiquidCode.entitlements; sourceTree = "<group>"; };
+		EC8041DC4691BF74F25B1327 /* LiquidCode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LiquidCode.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		8A9F255A8A7EBF844ABAA0D2 /* LiquidCode */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = LiquidCode;
-			sourceTree = "<group>";
-		};
 		0549085F63153E8E7D9D736D /* LiquidCodeTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = LiquidCodeTests;
+			sourceTree = "<group>";
+		};
+		8A9F255A8A7EBF844ABAA0D2 /* LiquidCode */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LiquidCode;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -40,6 +50,15 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1E78B559816E575FC0BDB29C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				EC8041DC4691BF74F25B1327 /* LiquidCode.app */,
+				A20000000000000000000016 /* LiquidCodeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		2EB2D8158FC6EF9EB19CB439 = {
 			isa = PBXGroup;
 			children = (
@@ -59,15 +78,6 @@
 			path = Config;
 			sourceTree = "<group>";
 		};
-		1E78B559816E575FC0BDB29C /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				EC8041DC4691BF74F25B1327 /* LiquidCode.app */,
-				A20000000000000000000016 /* LiquidCodeTests.xctest */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -80,8 +90,6 @@
 				BCE9B817235E10533480790E /* Resources */,
 			);
 			buildRules = (
-			);
-			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
 				8A9F255A8A7EBF844ABAA0D2 /* LiquidCode */,
@@ -154,12 +162,12 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		BCE9B817235E10533480790E /* Resources */ = {
+		A20000000000000000000022 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
 			);
 		};
-		A20000000000000000000022 /* Resources */ = {
+		BCE9B817235E10533480790E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
 			);
@@ -179,16 +187,6 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXContainerItemProxy section */
-		A20000000000000000000017 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 9E88446A3F44B57E975BE17B /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 95E02616FD9FA97DEBC6A20B;
-			remoteInfo = LiquidCode;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXTargetDependency section */
 		A20000000000000000000023 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -198,7 +196,7 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		06638E962A6E8E2ACAE332C2 /* Debug */ = {
+		06638E962A6E8E2ACAE332C2 /* Debug configuration for PBXProject "LiquidCode" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -262,7 +260,80 @@
 			};
 			name = Debug;
 		};
-		BF26485C9BD55CCDFED10BBB /* Release */ = {
+		9F8E5B827E07885EFAD454FC /* Release configuration for PBXNativeTarget "LiquidCode" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Config/LiquidCode.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Config/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCode;
+				PRODUCT_MODULE_NAME = LiquidCode;
+				PRODUCT_NAME = LiquidCode;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A20000000000000000000024 /* Debug configuration for PBXNativeTarget "LiquidCodeTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCodeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiquidCode.app/Contents/MacOS/LiquidCode";
+			};
+			name = Debug;
+		};
+		A20000000000000000000025 /* Release configuration for PBXNativeTarget "LiquidCodeTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCodeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiquidCode.app/Contents/MacOS/LiquidCode";
+			};
+			name = Release;
+		};
+		BF26485C9BD55CCDFED10BBB /* Release configuration for PBXProject "LiquidCode" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -319,7 +390,7 @@
 			};
 			name = Release;
 		};
-		C6F7D77CFEE3F3714426E427 /* Debug */ = {
+		C6F7D77CFEE3F3714426E427 /* Debug configuration for PBXNativeTarget "LiquidCode" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -331,7 +402,10 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Config/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCode;
@@ -342,68 +416,6 @@
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
-		};
-		9F8E5B827E07885EFAD454FC /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = Config/LiquidCode.entitlements;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Config/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCode;
-				PRODUCT_MODULE_NAME = LiquidCode;
-				PRODUCT_NAME = LiquidCode;
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
-		A20000000000000000000024 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCodeTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiquidCode.app/Contents/MacOS/LiquidCode";
-			};
-			name = Debug;
-		};
-		A20000000000000000000025 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCodeTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiquidCode.app/Contents/MacOS/LiquidCode";
-			};
-			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
@@ -411,28 +423,25 @@
 		314425BAD361EE8153704C56 /* Build configuration list for PBXProject "LiquidCode" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				06638E962A6E8E2ACAE332C2 /* Debug */,
-				BF26485C9BD55CCDFED10BBB /* Release */,
+				06638E962A6E8E2ACAE332C2 /* Debug configuration for PBXProject "LiquidCode" */,
+				BF26485C9BD55CCDFED10BBB /* Release configuration for PBXProject "LiquidCode" */,
 			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		E31BA15CC04B0F0B923553D1 /* Build configuration list for PBXNativeTarget "LiquidCode" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C6F7D77CFEE3F3714426E427 /* Debug */,
-				9F8E5B827E07885EFAD454FC /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		A20000000000000000000020 /* Build configuration list for PBXNativeTarget "LiquidCodeTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A20000000000000000000024 /* Debug */,
-				A20000000000000000000025 /* Release */,
+				A20000000000000000000024 /* Debug configuration for PBXNativeTarget "LiquidCodeTests" */,
+				A20000000000000000000025 /* Release configuration for PBXNativeTarget "LiquidCodeTests" */,
 			);
-			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E31BA15CC04B0F0B923553D1 /* Build configuration list for PBXNativeTarget "LiquidCode" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C6F7D77CFEE3F3714426E427 /* Debug configuration for PBXNativeTarget "LiquidCode" */,
+				9F8E5B827E07885EFAD454FC /* Release configuration for PBXNativeTarget "LiquidCode" */,
+			);
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */

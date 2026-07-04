@@ -1,0 +1,69 @@
+included:
+  - LiquidCode
+  - LiquidCodeTests
+excluded:
+  - .build
+  - .build-release
+  - .swiftpm
+  - .xcode-derived
+  - DerivedData
+  - release-artifacts
+
+strict: true
+reporter: xcode
+
+opt_in_rules:
+  - empty_count
+  - empty_string
+  - fatal_error_message
+  - first_where
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - last_where
+  - overridden_super_call
+  - redundant_nil_coalescing
+  - sorted_imports
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+
+line_length:
+  warning: 180
+  error: 240
+  ignores_comments: true
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_interpolated_strings: true
+
+file_length:
+  warning: 2200
+  error: 3000
+
+type_body_length:
+  warning: 1200
+  error: 1800
+
+function_body_length:
+  warning: 180
+  error: 260
+
+cyclomatic_complexity:
+  warning: 25
+  error: 45
+
+identifier_name:
+  min_length:
+    warning: 2
+  max_length:
+    warning: 60
+    error: 80
+  excluded:
+    - id
+    - x
+    - y
+    - z
+    - dx
+    - dy
+    - vm
+    - ok
+    - to
+    - from

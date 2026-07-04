@@ -1,0 +1,13 @@
+--swiftversion 6.0
+--indent 4
+--linebreaks lf
+--maxwidth 180
+--commas inline
+--wrap-arguments before-first
+--wrap-parameters before-first
+--wrap-collections before-first
+--wrap-conditions before-first
+--closing-paren balanced
+--trimwhitespace always
+--exclude .build,.build-release,.swiftpm,.xcode-derived,DerivedData,release-artifacts,.artifacts,.git
+--rules blankLinesBetweenScopes,consecutiveBlankLines,duplicateImports,indent,linebreakAtEndOfFile,redundantBreak,redundantExtensionACL,redundantFileprivate,redundantGet,redundantLet,redundantLetError,redundantNilInit,redundantParens,redundantPattern,redundantRawValues,redundantReturn,redundantSelf,redundantVoidReturnType,spaceAroundBraces,spaceAroundBrackets,spaceAroundComments,spaceAroundGenerics,spaceAroundOperators,spaceInsideBraces,spaceInsideBrackets,strongOutlets,trailingClosures,trailingCommas,trailingSpace,typeSugar,void,wrap,wrapArguments,wrapAttributes,wrapMultilineFunctionChains
