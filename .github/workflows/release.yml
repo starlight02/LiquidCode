@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  macos-release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          security create-keychain -p "$RUNNER_TEMP" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$RUNNER_TEMP" build.keychain
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$RUNNER_TEMP" build.keychain
+
+      - name: Store notary credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: xcrun notarytool store-credentials LiquidCodeNotary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_PASSWORD"
+
+      - name: Install Tauri signer CLI
+        run: cargo install tauri-cli --version 2.10.0 --locked
+
+      - name: Swift package tests
+        run: swift test
+
+      - name: Xcode build parity check
+        run: xcodebuild -project LiquidCode.xcodeproj -scheme LiquidCode -configuration Release -derivedDataPath .xcode-derived build
+
+      - name: Build Xcode archive-derived release artifacts
+        env:
+          RELEASE_SIGNING_REQUIRED: "1"
+          LIQUIDCODE_ARCHS: "arm64 x86_64"
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+          NOTARY_KEYCHAIN_PROFILE: LiquidCodeNotary
+          UPDATER_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_CLI: /Users/runner/.cargo/bin/cargo-tauri
+          RELEASE_UPLOAD: "1"
+          RELEASE_UPLOAD_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+          RELEASE_CREATE_DRAFT: ${{ github.event_name == 'workflow_dispatch' && '0' || '1' }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_NAME: LiquidCode ${{ github.ref_name }}
+          RELEASE_NOTES: Archive-derived macOS release. Verify DMG installer, updater payload, signature, checksum, and latest.json before publishing the draft.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/build-release.sh
+
+      - name: Verify release outputs
+        run: |
+          codesign --verify --deep --strict --verbose=2 .build-release/LiquidCode.app
+          hdiutil verify .build-release/*.dmg
+          ARCHS="$(lipo -archs .build-release/LiquidCode.app/Contents/MacOS/LiquidCode)"
+          echo "Architectures: $ARCHS"
+          [[ " $ARCHS " == *" arm64 "* ]]
+          [[ " $ARCHS " == *" x86_64 "* ]]
+          xcrun stapler validate .build-release/*.dmg
+          spctl --assess --type execute --verbose .build-release/LiquidCode.app
+          spctl --assess --type open --context context:primary-signature --verbose .build-release/*.dmg
+
+      - name: Install DMG smoke
+        run: |
+          DMG="$(ls .build-release/*.dmg | head -n 1)"
+          MOUNT_DIR="$RUNNER_TEMP/liquidcode-dmg"
+          INSTALL_DIR="$RUNNER_TEMP/liquidcode-install-smoke"
+          mkdir -p "$MOUNT_DIR" "$INSTALL_DIR"
+          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT_DIR" "$DMG"
+          trap 'hdiutil detach "$MOUNT_DIR"' EXIT
+          ditto "$MOUNT_DIR/LiquidCode.app" "$INSTALL_DIR/LiquidCode.app"
+          test -x "$INSTALL_DIR/LiquidCode.app/Contents/MacOS/LiquidCode"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INSTALL_DIR/LiquidCode.app/Contents/Info.plist"
+          codesign --verify --deep --strict --verbose=2 "$INSTALL_DIR/LiquidCode.app"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiquidCode-macOS
+          path: |
+            .build-release/*.dmg
+            .build-release/*.app.tar.gz
+            .build-release/*.sha256
+            .build-release/*.app.tar.gz.sig
+            .build-release/latest.json
