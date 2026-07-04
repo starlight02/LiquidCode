@@ -96,7 +96,29 @@ struct TranscriptToolItem: Identifiable, Equatable, Sendable {
     let toolName: String
     let content: String
     var summaryName: String {
-        kind == .use ? toolName : "Tool result"
+        guard kind == .use else {
+            return "Tool result"
+        }
+        if toolName == "Task", let subagentName = taskSubagentType(in: content) {
+            return subagentName
+        }
+        return toolName
+    }
+
+    private func taskSubagentType(in text: String) -> String? {
+        guard let jsonStart = text.firstIndex(of: "{") else {
+            return nil
+        }
+        let jsonText = String(text[jsonStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            let data = jsonText.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let subagentName = object["subagent_type"] as? String
+        else {
+            return nil
+        }
+        let clean = subagentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
     }
 }
 
@@ -258,7 +280,7 @@ enum AgentActivityBuilder {
         }
         var toolNamesByMessageID: [String: String] = [:]
         for item in items where item.kind == .use {
-            toolNamesByMessageID[item.sourceMessage.id] = item.toolName
+            toolNamesByMessageID[item.sourceMessage.id] = item.summaryName
         }
         return items.enumerated().map { index, item in
             let resolvedName = item.kind == .result
@@ -429,13 +451,23 @@ struct ProviderPreset: Identifiable, Hashable, Sendable {
 let providerPresets: [ProviderPreset] = [
     .init(
         id: "anthropic",
-        name: "Anthropic (官方)",
+        name: "Anthropic",
         baseURL: "https://api.anthropic.com",
         apiFormat: .anthropic,
         extraEnv: [:],
         keyURL: "https://console.anthropic.com/account/keys",
         thinkingSupport: .full,
         modelMappings: [:]
+    ),
+    .init(
+        id: "deepseek",
+        name: "DeepSeek",
+        baseURL: "https://api.deepseek.com/v1",
+        apiFormat: .openai,
+        extraEnv: [:],
+        keyURL: "https://platform.deepseek.com/api_keys",
+        thinkingSupport: .full,
+        modelMappings: ["opus": "deepseek-reasoner", "sonnet": "deepseek-chat", "haiku": "deepseek-chat"]
     ),
     .init(
         id: "zhipu",
@@ -448,24 +480,24 @@ let providerPresets: [ProviderPreset] = [
         modelMappings: ["opus": "glm-5", "sonnet": "glm-5-turbo", "haiku": "glm-4.7"]
     ),
     .init(
-        id: "kimi",
-        name: "Kimi",
+        id: "qwen-coder",
+        name: "Qwen Coder",
+        baseURL: "https://dashscope.aliyuncs.com/apps/anthropic",
+        apiFormat: .anthropic,
+        extraEnv: [:],
+        keyURL: "https://bailian.console.aliyun.com/?apiKey=1",
+        thinkingSupport: .unknown,
+        modelMappings: ["opus": "qwen3-coder-plus", "sonnet": "qwen3-coder-plus", "haiku": "qwen3-coder-flash"]
+    ),
+    .init(
+        id: "kimi-k2",
+        name: "Kimi k2",
         baseURL: "https://api.moonshot.cn/anthropic/",
         apiFormat: .anthropic,
         extraEnv: [:],
         keyURL: "https://platform.moonshot.cn/console/api-keys",
         thinkingSupport: .full,
         modelMappings: ["opus": "kimi-k2.5", "sonnet": "kimi-k2", "haiku": "kimi-k2-turbo-preview"]
-    ),
-    .init(
-        id: "kimi-code",
-        name: "Kimi Code",
-        baseURL: "https://api.kimi.com/coding/",
-        apiFormat: .anthropic,
-        extraEnv: ["ENABLE_TOOL_SEARCH": "false"],
-        keyURL: "https://www.kimi.com/code/console",
-        thinkingSupport: .full,
-        modelMappings: ["opus": "kimi-for-coding", "sonnet": "kimi-for-coding", "haiku": "kimi-for-coding"]
     ),
     .init(
         id: "minimax",
@@ -476,45 +508,5 @@ let providerPresets: [ProviderPreset] = [
         keyURL: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
         thinkingSupport: .full,
         modelMappings: ["opus": "MiniMax-M2.7", "sonnet": "MiniMax-M2.5", "haiku": "MiniMax-M2.1"]
-    ),
-    .init(
-        id: "qwen",
-        name: "通义千问",
-        baseURL: "https://dashscope.aliyuncs.com/apps/anthropic",
-        apiFormat: .anthropic,
-        extraEnv: [:],
-        keyURL: "https://bailian.console.aliyun.com/?apiKey=1",
-        thinkingSupport: .unknown,
-        modelMappings: ["opus": "qwen3-max", "sonnet": "qwen3.5-plus", "haiku": "qwen3.5-flash"]
-    ),
-    .init(
-        id: "openrouter",
-        name: "OpenRouter",
-        baseURL: "https://openrouter.ai/api",
-        apiFormat: .anthropic,
-        extraEnv: [:],
-        keyURL: "https://openrouter.ai/settings/keys",
-        thinkingSupport: .full,
-        modelMappings: [:]
-    ),
-    .init(
-        id: "mimo",
-        name: "小米 MiMo",
-        baseURL: "https://api.xiaomimimo.com/anthropic",
-        apiFormat: .anthropic,
-        extraEnv: [:],
-        keyURL: "https://platform.xiaomimimo.com/",
-        thinkingSupport: .full,
-        modelMappings: ["opus": "mimo-v2-pro[1m]", "sonnet": "mimo-v2-omni", "haiku": "mimo-v2-pro"]
-    ),
-    .init(
-        id: "mimo-token-plan",
-        name: "小米 MiMo Token Plan",
-        baseURL: "https://token-plan-cn.xiaomimimo.com/anthropic",
-        apiFormat: .anthropic,
-        extraEnv: [:],
-        keyURL: "https://platform.xiaomimimo.com/#/console/plan-manage",
-        thinkingSupport: .full,
-        modelMappings: ["opus": "mimo-v2-pro[1m]", "sonnet": "mimo-v2-omni", "haiku": "mimo-v2-pro"]
     )
 ]

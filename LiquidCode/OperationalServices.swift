@@ -440,6 +440,95 @@ final class CLIService: @unchecked Sendable {
     }
 }
 
+struct ProviderConnectionProbeResult: Equatable, Sendable {
+    var statusCode: Int
+    var latencyMilliseconds: Int
+    var preview: String
+}
+
+enum ProviderConnectionProbe {
+    static func makeRequest(provider: ProviderRecord, apiKey: String, model: String) throws -> URLRequest {
+        var request = URLRequest(url: try endpointURL(for: provider))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 18
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        switch provider.apiFormat {
+        case .anthropic:
+            request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+            request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "model": model,
+                "max_tokens": 16,
+                "messages": [["role": "user", "content": "Return only OK."]]
+            ])
+        case .openai:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "model": model,
+                "max_tokens": 16,
+                "messages": [["role": "user", "content": "Return only OK."]]
+            ])
+        }
+        return request
+    }
+
+    static func probe(provider: ProviderRecord, apiKey: String, model: String) async throws -> ProviderConnectionProbeResult {
+        let request = try makeRequest(provider: provider, apiKey: apiKey, model: model)
+        let start = Date()
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AppError(title: "Provider check failed", message: "No HTTP response from \(provider.name)")
+        }
+        let preview = responsePreview(from: data)
+        let elapsed = max(0, Int(Date().timeIntervalSince(start) * 1000))
+        guard (200 ..< 300).contains(http.statusCode) else {
+            throw AppError(title: "Provider check failed", message: "\(provider.name) returned HTTP \(http.statusCode): \(preview)")
+        }
+        return ProviderConnectionProbeResult(statusCode: http.statusCode, latencyMilliseconds: elapsed, preview: preview)
+    }
+
+    private static func endpointURL(for provider: ProviderRecord) throws -> URL {
+        switch provider.apiFormat {
+        case .anthropic:
+            return try endpointURL(baseURL: provider.baseURL, apiRoot: "v1", leaf: "messages")
+        case .openai:
+            return try endpointURL(baseURL: provider.baseURL, apiRoot: "v1", leaf: "chat/completions")
+        }
+    }
+
+    private static func endpointURL(baseURL: String, apiRoot: String, leaf: String) throws -> URL {
+        let clean = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, var components = URLComponents(string: clean), components.scheme != nil, components.host != nil else {
+            throw AppError(title: "Provider URL invalid", message: "Base URL is not a valid HTTP URL: \(baseURL)")
+        }
+        var path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let pathLower = path.lowercased()
+        let leafLower = leaf.lowercased()
+        if pathLower == leafLower || pathLower.hasSuffix("/\(leafLower)") {
+            // Already points at the concrete endpoint.
+        } else if pathLower == apiRoot.lowercased() || pathLower.hasSuffix("/\(apiRoot.lowercased())") {
+            path = [path, leaf].filter { !$0.isEmpty }.joined(separator: "/")
+        } else {
+            path = [path, apiRoot, leaf].filter { !$0.isEmpty }.joined(separator: "/")
+        }
+        components.path = "/\(path)"
+        guard let url = components.url else {
+            throw AppError(title: "Provider URL invalid", message: "Cannot construct provider endpoint from \(baseURL)")
+        }
+        return url
+    }
+
+    private static func responsePreview(from data: Data) -> String {
+        let raw = String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>"
+        let collapsed = raw.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if collapsed.count <= 240 {
+            return collapsed
+        }
+        return String(collapsed.prefix(240)) + "…"
+    }
+}
+
 final class ShareService {
     func share(path: String, from view: NSView?) {
         let url = URL(fileURLWithPath: path)

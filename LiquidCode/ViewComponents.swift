@@ -677,40 +677,42 @@ struct ImageFilePreview: View {
     }
 }
 
-func highlightCodeLine(_ line: String) -> AttributedString {
+func highlightCodeLine(_ line: String, language: String = "") -> AttributedString {
     var attributed = AttributedString(line.isEmpty ? " " : line)
-    let keywords = [
-        "import",
-        "func",
-        "struct",
-        "class",
-        "enum",
-        "let",
-        "var",
-        "return",
-        "if",
-        "else",
-        "switch",
-        "case",
-        "for",
-        "while",
-        "guard",
-        "try",
-        "catch",
-        "async",
-        "await",
-        "export",
-        "const",
-        "from"
+    let keywordsByLanguage: [String: [String]] = [
+        "swift": ["import", "func", "struct", "class", "enum", "let", "var", "return", "if", "else", "switch", "case", "for", "while", "guard", "try", "catch", "async", "await"],
+        "python": ["def", "class", "import", "from", "return", "if", "else", "elif", "for", "while", "try", "except", "async", "await", "True", "False"],
+        "typescript": ["export", "import", "const", "let", "var", "function", "return", "if", "else", "switch", "case", "for", "while", "async", "await", "from", "true", "false"],
+        "javascript": ["export", "import", "const", "let", "var", "function", "return", "if", "else", "switch", "case", "for", "while", "async", "await", "from", "true", "false"],
+        "rust": ["fn", "let", "mut", "pub", "struct", "enum", "impl", "trait", "use", "mod", "match", "true", "false"],
+        "go": ["func", "var", "const", "type", "struct", "interface", "package", "import", "return", "defer", "go"],
+        "java": ["public", "private", "protected", "class", "interface", "static", "final", "void", "return", "new"],
+        "c++": ["std", "auto", "class", "struct", "template", "typename", "const", "return", "true", "false"],
+        "cpp": ["std", "auto", "class", "struct", "template", "typename", "const", "return", "true", "false"],
+        "sql": ["SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "JOIN", "TRUE", "FALSE", "NULL"],
+        "markdown": ["#", "##", "###", "-", "*", "`"],
+        "json": ["true", "false", "null"],
+        "yaml": ["true", "false", "null", "enabled"],
+        "html": ["section", "div", "span", "html", "body", "class", "id"],
+        "css": ["color", "background", "display", "grid", "flex", "font", "margin", "padding"],
+        "xml": ["note", "xml", "version"]
     ]
+    let normalizedLanguage = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let aliases = ["js": "javascript", "jsx": "javascript", "ts": "typescript", "tsx": "typescript", "cc": "c++", "cxx": "c++"]
+    let languageKey = aliases[normalizedLanguage] ?? normalizedLanguage
+    let fallbackKeywords = keywordsByLanguage.values.flatMap { $0 }
+    let keywords = keywordsByLanguage[languageKey] ?? fallbackKeywords
     for keyword in keywords {
         if let range = attributed.range(of: keyword) {
             attributed[range].foregroundColor = .blue
             attributed[range].font = .system(size: 14, weight: .semibold, design: .monospaced)
         }
     }
-    if let comment = attributed.range(of: "//") {
-        attributed[comment.lowerBound ..< attributed.endIndex].foregroundColor = .secondary
+    for marker in ["//", "#"] {
+        if let comment = attributed.range(of: marker) {
+            attributed[comment.lowerBound ..< attributed.endIndex].foregroundColor = .secondary
+            break
+        }
     }
     return attributed
 }
@@ -720,6 +722,7 @@ struct SidebarView: View {
     @EnvironmentObject var model: AppModel
     @State private var renameTarget: SessionRecord?
     @State private var renameText = ""
+    @State private var projectExpansion: [String: Bool] = [:]
 
     private var searchedSessions: [SessionRecord] {
         model.sessions.filter { session in
@@ -758,7 +761,7 @@ struct SidebarView: View {
                         taskGroupsHeader
                         taskGroups
                         sessionSection("Pinned", pinnedSessions, trailing: pinnedSessions.isEmpty ? nil : "\(pinnedSessions.count)")
-                        datedSessionSections(activeSessions)
+                        projectSessionSections(activeSessions)
                         if model.showArchivedSessions {
                             sessionSection("Archived", archivedSessions, trailing: archivedSessions.isEmpty ? nil : "\(archivedSessions.count)")
                         }
@@ -950,21 +953,63 @@ struct SidebarView: View {
         }
     }
 
-    @ViewBuilder private func datedSessionSections(_ sessions: [SessionRecord]) -> some View {
-        let today = sessions.filter { Calendar.current.isDateInToday($0.modifiedAt) }
-        let yesterday = sessions.filter { Calendar.current.isDateInYesterday($0.modifiedAt) }
-        let week = sessions.filter { !Calendar.current.isDateInToday($0.modifiedAt) && !Calendar.current.isDateInYesterday($0.modifiedAt) && Calendar.current.isDate(
-            $0.modifiedAt,
-            equalTo: Date(),
-            toGranularity: .weekOfYear
-        ) }
-        let earlier = sessions.filter { session in
-            !today.contains(session) && !yesterday.contains(session) && !week.contains(session)
+    @ViewBuilder private func projectSessionSections(_ sessions: [SessionRecord]) -> some View {
+        ForEach(projectGroups(from: sessions)) { group in
+            projectDisclosure(group)
         }
-        sessionSection("Today", today)
-        sessionSection("Yesterday", yesterday)
-        sessionSection("This Week", week)
-        sessionSection("Earlier", earlier)
+    }
+
+    private func projectGroups(from sessions: [SessionRecord]) -> [ProjectSessionGroup] {
+        let current = model.workingDirectory
+        return Dictionary(grouping: sessions, by: { $0.projectDir })
+            .map { ProjectSessionGroup(path: $0.key, sessions: $0.value.sorted { $0.modifiedAt > $1.modifiedAt }) }
+            .sorted { lhs, rhs in
+                // Current project pinned to the top; the rest by most-recent activity.
+                if (lhs.path == current) != (rhs.path == current) {
+                    return lhs.path == current
+                }
+                return lhs.latest > rhs.latest
+            }
+    }
+
+    @ViewBuilder private func projectDisclosure(_ group: ProjectSessionGroup) -> some View {
+        let binding = Binding(
+            get: { isProjectExpanded(group.path) },
+            set: { projectExpansion[group.path] = $0 }
+        )
+        DisclosureGroup(isExpanded: binding) {
+            ForEach(group.sessions) { session in sessionRow(session) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(group.name)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(group.sessions.count)")
+                    .font(.caption2)
+            }
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 8)
+            .padding(.top, 10)
+            .padding(.bottom, 2)
+            .contentShape(Rectangle())
+            .help(group.path)
+        }
+    }
+
+    private func isProjectExpanded(_ path: String) -> Bool {
+        // Default: only the currently-open project is expanded; explicit toggles win.
+        projectExpansion[path] ?? (!path.isEmpty && path == model.workingDirectory)
+    }
+
+    private struct ProjectSessionGroup: Identifiable {
+        let path: String
+        let sessions: [SessionRecord]
+        var id: String { path }
+        var name: String { path.isEmpty ? "Unknown Project" : URL(fileURLWithPath: path).lastPathComponent }
+        var latest: Date { sessions.first?.modifiedAt ?? .distantPast }
     }
 
     @ViewBuilder private func sessionSection(_ title: String, _ sessions: [SessionRecord], trailing: String? = nil) -> some View {

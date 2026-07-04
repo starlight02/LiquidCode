@@ -19,6 +19,7 @@ struct ClaudeLaunchConfiguration: Equatable, Sendable {
     var mode: SessionMode
     var thinkingLevel: ThinkingLevel
     var capabilities: ProviderRuntimeCapabilities
+
 }
 
 final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
@@ -488,18 +489,20 @@ enum StreamEventParser {
         if type == "result" {
             return [.turnCompleted(sessionID: sessionID)]
         }
+        var output: [ClaudeEvent] = []
+        if let delta = textDelta(in: obj), !delta.isEmpty {
+            output.append(.textDelta(sessionID: sessionID, text: delta))
+        }
         if type == "assistant" || type == "user" || type == "human" {
             if let message = messageFromJSONObject(obj, fallbackID: UUID().uuidString) {
-                return [.message(sessionID: sessionID, message)]
+                output.append(.message(sessionID: sessionID, message))
             }
         }
-        if let delta = textDelta(in: obj), !delta.isEmpty {
-            return [.textDelta(sessionID: sessionID, text: delta)]
-        }
         if let tool = toolCall(in: obj, sessionID: sessionID) {
-            return [.toolStarted(sessionID: sessionID, tool)]
+            output.append(.toolStarted(sessionID: sessionID, tool))
         }
-        return []
+        output.append(contentsOf: toolResults(in: obj, sessionID: sessionID).map { .toolUpdated(sessionID: sessionID, $0) })
+        return output
     }
 
     static func messageFromJSONObject(_ obj: [String: Any], fallbackID: String) -> ChatMessage? {
@@ -579,9 +582,10 @@ enum StreamEventParser {
                 risk: .network
             ))]
         }
-        let toolName = req["tool_name"] as? String ?? req["toolName"] as? String ?? subtype
+        let rawToolName = req["tool_name"] as? String ?? req["toolName"] as? String ?? subtype
         let input = req["input"] ?? [:]
         let inputJSON = jsonString(input)
+        let toolName = displayToolName(rawToolName: rawToolName, input: input)
         let risk = classify(toolName: toolName, inputJSON: inputJSON)
         let title = toolName == "AskUserQuestion" ? "Claude asks a question" : "Claude wants to use \(toolName)"
         let summary = req["description"] as? String ?? inputJSON
@@ -599,6 +603,18 @@ enum StreamEventParser {
             risk: risk
         )
         return [.permissionRequested(perm)]
+    }
+
+    private static func displayToolName(rawToolName: String, input: Any) -> String {
+        guard
+            rawToolName == "Task",
+            let object = input as? [String: Any],
+            let subagentName = object["subagent_type"] as? String
+        else {
+            return rawToolName
+        }
+        let clean = subagentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? rawToolName : clean
     }
 
     private static func classify(toolName: String, inputJSON: String) -> PermissionRequest.Risk {
@@ -655,6 +671,30 @@ enum StreamEventParser {
             return ToolCall(id: id, sessionID: sessionID, name: name, inputPreview: jsonString(item["input"] ?? [:]), status: .running)
         }
         return nil
+    }
+
+    private static func toolResults(in obj: [String: Any], sessionID: String) -> [ToolCall] {
+        let content = (obj["message"] as? [String: Any])?["content"] ?? obj["content"]
+        guard let items = content as? [[String: Any]] else {
+            return []
+        }
+        return items.compactMap { item -> ToolCall? in
+            guard item["type"] as? String == "tool_result" else {
+                return nil
+            }
+            let id = item["tool_use_id"] as? String ?? item["toolUseId"] as? String ?? item["id"] as? String ?? UUID().uuidString
+            let isError = item["is_error"] as? Bool ?? item["isError"] as? Bool ?? false
+            var tool = ToolCall(
+                id: id,
+                sessionID: sessionID,
+                name: "Tool",
+                inputPreview: "",
+                resultPreview: renderContent(item["content"]),
+                status: isError ? .failed : .succeeded
+            )
+            tool.completedAt = Date()
+            return tool
+        }
     }
 
     private static func renderContent(_ value: Any?) -> String {

@@ -61,12 +61,13 @@ final class AppModel: ObservableObject {
     private let mcpService = MCPService()
     private let skillService = SkillService()
     private let sessionIndex = SessionIndexService()
+    private var reloadSessionsGeneration = 0
     private let cliService = CLIService()
     private let shareService = ShareService()
     private let onboardingService = OnboardingService()
     private var filePreviewCleanContent = ""
 
-    init(engine: ClaudeEngine = ClaudeCLIEngine()) {
+    init(engine: ClaudeEngine = ClaudeEngineFactory.makeDefault()) {
         self.engine = engine
     }
 
@@ -357,16 +358,36 @@ extension AppModel {
     }
 
     func reloadSessions() {
+        reloadSessionsGeneration &+= 1
+        let generation = reloadSessionsGeneration
+        let index = sessionIndex
         let pinnedArchived = JSONFile.load([String: SessionRecord].self, from: AppPaths.shared.sessionMetaFile) ?? [:]
-        var loaded = sessionIndex.listSessions().map { item -> SessionRecord in
-            var item = item
-            if let meta = pinnedArchived[item.id] {
-                item.customTitle = meta.customTitle; item.pinned = meta.pinned; item.archived = meta.archived
+        let drafts = sessions.filter { $0.isDraft }
+        Task.detached(priority: .utility) {
+            let discovered = index.discoverAllSessions()
+            await MainActor.run {
+                // A newer reload started while this scan was running — drop stale results.
+                guard generation == self.reloadSessionsGeneration else {
+                    return
+                }
+                self.applyDiscoveredSessions(discovered, meta: pinnedArchived, drafts: drafts)
             }
-            return item
         }
-        for existing in sessions where existing.isDraft {
-            loaded.insert(existing, at: 0)
+    }
+
+    private func applyDiscoveredSessions(_ discovered: [SessionRecord], meta: [String: SessionRecord], drafts: [SessionRecord]) {
+        var seen = Set<String>()
+        var loaded: [SessionRecord] = []
+        for var item in discovered where seen.insert(item.id).inserted {
+            if let record = meta[item.id] {
+                item.customTitle = record.customTitle
+                item.pinned = record.pinned
+                item.archived = record.archived
+            }
+            loaded.append(item)
+        }
+        for draft in drafts where seen.insert(draft.id).inserted {
+            loaded.insert(draft, at: 0)
         }
         sessions = loaded.sorted { lhs, rhs in
             if lhs.pinned != rhs.pinned {
@@ -610,7 +631,6 @@ extension AppModel {
                 return
             }
             if !streamingTextBySession[sessionID, default: ""].isEmpty, message.role == .assistant {
-                appendMessage(ChatMessage(role: .assistant, content: streamingTextBySession[sessionID, default: ""]), sessionID: sessionID)
                 streamingTextBySession[sessionID] = ""
             }
             appendMessage(message, sessionID: sessionID)
@@ -710,7 +730,22 @@ extension AppModel {
     private func upsertTool(_ tool: ToolCall, sessionID: String) {
         var tools = toolCallsBySession[sessionID] ?? []
         if let idx = tools.firstIndex(where: { $0.id == tool.id }) {
-            tools[idx] = tool
+            var merged = tool
+            let existing = tools[idx]
+            if merged.name == "Tool", existing.name != "Tool" {
+                merged.name = existing.name
+            }
+            if merged.inputPreview.isEmpty {
+                merged.inputPreview = existing.inputPreview
+            }
+            if merged.resultPreview.isEmpty {
+                merged.resultPreview = existing.resultPreview
+            }
+            merged.startedAt = existing.startedAt
+            if merged.parentID == nil {
+                merged.parentID = existing.parentID
+            }
+            tools[idx] = merged
         } else {
             tools.append(tool)
         }
@@ -1573,11 +1608,31 @@ extension AppModel {
 
     func testActiveProvider() {
         guard let activeProvider else {
-            showError("No provider", "Select or add a provider first."); return
+            showError("No provider", "Select or add a provider first.")
+            return
         }
-        let hasKey = providerVault.apiKey(providerID: activeProvider.id)?.isEmpty == false
-        let mapping = (try? resolvedModelForActiveProvider()) ?? "missing mapping"
-        showError("Provider check", "Keychain key: \(hasKey ? "present" : "missing")\nBase URL: \(activeProvider.baseURL)\nResolved model: \(mapping)")
+        guard let apiKey = providerVault.apiKey(providerID: activeProvider.id), !apiKey.isEmpty else {
+            toastWarning("Provider key missing", "Save an API key for \(activeProvider.name) before testing the connection.")
+            return
+        }
+        do {
+            let model = try resolvedModelForActiveProvider()
+            toastInfo("Testing provider", "Calling \(activeProvider.name) with \(model)…")
+            Task { @MainActor in
+                do {
+                    let result = try await ProviderConnectionProbe.probe(provider: activeProvider, apiKey: apiKey, model: model)
+                    toastSuccess("Provider connected", "\(activeProvider.name) responded in \(result.latencyMilliseconds)ms (HTTP \(result.statusCode)).")
+                } catch let appError as AppError {
+                    showError(appError.title, appError.message)
+                } catch {
+                    showError("Provider check failed", error.localizedDescription)
+                }
+            }
+        } catch let appError as AppError {
+            showError(appError.title, appError.message)
+        } catch {
+            showError("Provider check failed", error.localizedDescription)
+        }
     }
 
     func addProvider() {

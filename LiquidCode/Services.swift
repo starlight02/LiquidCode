@@ -856,10 +856,48 @@ enum SessionJSONLCodec {
         return (role, text)
     }
 
-    static func extractSessionInfo(_ url: URL) -> (preview: String, cwd: String) {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return ("", "")
+    private struct HeaderInfo {
+        var mtime: TimeInterval
+        var preview: String
+        var cwd: String
+    }
+
+    /// Thread-safe cache of parsed session-header info keyed by file path + mtime.
+    /// Discovery reads every project's `.jsonl` on a background task; caching by
+    /// modification time keeps repeated `reloadSessions()` passes from re-reading
+    /// unchanged files (some sessions are multi-MB).
+    private final class HeaderInfoCache: @unchecked Sendable {
+        private var storage: [String: HeaderInfo] = [:]
+        private let lock = NSLock()
+
+        func lookup(path: String, mtime: TimeInterval) -> (preview: String, cwd: String)? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let entry = storage[path], entry.mtime == mtime else {
+                return nil
+            }
+            return (entry.preview, entry.cwd)
         }
+
+        func store(path: String, mtime: TimeInterval, preview: String, cwd: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            storage[path] = HeaderInfo(mtime: mtime, preview: preview, cwd: cwd)
+        }
+    }
+
+    private static let headerCache = HeaderInfoCache()
+    private static let headerReadLimit = 128 * 1024
+
+    static func extractSessionInfo(_ url: URL) -> (preview: String, cwd: String) {
+        let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
+            .timeIntervalSince1970 ?? 0
+        if let cached = headerCache.lookup(path: url.path, mtime: mtime) {
+            return cached
+        }
+        // Read only the head of the file — cwd lives in the first meta line and the
+        // first user message is near the top, so we never load whole multi-MB logs.
+        let content = readHead(url, maxBytes: headerReadLimit)
         var preview = ""
         var cwd = ""
         for line in content.split(separator: "\n").prefix(100) {
@@ -878,7 +916,19 @@ enum SessionJSONLCodec {
                 break
             }
         }
+        headerCache.store(path: url.path, mtime: mtime, preview: preview, cwd: cwd)
         return (preview, cwd)
+    }
+
+    private static func readHead(_ url: URL, maxBytes: Int) -> String {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return ""
+        }
+        defer { try? handle.close() }
+        let data = (try? handle.read(upToCount: maxBytes)) ?? Data()
+        // A trailing byte sequence may be split across the read boundary; UTF-8
+        // decoding substitutes U+FFFD and the partial last line simply fails to parse.
+        return String(bytes: data, encoding: .utf8) ?? ""
     }
 
     static func exportMarkdown(path: String, outputPath: String, conversationOnly: Bool = false) throws {
@@ -1050,7 +1100,7 @@ enum SessionJSONLCodec {
     }
 }
 
-final class SessionIndexService {
+final class SessionIndexService: @unchecked Sendable {
     private let home: URL
     private let fileManager: FileManager
 
@@ -1144,6 +1194,64 @@ final class SessionIndexService {
             }
             return lhs.id < rhs.id
         }
+    }
+
+    /// Discovers every Claude Code session on disk by scanning `~/.claude/projects`,
+    /// independent of the tracked-session allowlist that `listSessions()` uses.
+    /// Safe to call off the main thread. `decodeProjectName` is memoized per encoded
+    /// directory since it probes the filesystem.
+    func discoverAllSessions() -> [SessionRecord] {
+        let root = home.appendingPathComponent(".claude/projects", isDirectory: true)
+        guard
+            let projectDirs = try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey]
+            ) else {
+            return []
+        }
+        var decodeCache: [String: String] = [:]
+        var records: [SessionRecord] = []
+        for projectDir in projectDirs {
+            guard (try? projectDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false else {
+                continue
+            }
+            let encoded = projectDir.lastPathComponent
+            let decodedProject: String
+            if let cached = decodeCache[encoded] {
+                decodedProject = cached
+            } else {
+                decodedProject = SessionJSONLCodec.decodeProjectName(encoded, fileManager: fileManager)
+                decodeCache[encoded] = decodedProject
+            }
+            for file in jsonlFiles(in: projectDir) {
+                let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey])
+                let info = SessionJSONLCodec.extractSessionInfo(file)
+                let projectDirPath = info.cwd.isEmpty ? decodedProject : info.cwd
+                let id = file.deletingPathExtension().lastPathComponent
+                records.append(SessionRecord(
+                    id: id,
+                    path: file.path,
+                    project: projectDirPath,
+                    projectDir: projectDirPath,
+                    modifiedAt: attrs?.contentModificationDate ?? .distantPast,
+                    preview: info.preview.isEmpty ? "Claude session" : info.preview,
+                    cliResumeID: id
+                ))
+            }
+        }
+        return records
+    }
+
+    private func jsonlFiles(in projectDir: URL) -> [URL] {
+        var files: [URL] = []
+        if let direct = try? fileManager.contentsOfDirectory(at: projectDir, includingPropertiesForKeys: nil) {
+            files += direct.filter { $0.pathExtension == "jsonl" }
+        }
+        let sessionsDir = projectDir.appendingPathComponent("sessions", isDirectory: true)
+        if let nested = try? fileManager.contentsOfDirectory(at: sessionsDir, includingPropertiesForKeys: nil) {
+            files += nested.filter { $0.pathExtension == "jsonl" }
+        }
+        return files
     }
 
     func loadMessages(path: String) -> [ChatMessage] {

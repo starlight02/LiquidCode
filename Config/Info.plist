@@ -25,11 +25,11 @@
   <key>LCBrandingPolicy</key>
   <dict>
     <key>PackagedBrandPolicy</key>
-    <string>LiquidCode is the chosen native macOS product identity; TOKENICODE and TCAlpha names/icons remain parity references only and are not shipped.</string>
+    <string>LiquidCode is the chosen native macOS product identity</string>
     <key>PackagedProductName</key>
     <string>LiquidCode</string>
     <key>ParityReferenceProduct</key>
-    <string>TOKENICODE</string>
+    <string>LiquidCode</string>
   </dict>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.developer-tools</string>
