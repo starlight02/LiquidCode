@@ -1,5 +1,5 @@
-import XCTest
 @testable import LiquidCode
+import XCTest
 
 @MainActor
 final class FeatureModelRegressionTests: XCTestCase {
@@ -302,12 +302,12 @@ final class FeatureModelRegressionTests: XCTestCase {
             XCTAssertEqual(updated.args, ["-y", "server package"])
 
             let persisted = try Data(contentsOf: AppPaths.shared.mcpFile)
-            let text = String(decoding: persisted, as: UTF8.self)
+            let text = try XCTUnwrap(String(data: persisted, encoding: .utf8))
             XCTAssertTrue(text.contains("local-stdio"))
             XCTAssertFalse(text.contains("project-server"))
 
             model.deleteMCPServer(updated)
-            let afterDelete = String(decoding: try Data(contentsOf: AppPaths.shared.mcpFile), as: UTF8.self)
+            let afterDelete = try XCTUnwrap(String(data: try Data(contentsOf: AppPaths.shared.mcpFile), encoding: .utf8))
             XCTAssertFalse(afterDelete.contains("local-stdio"))
         }
     }
@@ -379,7 +379,8 @@ final class FeatureModelRegressionTests: XCTestCase {
 
     func testLoadProjectDropsMissingRecentProjectWithoutCreatingDraftOrWatchError() throws {
         try withPreservedRecentProjects {
-            let missing = FileManager.default.temporaryDirectory
+            let missing = FileManager.default
+                .temporaryDirectory
                 .appendingPathComponent("lc-missing-recent-\(UUID().uuidString)", isDirectory: true)
                 .path
             let model = AppModel()
@@ -396,7 +397,8 @@ final class FeatureModelRegressionTests: XCTestCase {
     }
 
     func testSelectingMissingProjectSessionKeepsTranscriptButDoesNotRaiseWatchModal() throws {
-        let missing = FileManager.default.temporaryDirectory
+        let missing = FileManager.default
+            .temporaryDirectory
             .appendingPathComponent("lc-missing-session-\(UUID().uuidString)", isDirectory: true)
             .path
         let model = AppModel()
@@ -415,7 +417,8 @@ final class FeatureModelRegressionTests: XCTestCase {
     }
 
     func testSendRestoresDraftWhenSelectedProjectDirectoryDisappeared() throws {
-        let missing = FileManager.default.temporaryDirectory
+        let missing = FileManager.default
+            .temporaryDirectory
             .appendingPathComponent("lc-missing-send-\(UUID().uuidString)", isDirectory: true)
             .path
         let engine = RecordingEngine()
@@ -599,10 +602,17 @@ final class FeatureModelRegressionTests: XCTestCase {
         try body()
     }
 
+    private struct RewindCall {
+        let sessionID: String
+        let cliSessionID: String?
+        let checkpointUUID: String
+        let cwd: String
+    }
+
     private final class RecordingEngine: ClaudeEngine, @unchecked Sendable {
         var startRequests: [ClaudeSessionStartRequest] = []
         var sentMessages: [(sessionID: String, text: String)] = []
-        var rewindCalls: [(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String)] = []
+        var rewindCalls: [RewindCall] = []
         var rewindOutput: String?
         var runningSessionIDs: Set<String> = []
 
@@ -610,19 +620,28 @@ final class FeatureModelRegressionTests: XCTestCase {
             startRequests.append(request)
             runningSessionIDs.insert(request.sessionID)
         }
-        func sendMessage(sessionID: String, text: String) throws { sentMessages.append((sessionID, text)) }
-        func sendRaw(sessionID: String, jsonLine: String) throws {}
+
+        func sendMessage(sessionID: String, text: String) throws {
+            sentMessages.append((sessionID, text))
+        }
+
         func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String? {
-            rewindCalls.append((sessionID, cliSessionID, checkpointUUID, cwd))
+            rewindCalls.append(RewindCall(sessionID: sessionID, cliSessionID: cliSessionID, checkpointUUID: checkpointUUID, cwd: cwd))
             return rewindOutput
         }
-        func listActiveProcesses() -> [String] { Array(runningSessionIDs).sorted() }
-        func isSessionRunning(sessionID: String) -> Bool { runningSessionIDs.contains(sessionID) }
+
+        func isSessionRunning(sessionID: String) -> Bool {
+            runningSessionIDs.contains(sessionID)
+        }
+
         func respondPermission(_ permission: PermissionRequest, allow: Bool, updatedInputJSON: String?, message: String?) throws {}
         func interrupt(sessionID: String) throws {}
-        func setPermissionMode(sessionID: String, mode: SessionMode) throws {}
-        func setModel(sessionID: String, model: String?) throws {}
-        func kill(sessionID: String) { runningSessionIDs.remove(sessionID) }
-        func killAll() { runningSessionIDs.removeAll() }
+        func kill(sessionID: String) {
+            runningSessionIDs.remove(sessionID)
+        }
+
+        func killAll() {
+            runningSessionIDs.removeAll()
+        }
     }
 }

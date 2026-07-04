@@ -34,7 +34,9 @@ final class ReleaseHelperTests: XCTestCase {
             "LiquidCode-0.1.0.app.tar.gz.sha256",
             "latest.json"
         ].map { fixture.root.appendingPathComponent($0) }
-        for artifact in artifacts { try Data(artifact.lastPathComponent.utf8).write(to: artifact) }
+        for artifact in artifacts {
+            try Data(artifact.lastPathComponent.utf8).write(to: artifact)
+        }
 
         let result = try fixture.runHelper(["upload-dry-run", "v0.1.0"] + artifacts.map(\.path))
         XCTAssertEqual(result.status, 0, result.combinedOutput)
@@ -52,7 +54,9 @@ final class ReleaseHelperTests: XCTestCase {
             "LiquidCode-0.1.0.app.tar.gz.sha256",
             "latest.json"
         ].map { fixture.root.appendingPathComponent($0) }
-        for artifact in artifacts { try Data(artifact.lastPathComponent.utf8).write(to: artifact) }
+        for artifact in artifacts {
+            try Data(artifact.lastPathComponent.utf8).write(to: artifact)
+        }
 
         let result = try fixture.runHelper(["upload-dry-run", "v0.1.0"] + artifacts.map(\.path))
 
@@ -97,7 +101,6 @@ private final class ReleaseFixture {
         return ProcessResult(status: process.terminationStatus, combinedOutput: String(data: data, encoding: .utf8) ?? "")
     }
 
-
     private static func repositoryRoot() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -109,4 +112,3 @@ private struct ProcessResult {
     var status: Int32
     var combinedOutput: String
 }
-

@@ -15,7 +15,9 @@ enum FilePreviewMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case html = "HTML"
     case source = "Source"
     case edit = "Edit"
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 }
 
 struct AttachmentChip: Identifiable, Codable, Hashable, Sendable {
@@ -40,7 +42,10 @@ struct ActiveTurnSnapshot: Codable, Hashable, Sendable {
 }
 
 struct DeletedSessionSnapshot: Identifiable, Sendable {
-    var id: String { session.id }
+    var id: String {
+        session.id
+    }
+
     var session: SessionRecord
     var messages: [ChatMessage]
     var backupPath: String?
@@ -56,7 +61,9 @@ struct ComposerSendConfiguration: Codable, Hashable, Sendable {
 
 func composerPayloadText(_ text: String, attachments: [AttachmentChip]) -> String {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !attachments.isEmpty else { return trimmed }
+    guard !attachments.isEmpty else {
+        return trimmed
+    }
     let paths = attachments.map(\.path).joined(separator: "\n")
     return "\(trimmed)\n\nAttached files:\n\(paths)"
 }
@@ -68,18 +75,12 @@ struct ImageLightboxContent: Identifiable, Equatable, Sendable {
     var alt: String?
 }
 
-enum MarkdownImageResolution: Equatable, Sendable {
-    case local(path: String, data: Data)
-    case dataURI(Data)
-    case remote(URL)
-    case unauthorized(path: String, message: String)
-    case invalid(String)
-}
-
 struct ChatFindTarget: Identifiable, Equatable, Sendable {
     var itemID: String
     var occurrenceIndex: Int
-    var id: String { "\(itemID)#\(occurrenceIndex)" }
+    var id: String {
+        "\(itemID)#\(occurrenceIndex)"
+    }
 }
 
 struct MarkdownImageReference: Equatable, Sendable {
@@ -94,7 +95,9 @@ struct TranscriptToolItem: Identifiable, Equatable, Sendable {
     let kind: Kind
     let toolName: String
     let content: String
-    var summaryName: String { kind == .use ? toolName : "Tool result" }
+    var summaryName: String {
+        kind == .use ? toolName : "Tool result"
+    }
 }
 
 enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
@@ -127,13 +130,18 @@ enum TranscriptDisplayBuilder {
                 var run = [first]
                 index += 1
                 while index < rawItems.count {
-                    guard case .tool(let next) = rawItems[index] else { break }
+                    guard case .tool(let next) = rawItems[index] else {
+                        break
+                    }
                     run.append(next)
                     index += 1
                 }
                 let shouldGroup = run.count >= 2
-                if shouldGroup { output.append(.toolRun(run)) }
-                else { output.append(contentsOf: run.map(TranscriptDisplayItem.tool)) }
+                if shouldGroup {
+                    output.append(.toolRun(run))
+                } else {
+                    output.append(contentsOf: run.map(TranscriptDisplayItem.tool))
+                }
             }
         }
         output.append(contentsOf: pendingPermissions.map(TranscriptDisplayItem.interaction))
@@ -157,7 +165,9 @@ enum TranscriptDisplayBuilder {
 
         func appendText() {
             let text = textLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { textLines.removeAll(); return }
+            guard !text.isEmpty else {
+                textLines.removeAll(); return
+            }
             var copy = message
             copy.id = "\(message.id)_text_\(ordinal)"
             copy.content = text
@@ -168,9 +178,13 @@ enum TranscriptDisplayBuilder {
         }
 
         func appendTool() {
-            guard let toolKind else { return }
+            guard let toolKind else {
+                return
+            }
             let content = toolLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !content.isEmpty else { toolLines.removeAll(); return }
+            guard !content.isEmpty else {
+                toolLines.removeAll(); return
+            }
             output.append(.tool(TranscriptToolItem(id: "\(message.id)_tool_\(ordinal)", sourceMessage: message, kind: toolKind, toolName: toolName, content: content)))
             ordinal += 1
             toolLines.removeAll()
@@ -202,7 +216,9 @@ enum TranscriptDisplayBuilder {
 
     private static func toolUseName(from line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("[tool_use:") else { return nil }
+        guard trimmed.hasPrefix("[tool_use:") else {
+            return nil
+        }
         let raw = trimmed.dropFirst("[tool_use:".count)
         let name = raw.split(separator: "]", maxSplits: 1).first.map(String.init) ?? "Tool"
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -222,7 +238,9 @@ private enum RawTranscriptDisplayItem {
 enum TranscriptToolRunCompletion {
     static func isComplete(_ items: [TranscriptToolItem]) -> Bool {
         let useCount = items.filter { $0.kind == .use }.count
-        guard useCount > 0 else { return true }
+        guard useCount > 0 else {
+            return true
+        }
         let resultCount = items.filter { $0.kind == .result }.count
         return resultCount >= useCount
     }
@@ -234,7 +252,8 @@ enum AgentActivityBuilder {
             switch item {
             case .tool(let tool): [tool]
             case .toolRun(let tools): tools
-            case .message, .interaction: []
+            case .message,
+                 .interaction: []
             }
         }
         var toolNamesByMessageID: [String: String] = [:]
@@ -263,7 +282,9 @@ enum AgentActivityBuilder {
 
 extension ChatMessage {
     var derivedToolName: String {
-        if let toolName, !toolName.isEmpty { return toolName }
+        if let toolName, !toolName.isEmpty {
+            return toolName
+        }
         if let range = content.range(of: #"\[tool_use:\s*([^\]]+)\]"#, options: .regularExpression) {
             return String(content[range])
                 .replacingOccurrences(of: "[tool_use:", with: "")
@@ -285,36 +306,54 @@ func chatFindTargets(in messages: [ChatMessage], query: String) -> [ChatFindTarg
 enum SlashCommandParser {
     static func query(from composerText: String) -> String? {
         let firstLine = composerText.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? ""
-        guard firstLine.hasPrefix("/") else { return nil }
+        guard firstLine.hasPrefix("/") else {
+            return nil
+        }
         let rawQuery = String(firstLine.dropFirst())
-        guard !rawQuery.contains(where: { $0.isWhitespace }) else { return nil }
+        guard !rawQuery.contains(where: { $0.isWhitespace }) else {
+            return nil
+        }
         return rawQuery
     }
 }
 
 func markdownImageReference(from line: String) -> MarkdownImageReference? {
     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard trimmed.hasPrefix("![") else { return nil }
-    guard let altEnd = trimmed.firstIndex(of: "]") else { return nil }
+    guard trimmed.hasPrefix("![") else {
+        return nil
+    }
+    guard let altEnd = trimmed.firstIndex(of: "]") else {
+        return nil
+    }
     let afterAlt = trimmed.index(after: altEnd)
-    guard afterAlt < trimmed.endIndex, trimmed[afterAlt] == "(" else { return nil }
-    guard trimmed.last == ")" else { return nil }
+    guard afterAlt < trimmed.endIndex, trimmed[afterAlt] == "(" else {
+        return nil
+    }
+    guard trimmed.last == ")" else {
+        return nil
+    }
     let altStart = trimmed.index(trimmed.startIndex, offsetBy: 2)
     let sourceStart = trimmed.index(after: afterAlt)
-    guard sourceStart < trimmed.endIndex else { return nil }
+    guard sourceStart < trimmed.endIndex else {
+        return nil
+    }
     let sourceEnd = trimmed.index(before: trimmed.endIndex)
-    let alt = String(trimmed[altStart..<altEnd])
-    let source = String(trimmed[sourceStart..<sourceEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !source.isEmpty else { return nil }
+    let alt = String(trimmed[altStart ..< altEnd])
+    let source = String(trimmed[sourceStart ..< sourceEnd]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !source.isEmpty else {
+        return nil
+    }
     return MarkdownImageReference(alt: alt, source: source)
 }
 
 func chatFindOccurrenceRanges(in text: String, query: String) -> [Range<String.Index>] {
     let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !needle.isEmpty else { return [] }
+    guard !needle.isEmpty else {
+        return []
+    }
     var ranges: [Range<String.Index>] = []
     var cursor = text.startIndex
-    while cursor < text.endIndex, let range = text.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive], range: cursor..<text.endIndex) {
+    while cursor < text.endIndex, let range = text.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive], range: cursor ..< text.endIndex) {
         ranges.append(range)
         cursor = range.upperBound
     }
@@ -343,15 +382,25 @@ struct CLIStatus: Codable, Equatable, Sendable {
 
 struct SetupProgress: Codable, Equatable, Sendable {
     enum Phase: String, Codable, Sendable {
-        case idle, checking, downloading, installing, authenticating, complete, failed
+        case idle
+        case checking
+        case downloading
+        case installing
+        case authenticating
+        case complete
+        case failed
     }
+
     var phase: Phase = .idle
     var percent: Double = 0
     var message: String = ""
 }
 
 struct ChangelogEntry: Identifiable, Codable, Hashable, Sendable {
-    var id: String { version }
+    var id: String {
+        version
+    }
+
     var version: String
     var date: String
     var items: [String]
@@ -378,13 +427,94 @@ struct ProviderPreset: Identifiable, Hashable, Sendable {
 }
 
 let providerPresets: [ProviderPreset] = [
-    .init(id: "anthropic", name: "Anthropic (官方)", baseURL: "https://api.anthropic.com", apiFormat: .anthropic, extraEnv: [:], keyURL: "https://console.anthropic.com/account/keys", thinkingSupport: .full, modelMappings: [:]),
-    .init(id: "zhipu", name: "智谱 GLM", baseURL: "https://open.bigmodel.cn/api/anthropic", apiFormat: .anthropic, extraEnv: [:], keyURL: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys", thinkingSupport: .full, modelMappings: ["opus": "glm-5", "sonnet": "glm-5-turbo", "haiku": "glm-4.7"]),
-    .init(id: "kimi", name: "Kimi", baseURL: "https://api.moonshot.cn/anthropic/", apiFormat: .anthropic, extraEnv: [:], keyURL: "https://platform.moonshot.cn/console/api-keys", thinkingSupport: .full, modelMappings: ["opus": "kimi-k2.5", "sonnet": "kimi-k2", "haiku": "kimi-k2-turbo-preview"]),
-    .init(id: "kimi-code", name: "Kimi Code", baseURL: "https://api.kimi.com/coding/", apiFormat: .anthropic, extraEnv: ["ENABLE_TOOL_SEARCH": "false"], keyURL: "https://www.kimi.com/code/console", thinkingSupport: .full, modelMappings: ["opus": "kimi-for-coding", "sonnet": "kimi-for-coding", "haiku": "kimi-for-coding"]),
-    .init(id: "minimax", name: "MiniMax", baseURL: "https://api.minimaxi.com/anthropic", apiFormat: .anthropic, extraEnv: ["API_TIMEOUT_MS": "3000000", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"], keyURL: "https://platform.minimaxi.com/user-center/basic-information/interface-key", thinkingSupport: .full, modelMappings: ["opus": "MiniMax-M2.7", "sonnet": "MiniMax-M2.5", "haiku": "MiniMax-M2.1"]),
-    .init(id: "qwen", name: "通义千问", baseURL: "https://dashscope.aliyuncs.com/apps/anthropic", apiFormat: .anthropic, extraEnv: [:], keyURL: "https://bailian.console.aliyun.com/?apiKey=1", thinkingSupport: .unknown, modelMappings: ["opus": "qwen3-max", "sonnet": "qwen3.5-plus", "haiku": "qwen3.5-flash"]),
-    .init(id: "openrouter", name: "OpenRouter", baseURL: "https://openrouter.ai/api", apiFormat: .anthropic, extraEnv: [:], keyURL: "https://openrouter.ai/settings/keys", thinkingSupport: .full, modelMappings: [:]),
-    .init(id: "mimo", name: "小米 MiMo", baseURL: "https://api.xiaomimimo.com/anthropic", apiFormat: .anthropic, extraEnv: [:], keyURL: "https://platform.xiaomimimo.com/", thinkingSupport: .full, modelMappings: ["opus": "mimo-v2-pro[1m]", "sonnet": "mimo-v2-omni", "haiku": "mimo-v2-pro"]),
-    .init(id: "mimo-token-plan", name: "小米 MiMo Token Plan", baseURL: "https://token-plan-cn.xiaomimimo.com/anthropic", apiFormat: .anthropic, extraEnv: [:], keyURL: "https://platform.xiaomimimo.com/#/console/plan-manage", thinkingSupport: .full, modelMappings: ["opus": "mimo-v2-pro[1m]", "sonnet": "mimo-v2-omni", "haiku": "mimo-v2-pro"])
+    .init(
+        id: "anthropic",
+        name: "Anthropic (官方)",
+        baseURL: "https://api.anthropic.com",
+        apiFormat: .anthropic,
+        extraEnv: [:],
+        keyURL: "https://console.anthropic.com/account/keys",
+        thinkingSupport: .full,
+        modelMappings: [:]
+    ),
+    .init(
+        id: "zhipu",
+        name: "智谱 GLM",
+        baseURL: "https://open.bigmodel.cn/api/anthropic",
+        apiFormat: .anthropic,
+        extraEnv: [:],
+        keyURL: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
+        thinkingSupport: .full,
+        modelMappings: ["opus": "glm-5", "sonnet": "glm-5-turbo", "haiku": "glm-4.7"]
+    ),
+    .init(
+        id: "kimi",
+        name: "Kimi",
+        baseURL: "https://api.moonshot.cn/anthropic/",
+        apiFormat: .anthropic,
+        extraEnv: [:],
+        keyURL: "https://platform.moonshot.cn/console/api-keys",
+        thinkingSupport: .full,
+        modelMappings: ["opus": "kimi-k2.5", "sonnet": "kimi-k2", "haiku": "kimi-k2-turbo-preview"]
+    ),
+    .init(
+        id: "kimi-code",
+        name: "Kimi Code",
+        baseURL: "https://api.kimi.com/coding/",
+        apiFormat: .anthropic,
+        extraEnv: ["ENABLE_TOOL_SEARCH": "false"],
+        keyURL: "https://www.kimi.com/code/console",
+        thinkingSupport: .full,
+        modelMappings: ["opus": "kimi-for-coding", "sonnet": "kimi-for-coding", "haiku": "kimi-for-coding"]
+    ),
+    .init(
+        id: "minimax",
+        name: "MiniMax",
+        baseURL: "https://api.minimaxi.com/anthropic",
+        apiFormat: .anthropic,
+        extraEnv: ["API_TIMEOUT_MS": "3000000", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"],
+        keyURL: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+        thinkingSupport: .full,
+        modelMappings: ["opus": "MiniMax-M2.7", "sonnet": "MiniMax-M2.5", "haiku": "MiniMax-M2.1"]
+    ),
+    .init(
+        id: "qwen",
+        name: "通义千问",
+        baseURL: "https://dashscope.aliyuncs.com/apps/anthropic",
+        apiFormat: .anthropic,
+        extraEnv: [:],
+        keyURL: "https://bailian.console.aliyun.com/?apiKey=1",
+        thinkingSupport: .unknown,
+        modelMappings: ["opus": "qwen3-max", "sonnet": "qwen3.5-plus", "haiku": "qwen3.5-flash"]
+    ),
+    .init(
+        id: "openrouter",
+        name: "OpenRouter",
+        baseURL: "https://openrouter.ai/api",
+        apiFormat: .anthropic,
+        extraEnv: [:],
+        keyURL: "https://openrouter.ai/settings/keys",
+        thinkingSupport: .full,
+        modelMappings: [:]
+    ),
+    .init(
+        id: "mimo",
+        name: "小米 MiMo",
+        baseURL: "https://api.xiaomimimo.com/anthropic",
+        apiFormat: .anthropic,
+        extraEnv: [:],
+        keyURL: "https://platform.xiaomimimo.com/",
+        thinkingSupport: .full,
+        modelMappings: ["opus": "mimo-v2-pro[1m]", "sonnet": "mimo-v2-omni", "haiku": "mimo-v2-pro"]
+    ),
+    .init(
+        id: "mimo-token-plan",
+        name: "小米 MiMo Token Plan",
+        baseURL: "https://token-plan-cn.xiaomimimo.com/anthropic",
+        apiFormat: .anthropic,
+        extraEnv: [:],
+        keyURL: "https://platform.xiaomimimo.com/#/console/plan-manage",
+        thinkingSupport: .full,
+        modelMappings: ["opus": "mimo-v2-pro[1m]", "sonnet": "mimo-v2-omni", "haiku": "mimo-v2-pro"]
+    )
 ]

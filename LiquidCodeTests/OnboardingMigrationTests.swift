@@ -1,6 +1,6 @@
 import Foundation
-import XCTest
 @testable import LiquidCode
+import XCTest
 
 final class OnboardingMigrationTests: XCTestCase {
     func testFirstLaunchPlanPromptsWithoutExistingConfig() throws {
@@ -67,7 +67,15 @@ final class OnboardingMigrationTests: XCTestCase {
         try fixture.writeTokenicodeProviders()
         let existing = ProviderVault.ProviderFile(
             activeProviderID: "existing",
-            providers: [ProviderRecord(id: "existing", name: "Existing", baseURL: "https://existing.example", apiFormat: .anthropic, modelMappings: [:], extraEnv: [:], preset: nil)]
+            providers: [ProviderRecord(
+                id: "existing",
+                name: "Existing",
+                baseURL: "https://existing.example",
+                apiFormat: .anthropic,
+                modelMappings: [:],
+                extraEnv: [:],
+                preset: nil
+            )]
         )
         try JSONFile.save(existing, to: fixture.liquidProvidersURL)
 
@@ -113,24 +121,24 @@ private final class OnboardingFixture {
 
     func writeTokenicodeProviders() throws {
         let json = #"""
-        {
-          "activeProviderId": "kimi-code",
-          "providers": [
             {
-              "id": "kimi-code",
-              "name": "Kimi Code",
-              "baseUrl": "https://api.kimi.com/coding/",
-              "apiFormat": "anthropic",
-              "apiKey": "secret-token",
-              "modelMappings": [
-                { "tier": "sonnet", "providerModel": "kimi-for-coding" }
-              ],
-              "extra_env": { "ENABLE_TOOL_SEARCH": "false" },
-              "preset": "kimi-code",
-              "proxyUrl": "socks5://127.0.0.1:1080"
+            "activeProviderId": "kimi-code",
+            "providers": [
+            {
+            "id": "kimi-code",
+            "name": "Kimi Code",
+            "baseUrl": "https://api.kimi.com/coding/",
+            "apiFormat": "anthropic",
+            "apiKey": "secret-token",
+            "modelMappings": [
+            { "tier": "sonnet", "providerModel": "kimi-for-coding" }
+            ],
+            "extra_env": { "ENABLE_TOOL_SEARCH": "false" },
+            "preset": "kimi-code",
+            "proxyUrl": "socks5://127.0.0.1:1080"
             }
-          ]
-        }
+            ]
+            }
         """#
         try write(Data(json.utf8), to: tokenicodeProvidersURL)
     }

@@ -1,5 +1,5 @@
-import XCTest
 @testable import LiquidCode
+import XCTest
 
 @MainActor
 final class SkillRegressionTests: XCTestCase {
@@ -26,9 +26,12 @@ final class SkillRegressionTests: XCTestCase {
     private func loadedSkill(_ model: AppModel, matching url: URL, file: StaticString = #filePath, line: UInt = #line) throws -> SkillInfo {
         let target = url.resolvingSymlinksInPath().path
         let resolve: (String) -> String = { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
-        return try XCTUnwrap(model.skills.first { $0.scope == "project" && resolve($0.path) == target },
-                             "Loaded skills: \(model.skills.map { "\($0.name)@\($0.path)" })",
-                             file: file, line: line)
+        return try XCTUnwrap(
+            model.skills.first { $0.scope == "project" && resolve($0.path) == target },
+            "Loaded skills: \(model.skills.map { "\($0.name)@\($0.path)" })",
+            file: file,
+            line: line
+        )
     }
 
     /// Toggle an opened, dirty SKILL.md must:
@@ -76,8 +79,11 @@ final class SkillRegressionTests: XCTestCase {
 
         let written = try String(contentsOf: skillURL, encoding: .utf8)
         XCTAssertTrue(written.contains("appended unsaved edit line"), "unsaved body edit must survive toggle")
-        XCTAssertEqual(written.components(separatedBy: "\n").filter { $0.hasPrefix("disable_model_invocation:") }.count, 1,
-                       "exactly one canonical key")
+        XCTAssertEqual(
+            written.components(separatedBy: "\n").filter { $0.hasPrefix("disable_model_invocation:") }.count,
+            1,
+            "exactly one canonical key"
+        )
         XCTAssertFalse(written.contains("disable-model-invocation:"), "legacy key must be removed")
         XCTAssertTrue(written.contains("disable_model_invocation: true"))
 

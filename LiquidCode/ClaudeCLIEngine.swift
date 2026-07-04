@@ -3,16 +3,22 @@ import Foundation
 protocol ClaudeEngine: Sendable {
     func startSession(_ request: ClaudeSessionStartRequest, eventSink: @escaping @Sendable (ClaudeEvent) -> Void) throws
     func sendMessage(sessionID: String, text: String) throws
-    func sendRaw(sessionID: String, jsonLine: String) throws
     func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String?
-    func listActiveProcesses() -> [String]
     func isSessionRunning(sessionID: String) -> Bool
     func respondPermission(_ permission: PermissionRequest, allow: Bool, updatedInputJSON: String?, message: String?) throws
     func interrupt(sessionID: String) throws
-    func setPermissionMode(sessionID: String, mode: SessionMode) throws
-    func setModel(sessionID: String, model: String?) throws
     func kill(sessionID: String)
     func killAll()
+}
+
+struct ClaudeLaunchConfiguration: Equatable, Sendable {
+    var prefixArgs: [String] = []
+    var mcpConfigPath: String?
+    var resumeSessionID: String?
+    var model: String?
+    var mode: SessionMode
+    var thinkingLevel: ThinkingLevel
+    var capabilities: ProviderRuntimeCapabilities
 }
 
 final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
@@ -43,7 +49,7 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
         executableOverride: (String, [String])? = nil
     ) {
         self.home = home
-        self.baseEnvironment = environment
+        baseEnvironment = environment
         self.executableOverride = executableOverride
     }
 
@@ -62,7 +68,7 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
             thinkingLevel: request.thinkingLevel,
             enrichedPath: enrichedPath()
         )
-        var args = Self.buildLaunchArguments(
+        var args = Self.buildLaunchArguments(.init(
             prefixArgs: prefixArgs,
             mcpConfigPath: scratch?.path,
             resumeSessionID: request.resumeSessionID,
@@ -70,7 +76,7 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
             mode: request.mode,
             thinkingLevel: request.thinkingLevel,
             capabilities: envPlan.capabilities
-        )
+        ))
         args += envPlan.extraArgs
         process.arguments = args
         process.environment = envPlan.environment
@@ -90,14 +96,25 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
         queue.sync { runtimes[request.sessionID] = runtime }
         attachReaders(runtime: runtime, stdout: stdoutPipe.fileHandleForReading, stderr: stderrPipe.fileHandleForReading)
         eventSink(.sessionStarted(sessionID: request.sessionID, cliSessionID: request.resumeSessionID))
-        if !request.prompt.isEmpty { try sendUserJSON(sessionID: request.sessionID, text: request.prompt) }
+        if !request.prompt.isEmpty {
+            try sendUserJSON(sessionID: request.sessionID, text: request.prompt)
+        }
     }
 
-    func sendMessage(sessionID: String, text: String) throws { try sendUserJSON(sessionID: sessionID, text: text) }
+    func sendMessage(sessionID: String, text: String) throws {
+        try sendUserJSON(sessionID: sessionID, text: text)
+    }
 
-    func sendRaw(sessionID: String, jsonLine: String) throws {
-        guard let runtime = queue.sync(execute: { runtimes[sessionID] }) else { throw NSError(domain: "LiquidCode", code: 404, userInfo: [NSLocalizedDescriptionKey: "Session is not running"]) }
-        guard let data = (jsonLine + "\n").data(using: .utf8) else { return }
+    private func sendRaw(sessionID: String, jsonLine: String) throws {
+        guard let runtime = queue.sync(execute: { runtimes[sessionID] }) else {
+            throw NSError(
+                domain: "LiquidCode",
+                code: 404,
+                userInfo: [NSLocalizedDescriptionKey: "Session is not running"]
+            ) }
+        guard let data = (jsonLine + "\n").data(using: .utf8) else {
+            return
+        }
         try runtime.stdin.write(contentsOf: data)
     }
 
@@ -106,8 +123,18 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
             try sendRaw(sessionID: sessionID, jsonLine: ClaudeControlProtocol.rewindControlJSON(checkpointUUID: checkpointUUID))
             return nil
         }
-        guard let cliSessionID, !cliSessionID.isEmpty else { throw NSError(domain: "LiquidCode", code: 400, userInfo: [NSLocalizedDescriptionKey: "Missing Claude CLI session id for rewind fallback"]) }
-        guard Self.isUUIDLike(checkpointUUID) else { throw NSError(domain: "LiquidCode", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid checkpoint UUID: \(checkpointUUID)"]) }
+        guard let cliSessionID, !cliSessionID.isEmpty else {
+            throw NSError(
+                domain: "LiquidCode",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Missing Claude CLI session id for rewind fallback"]
+            ) }
+        guard Self.isUUIDLike(checkpointUUID) else {
+            throw NSError(
+                domain: "LiquidCode",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid checkpoint UUID: \(checkpointUUID)"]
+            ) }
         let (executable, prefixArgs) = resolveClaudeExecutable()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -117,33 +144,46 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
         let out = Pipe(); let err = Pipe()
         process.standardOutput = out; process.standardError = err
         try process.run(); process.waitUntilExit()
-        let stdout = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        let stderr = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        if process.terminationStatus == 0 { return stdout }
+        let stdoutData = out.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = err.fileHandleForReading.readDataToEndOfFile()
+        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+        if process.terminationStatus == 0 {
+            return stdout
+        }
         throw NSError(domain: "LiquidCode", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: stderr.isEmpty ? "rewind_files failed" : stderr])
     }
 
-    func listActiveProcesses() -> [String] { queue.sync { Array(runtimes.keys).sorted() } }
-    func isSessionRunning(sessionID: String) -> Bool { queue.sync { runtimes[sessionID] != nil } }
+    func listActiveProcesses() -> [String] {
+        queue.sync { Array(runtimes.keys).sorted() }
+    }
+
+    func isSessionRunning(sessionID: String) -> Bool {
+        queue.sync { runtimes[sessionID] != nil }
+    }
 
     func respondPermission(_ permission: PermissionRequest, allow: Bool, updatedInputJSON: String?, message: String?) throws {
         var inner: [String: Any] = ["behavior": allow ? "allow" : "deny"]
         if allow {
             inner["updatedInput"] = parseJSONObject(updatedInputJSON ?? permission.inputJSON) ?? [:]
-            if let toolUseID = permission.toolUseID { inner["toolUseID"] = toolUseID }
+            if let toolUseID = permission.toolUseID {
+                inner["toolUseID"] = toolUseID
+            }
         } else {
             inner["message"] = message ?? "User denied this operation"
         }
         try sendRaw(sessionID: permission.sessionID, jsonLine: ClaudeControlProtocol.permissionResponseJSON(requestID: permission.requestID, response: inner))
     }
 
-    func interrupt(sessionID: String) throws { try sendControl(sessionID: sessionID, subtype: "interrupt", payload: [:]) }
-    func setPermissionMode(sessionID: String, mode: SessionMode) throws { try sendControl(sessionID: sessionID, subtype: "set_permission_mode", payload: ["mode": mode.permissionMode]) }
-    func setModel(sessionID: String, model: String?) throws { try sendControl(sessionID: sessionID, subtype: "set_model", payload: model.map { ["model": $0] } ?? [:]) }
+    func interrupt(sessionID: String) throws {
+        try sendControl(sessionID: sessionID, subtype: "interrupt", payload: [:])
+    }
 
     func kill(sessionID: String) {
         let runtime = queue.sync { runtimes.removeValue(forKey: sessionID) }
-        guard let runtime else { return }
+        guard let runtime else {
+            return
+        }
         runtime.process.terminate()
         waitForExit(runtime.process, timeout: 2)
         try? runtime.stdin.close()
@@ -158,44 +198,58 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
     private func sendUserJSON(sessionID: String, text: String) throws {
         let obj: [String: Any] = ["type": "user", "message": ["role": "user", "content": text]]
         let data = try JSONSerialization.data(withJSONObject: obj)
-        try sendRaw(sessionID: sessionID, jsonLine: String(decoding: data, as: UTF8.self))
+        try sendRaw(sessionID: sessionID, jsonLine: String(data: data, encoding: .utf8) ?? "")
     }
 
     private func waitForExit(_ process: Process, timeout: TimeInterval) {
-        guard process.isRunning else { return }
+        guard process.isRunning else {
+            return
+        }
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning && Date() < deadline {
             Thread.sleep(forTimeInterval: 0.02)
         }
-        if process.isRunning { process.interrupt() }
+        if process.isRunning {
+            process.interrupt()
+        }
     }
 
     private func sendControl(sessionID: String, subtype: String, payload: [String: Any]) throws {
         let obj: [String: Any] = ["type": "control_request", "request_id": UUID().uuidString, "request": payload.merging(["subtype": subtype]) { lhs, _ in lhs }]
         let data = try JSONSerialization.data(withJSONObject: obj)
-        try sendRaw(sessionID: sessionID, jsonLine: String(decoding: data, as: UTF8.self))
+        try sendRaw(sessionID: sessionID, jsonLine: String(data: data, encoding: .utf8) ?? "")
     }
 
     private func attachReaders(runtime: Runtime, stdout: FileHandle, stderr: FileHandle) {
         stdout.readabilityHandler = { [weak self, weak runtime] handle in
-            guard let self, let runtime else { return }
-            let data = handle.availableData
-            if data.isEmpty {
-                self.handleExit(runtime)
+            guard let self, let runtime else {
                 return
             }
-            self.queue.async {
+            let data = handle.availableData
+            if data.isEmpty {
+                handleExit(runtime)
+                return
+            }
+            queue.async {
                 runtime.stdoutBuffer.append(data)
-                for line in Self.consumeLines(&runtime.stdoutBuffer) { self.handleStdout(line, runtime: runtime) }
+                for line in Self.consumeLines(&runtime.stdoutBuffer) {
+                    self.handleStdout(line, runtime: runtime)
+                }
             }
         }
         stderr.readabilityHandler = { [weak self, weak runtime] handle in
-            guard let self, let runtime else { return }
+            guard let self, let runtime else {
+                return
+            }
             let data = handle.availableData
-            if data.isEmpty { return }
-            self.queue.async {
+            if data.isEmpty {
+                return
+            }
+            queue.async {
                 runtime.stderrBuffer.append(data)
-                for line in Self.consumeLines(&runtime.stderrBuffer) { runtime.eventSink(.stderr(sessionID: runtime.sessionID, line)) }
+                for line in Self.consumeLines(&runtime.stderrBuffer) {
+                    runtime.eventSink(.stderr(sessionID: runtime.sessionID, line))
+                }
             }
         }
         processTermination(runtime)
@@ -203,15 +257,21 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
 
     private func processTermination(_ runtime: Runtime) {
         runtime.process.terminationHandler = { [weak self, weak runtime] _ in
-            guard let self, let runtime else { return }
-            self.handleExit(runtime)
+            guard let self, let runtime else {
+                return
+            }
+            handleExit(runtime)
         }
     }
 
     private func handleStdout(_ line: String, runtime: Runtime) {
-        guard let data = line.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        guard let data = line.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
         let events = StreamEventParser.events(from: obj, sessionID: runtime.sessionID)
-        if events.isEmpty { return }
+        if events.isEmpty {
+            return
+        }
         for event in events {
             if case .permissionRequested(let req) = event, req.toolName == "HookCallback" {
                 continue
@@ -222,7 +282,9 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
 
     private func handleExit(_ runtime: Runtime) {
         let shouldEmit = queue.sync { () -> Bool in
-            if runtime.didExit { return false }
+            if runtime.didExit {
+                return false
+            }
             runtime.didExit = true
             return runtimes.removeValue(forKey: runtime.sessionID) != nil
         }
@@ -236,28 +298,24 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
     private static func consumeLines(_ data: inout Data) -> [String] {
         var lines: [String] = []
         while let range = data.firstRange(of: Data([0x0A])) {
-            let lineData = data.subdata(in: data.startIndex..<range.lowerBound)
-            data.removeSubrange(data.startIndex...range.lowerBound)
-            if let line = String(data: lineData, encoding: .utf8) { lines.append(line.trimmingCharacters(in: .newlines)) }
+            let lineData = data.subdata(in: data.startIndex ..< range.lowerBound)
+            data.removeSubrange(data.startIndex ... range.lowerBound)
+            if let line = String(data: lineData, encoding: .utf8) {
+                lines.append(line.trimmingCharacters(in: .newlines))
+            }
         }
         return lines
     }
 
     private static func removeArgumentPair(_ flag: String, from args: inout [String]) {
-        guard let index = args.firstIndex(of: flag), index + 1 < args.count else { return }
-        args.removeSubrange(index...(index + 1))
+        guard let index = args.firstIndex(of: flag), index + 1 < args.count else {
+            return
+        }
+        args.removeSubrange(index ... (index + 1))
     }
 
-    static func buildLaunchArguments(
-        prefixArgs: [String] = [],
-        mcpConfigPath: String?,
-        resumeSessionID: String?,
-        model: String?,
-        mode: SessionMode,
-        thinkingLevel: ThinkingLevel,
-        capabilities: ProviderRuntimeCapabilities
-    ) -> [String] {
-        var args = prefixArgs
+    static func buildLaunchArguments(_ configuration: ClaudeLaunchConfiguration) -> [String] {
+        var args = configuration.prefixArgs
         args += [
             "--input-format", "stream-json",
             "--output-format", "stream-json",
@@ -266,14 +324,24 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
             "--replay-user-messages",
             "--strict-mcp-config"
         ]
-        if let mcpConfigPath { args += ["--mcp-config", mcpConfigPath] }
-        if let resumeSessionID { args += ["--resume", resumeSessionID] }
-        if let model, !model.isEmpty { args += ["--model", model] }
-        args += ["--permission-mode", mode.permissionMode, "--permission-prompt-tool", "stdio"]
-        args += ["--settings", thinkingLevel == .off ? "{\"alwaysThinkingEnabled\":false}" : "{\"alwaysThinkingEnabled\":true}"]
-        if thinkingLevel != .off { args += ["--effort", thinkingLevel.rawValue] }
-        if !capabilities.supportsPartialMessages { args.removeAll { $0 == "--include-partial-messages" } }
-        if !capabilities.supportsThinkingEffort {
+        if let mcpConfigPath = configuration.mcpConfigPath {
+            args += ["--mcp-config", mcpConfigPath]
+        }
+        if let resumeSessionID = configuration.resumeSessionID {
+            args += ["--resume", resumeSessionID]
+        }
+        if let model = configuration.model, !model.isEmpty {
+            args += ["--model", model]
+        }
+        args += ["--permission-mode", configuration.mode.permissionMode, "--permission-prompt-tool", "stdio"]
+        args += ["--settings", configuration.thinkingLevel == .off ? "{\"alwaysThinkingEnabled\":false}" : "{\"alwaysThinkingEnabled\":true}"]
+        if configuration.thinkingLevel != .off {
+            args += ["--effort", configuration.thinkingLevel.rawValue]
+        }
+        if !configuration.capabilities.supportsPartialMessages {
+            args.removeAll { $0 == "--include-partial-messages" }
+        }
+        if !configuration.capabilities.supportsThinkingEffort {
             removeArgumentPair("--settings", from: &args)
             removeArgumentPair("--effort", from: &args)
         }
@@ -281,16 +349,24 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
     }
 
     private func resolveClaudeExecutable() -> (String, [String]) {
-        if let executableOverride { return executableOverride }
+        if let executableOverride {
+            return executableOverride
+        }
         let candidates = [
             home.appendingPathComponent(".claude/local/claude").path,
             home.appendingPathComponent(".npm-global/bin/claude").path,
             "/opt/homebrew/bin/claude",
             "/usr/local/bin/claude"
         ]
-        if let hit = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) { return (hit, []) }
-        if let which = Self.findExecutable("claude", in: baseEnvironment["PATH"]), !which.isEmpty { return (which, []) }
-        if let which = Shell.capture("/usr/bin/env", ["which", "claude"]), !which.isEmpty { return (which, []) }
+        if let hit = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            return (hit, [])
+        }
+        if let which = Self.findExecutable("claude", in: baseEnvironment["PATH"]), !which.isEmpty {
+            return (which, [])
+        }
+        if let which = Shell.capture("/usr/bin/env", ["which", "claude"]), !which.isEmpty {
+            return (which, [])
+        }
         return ("/usr/bin/env", ["claude"])
     }
 
@@ -300,34 +376,49 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
             "\(home)/.claude/local", "\(home)/.npm-global/bin", "\(home)/.local/bin",
             "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"
         ]
-        if let existing = baseEnvironment["PATH"] { parts.append(existing) }
+        if let existing = baseEnvironment["PATH"] {
+            parts.append(existing)
+        }
         return parts.joined(separator: ":")
     }
 
     private static func findExecutable(_ name: String, in path: String?) -> String? {
-        guard let path, !path.isEmpty else { return nil }
+        guard let path, !path.isEmpty else {
+            return nil
+        }
         for dir in path.split(separator: ":").map(String.init) {
             let candidate = URL(fileURLWithPath: dir).appendingPathComponent(name).path
-            if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
         }
         return nil
     }
 
     static func buildMCPScratchConfig(sessionID: String, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
         let claude = home.appendingPathComponent(".claude.json")
-        guard let data = try? Data(contentsOf: claude),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var servers = root["mcpServers"] else { return nil }
+        guard
+            let data = try? Data(contentsOf: claude),
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            var servers = root["mcpServers"] else {
+            return nil
+        }
         if let outer = servers as? [String: Any], let inner = outer["mcpServers"] as? [String: Any] {
             servers = inner
         }
-        guard let serverMap = servers as? [String: Any], !serverMap.isEmpty else { return nil }
+        guard let serverMap = servers as? [String: Any], !serverMap.isEmpty else {
+            return nil
+        }
 
         let dir = home.appendingPathComponent(".tokenicode", isDirectory: true)
-        guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil else { return nil }
+        guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil else {
+            return nil
+        }
         let path = dir.appendingPathComponent("mcp-session-\(safeSessionIDForPath(sessionID)).json")
         let payload = ["mcpServers": serverMap]
-        guard let out = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) else { return nil }
+        guard let out = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]) else {
+            return nil
+        }
         do {
             try out.write(to: path, options: [.atomic])
             return path
@@ -341,7 +432,9 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
     }
 
     static func cleanupMCPScratchConfig(at url: URL?) {
-        guard let url else { return }
+        guard let url else {
+            return
+        }
         try? FileManager.default.removeItem(at: url)
     }
 
@@ -354,11 +447,12 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
     }
 
     private func parseJSONObject(_ json: String) -> Any? {
-        guard let data = json.data(using: .utf8) else { return nil }
+        guard let data = json.data(using: .utf8) else {
+            return nil
+        }
         return try? JSONSerialization.jsonObject(with: data)
     }
 }
-
 
 enum ClaudeControlProtocol {
     static func rewindControlJSON(checkpointUUID: String) throws -> String {
@@ -368,7 +462,7 @@ enum ClaudeControlProtocol {
             "request": ["subtype": "rewind_files", "checkpoint_uuid": checkpointUUID, "checkpointUuid": checkpointUUID]
         ]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-        return String(decoding: data, as: UTF8.self)
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     static func permissionResponseJSON(requestID: String, response: [String: Any]) throws -> String {
@@ -377,24 +471,34 @@ enum ClaudeControlProtocol {
             "response": ["subtype": "success", "request_id": requestID, "response": response]
         ]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-        return String(decoding: data, as: UTF8.self)
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
 
 enum StreamEventParser {
     static func events(from obj: [String: Any], sessionID: String) -> [ClaudeEvent] {
         let type = obj["type"] as? String ?? ""
-        if type == "control_request" { return controlEvents(from: obj, sessionID: sessionID) }
+        if type == "control_request" {
+            return controlEvents(from: obj, sessionID: sessionID)
+        }
         if type == "system" {
             let cliSessionID = obj["session_id"] as? String ?? obj["sessionId"] as? String
             return [.sessionStarted(sessionID: sessionID, cliSessionID: cliSessionID)]
         }
-        if type == "result" { return [.turnCompleted(sessionID: sessionID)] }
-        if type == "assistant" || type == "user" || type == "human" {
-            if let message = messageFromJSONObject(obj, fallbackID: UUID().uuidString) { return [.message(sessionID: sessionID, message)] }
+        if type == "result" {
+            return [.turnCompleted(sessionID: sessionID)]
         }
-        if let delta = textDelta(in: obj), !delta.isEmpty { return [.textDelta(sessionID: sessionID, text: delta)] }
-        if let tool = toolCall(in: obj, sessionID: sessionID) { return [.toolStarted(sessionID: sessionID, tool)] }
+        if type == "assistant" || type == "user" || type == "human" {
+            if let message = messageFromJSONObject(obj, fallbackID: UUID().uuidString) {
+                return [.message(sessionID: sessionID, message)]
+            }
+        }
+        if let delta = textDelta(in: obj), !delta.isEmpty {
+            return [.textDelta(sessionID: sessionID, text: delta)]
+        }
+        if let tool = toolCall(in: obj, sessionID: sessionID) {
+            return [.toolStarted(sessionID: sessionID, tool)]
+        }
         return []
     }
 
@@ -407,8 +511,10 @@ enum StreamEventParser {
         let contentAny = message?["content"] ?? obj["content"]
         let content = renderContent(contentAny)
         let toolName = firstToolName(in: contentAny)
-        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, toolName == nil { return nil }
-        let raw = (try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])).map { String(decoding: $0, as: UTF8.self) }
+        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, toolName == nil {
+            return nil
+        }
+        let raw = (try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])).map { String(data: $0, encoding: .utf8) ?? "" }
         let checkpoint = (role == .user && !containsToolResult(contentAny)) ? id : nil
         let parentID = obj["parent_uuid"] as? String ?? obj["parentUuid"] as? String ?? obj["parent_id"] as? String ?? obj["parentId"] as? String
         return ChatMessage(id: id, role: role, content: content, timestamp: Date(), toolName: toolName, rawJSON: raw, parentID: parentID, checkpointUuid: checkpoint)
@@ -416,32 +522,62 @@ enum StreamEventParser {
 
     private static func firstToolName(in value: Any?) -> String? {
         if let dict = value as? [String: Any] {
-            if dict["type"] as? String == "tool_use" { return dict["name"] as? String ?? "Tool" }
-            if dict["type"] as? String == "tool_result" { return "tool_result" }
-            for child in dict.values { if let found = firstToolName(in: child) { return found } }
+            if dict["type"] as? String == "tool_use" {
+                return dict["name"] as? String ?? "Tool"
+            }
+            if dict["type"] as? String == "tool_result" {
+                return "tool_result"
+            }
+            for child in dict.values {
+                if let found = firstToolName(in: child) {
+                    return found
+                } }
         }
         if let arr = value as? [Any] {
-            for child in arr { if let found = firstToolName(in: child) { return found } }
+            for child in arr {
+                if let found = firstToolName(in: child) {
+                    return found
+                } }
         }
         return nil
     }
 
     private static func containsToolResult(_ value: Any?) -> Bool {
         if let dict = value as? [String: Any] {
-            if dict["type"] as? String == "tool_result" { return true }
+            if dict["type"] as? String == "tool_result" {
+                return true
+            }
             return dict.values.contains { containsToolResult($0) }
         }
-        if let arr = value as? [Any] { return arr.contains { containsToolResult($0) } }
+        if let arr = value as? [Any] {
+            return arr.contains { containsToolResult($0) }
+        }
         return false
     }
 
     private static func controlEvents(from obj: [String: Any], sessionID: String) -> [ClaudeEvent] {
         let requestID = obj["request_id"] as? String ?? obj["requestId"] as? String ?? UUID().uuidString
-        guard let req = obj["request"] as? [String: Any] else { return [] }
+        guard let req = obj["request"] as? [String: Any] else {
+            return []
+        }
         let subtype = req["subtype"] as? String ?? ""
-        if subtype == "hook_callback" { return [] }
+        if subtype == "hook_callback" {
+            return []
+        }
         if subtype == "oauth_token_refresh" {
-            return [.permissionRequested(PermissionRequest(id: requestID, sessionID: sessionID, requestID: requestID, toolName: "OAuth token refresh", title: "Claude wants to refresh OAuth", summary: "Denied by default for provider safety.", inputJSON: "{}", toolUseID: nil, parentToolUseID: nil, agentID: nil, risk: .network))]
+            return [.permissionRequested(PermissionRequest(
+                id: requestID,
+                sessionID: sessionID,
+                requestID: requestID,
+                toolName: "OAuth token refresh",
+                title: "Claude wants to refresh OAuth",
+                summary: "Denied by default for provider safety.",
+                inputJSON: "{}",
+                toolUseID: nil,
+                parentToolUseID: nil,
+                agentID: nil,
+                risk: .network
+            ))]
         }
         let toolName = req["tool_name"] as? String ?? req["toolName"] as? String ?? subtype
         let input = req["input"] ?? [:]
@@ -467,11 +603,23 @@ enum StreamEventParser {
 
     private static func classify(toolName: String, inputJSON: String) -> PermissionRequest.Risk {
         let lower = (toolName + " " + inputJSON).lowercased()
-        if lower.contains("rm ") || lower.contains("sudo") || lower.contains("chmod") || lower.contains("chown") || lower.contains("curl") && lower.contains("| sh") { return .destructive }
-        if toolName == "Bash" { return .shell }
-        if toolName == "Edit" || toolName == "Write" || lower.contains("write") || lower.contains("delete") { return .write }
-        if lower.contains("http") || lower.contains("browser") || lower.contains("fetch") { return .network }
-        if toolName.lowercased().contains("mcp") { return .externalMcp }
+        if
+            lower.contains("rm ") || lower.contains("sudo") || lower.contains("chmod") || lower.contains("chown") || lower.contains("curl") && lower
+                .contains("| sh") {
+            return .destructive
+        }
+        if toolName == "Bash" {
+            return .shell
+        }
+        if toolName == "Edit" || toolName == "Write" || lower.contains("write") || lower.contains("delete") {
+            return .write
+        }
+        if lower.contains("http") || lower.contains("browser") || lower.contains("fetch") {
+            return .network
+        }
+        if toolName.lowercased().contains("mcp") {
+            return .externalMcp
+        }
         return .readOnly
     }
 
@@ -480,17 +628,27 @@ enum StreamEventParser {
             if dict["type"] as? String == "content_block_delta", let delta = dict["delta"] as? [String: Any] {
                 return delta["text"] as? String ?? delta["thinking"] as? String
             }
-            if dict["type"] as? String == "text_delta" { return dict["text"] as? String }
-            for value in dict.values { if let found = textDelta(in: value) { return found } }
+            if dict["type"] as? String == "text_delta" {
+                return dict["text"] as? String
+            }
+            for value in dict.values {
+                if let found = textDelta(in: value) {
+                    return found
+                } }
         } else if let arr = obj as? [Any] {
-            for value in arr { if let found = textDelta(in: value) { return found } }
+            for value in arr {
+                if let found = textDelta(in: value) {
+                    return found
+                } }
         }
         return nil
     }
 
     private static func toolCall(in obj: [String: Any], sessionID: String) -> ToolCall? {
         let content = (obj["message"] as? [String: Any])?["content"] ?? obj["content"]
-        guard let items = content as? [[String: Any]] else { return nil }
+        guard let items = content as? [[String: Any]] else {
+            return nil
+        }
         for item in items where item["type"] as? String == "tool_use" {
             let id = item["id"] as? String ?? UUID().uuidString
             let name = item["name"] as? String ?? "Tool"
@@ -500,18 +658,31 @@ enum StreamEventParser {
     }
 
     private static func renderContent(_ value: Any?) -> String {
-        if let text = value as? String { return text }
+        if let text = value as? String {
+            return text
+        }
         if let arr = value as? [[String: Any]] {
             return arr.compactMap { item in
                 let type = item["type"] as? String ?? ""
-                if type == "text" { return item["text"] as? String }
-                if type == "thinking" { return item["thinking"] as? String }
-                if type == "tool_use" { return "[tool_use: \(item["name"] as? String ?? "Tool")]\n\(jsonString(item["input"] ?? [:]))" }
-                if type == "tool_result" { return "[tool_result]\n\(renderContent(item["content"]))" }
+                if type == "text" {
+                    return item["text"] as? String
+                }
+                if type == "thinking" {
+                    return item["thinking"] as? String
+                }
+                if type == "tool_use" {
+                    return "[tool_use: \(item["name"] as? String ?? "Tool")]\n\(jsonString(item["input"] ?? [:]))"
+                }
+                if type == "tool_result" {
+                    return "[tool_result]\n\(renderContent(item["content"]))"
+                }
                 return nil
-            }.joined(separator: "\n")
+            }
+            .joined(separator: "\n")
         }
-        if let value { return jsonString(value) }
+        if let value {
+            return jsonString(value)
+        }
         return ""
     }
 
@@ -519,10 +690,9 @@ enum StreamEventParser {
         guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else {
             return String(describing: value)
         }
-        return String(decoding: data, as: UTF8.self)
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
-
 
 struct ProviderRuntimeCapabilities: Equatable, Sendable {
     var isNativeAnthropic: Bool
@@ -558,14 +728,18 @@ enum ClaudeChildEnvironmentBuilder {
     static func build(base: [String: String], provider: ProviderRecord?, apiKey: String?, thinkingLevel: ThinkingLevel, enrichedPath: String) -> ClaudeEnvironmentPlan {
         var env = base
         var removed = envRemoveList
-        for key in envRemoveList { env.removeValue(forKey: key) }
+        for key in envRemoveList {
+            env.removeValue(forKey: key)
+        }
         env["PATH"] = enrichedPath
         let isNative = provider.map(isNativeAnthropic) ?? true
         let capabilities = provider.map { capabilities(for: $0, isNative: isNative) } ?? .nativeAnthropic
 
         if let provider {
             if !isNative {
-                for key in nonNativeRemoveList { env.removeValue(forKey: key) }
+                for key in nonNativeRemoveList {
+                    env.removeValue(forKey: key)
+                }
                 removed += nonNativeRemoveList
                 env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] = env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] ?? "1"
             }
@@ -582,9 +756,15 @@ enum ClaudeChildEnvironmentBuilder {
                 }
             }
             for (key, value) in provider.extraEnv where key != partialOverrideKey {
-                if value.isEmpty { env.removeValue(forKey: key); removed.append(key) } else { env[key] = value }
+                if value.isEmpty {
+                    env.removeValue(forKey: key); removed.append(key)
+                } else {
+                    env[key] = value
+                }
             }
-            if let proxy = provider.proxyURL, !proxy.isEmpty { inject(proxy: proxy, into: &env) }
+            if let proxy = provider.proxyURL, !proxy.isEmpty {
+                inject(proxy: proxy, into: &env)
+            }
         }
 
         if capabilities.isNativeAnthropic {
@@ -605,7 +785,9 @@ enum ClaudeChildEnvironmentBuilder {
     }
 
     private static func capabilities(for provider: ProviderRecord, isNative: Bool) -> ProviderRuntimeCapabilities {
-        if isNative { return .nativeAnthropic }
+        if isNative {
+            return .nativeAnthropic
+        }
         let override = provider.extraEnv[partialOverrideKey].flatMap(parseBoolOverride)
         return ProviderRuntimeCapabilities(
             isNativeAnthropic: false,
@@ -616,14 +798,24 @@ enum ClaudeChildEnvironmentBuilder {
 
     private static func parseBoolOverride(_ value: String) -> Bool? {
         switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "1", "true", "yes", "on": return true
-        case "0", "false", "no", "off": return false
+        case "1",
+             "true",
+             "yes",
+             "on": return true
+        case "0",
+             "false",
+             "no",
+             "off": return false
         default: return nil
         }
     }
 
     private static func inject(proxy: String, into env: inout [String: String]) {
-        for key in ["https_proxy", "http_proxy", "HTTPS_PROXY", "HTTP_PROXY"] { env[key] = proxy }
-        if proxy.lowercased().hasPrefix("socks") { env["all_proxy"] = proxy; env["ALL_PROXY"] = proxy }
+        for key in ["https_proxy", "http_proxy", "HTTPS_PROXY", "HTTP_PROXY"] {
+            env[key] = proxy
+        }
+        if proxy.lowercased().hasPrefix("socks") {
+            env["all_proxy"] = proxy; env["ALL_PROXY"] = proxy
+        }
     }
 }

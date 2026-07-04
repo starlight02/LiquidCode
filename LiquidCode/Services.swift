@@ -15,8 +15,12 @@ final class AppPaths: @unchecked Sendable {
 
     private init() {
         let fm = FileManager.default
-        let supportBase = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let logsBase = fm.urls(for: .libraryDirectory, in: .userDomainMask).first!.appendingPathComponent("Logs", isDirectory: true)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let supportBase = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? home.appendingPathComponent("Library/Application Support", isDirectory: true)
+        let libraryBase = fm.urls(for: .libraryDirectory, in: .userDomainMask).first
+            ?? home.appendingPathComponent("Library", isDirectory: true)
+        let logsBase = libraryBase.appendingPathComponent("Logs", isDirectory: true)
         appSupport = supportBase.appendingPathComponent("LiquidCode", isDirectory: true)
         logs = logsBase.appendingPathComponent("LiquidCode", isDirectory: true)
         providersFile = appSupport.appendingPathComponent("providers.json")
@@ -31,9 +35,12 @@ final class AppPaths: @unchecked Sendable {
 
 struct JSONFile {
     static func load<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = try? Data(contentsOf: url) else {
+            return nil
+        }
         return try? JSONDecoder.liquid.decode(type, from: data)
     }
+
     static func save<T: Encodable>(_ value: T, to url: URL) throws {
         let data = try JSONEncoder.liquid.encode(value)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -75,7 +82,9 @@ final class KeychainStore {
             add[kSecValueData as String] = data
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             let addStatus = SecItemAdd(add as CFDictionary, nil)
-            guard addStatus == errSecSuccess else { throw keychainError(addStatus) }
+            guard addStatus == errSecSuccess else {
+                throw keychainError(addStatus)
+            }
         } else if status != errSecSuccess {
             throw keychainError(status)
         }
@@ -91,9 +100,15 @@ final class KeychainStore {
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess else { throw keychainError(status) }
-        guard let data = item as? Data else { return nil }
+        if status == errSecItemNotFound {
+            return nil
+        }
+        guard status == errSecSuccess else {
+            throw keychainError(status)
+        }
+        guard let data = item as? Data else {
+            return nil
+        }
         return String(data: data, encoding: .utf8)
     }
 
@@ -107,7 +122,11 @@ final class KeychainStore {
     }
 
     private func keychainError(_ status: OSStatus) -> NSError {
-        NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: [NSLocalizedDescriptionKey: SecCopyErrorMessageString(status, nil) as String? ?? "Keychain error \(status)"])
+        NSError(
+            domain: NSOSStatusErrorDomain,
+            code: Int(status),
+            userInfo: [NSLocalizedDescriptionKey: SecCopyErrorMessageString(status, nil) as String? ?? "Keychain error \(status)"]
+        )
     }
 }
 
@@ -121,7 +140,9 @@ final class ProviderVault {
         JSONFile.load(ProviderFile.self, from: file) ?? ProviderFile(activeProviderID: nil, providers: [])
     }
 
-    func save(_ data: ProviderFile) throws { try JSONFile.save(data, to: file) }
+    func save(_ data: ProviderFile) throws {
+        try JSONFile.save(data, to: file)
+    }
 
     func setAPIKey(_ key: String, providerID: String) throws {
         try keychain.set(key, account: "provider:\(providerID):api-key")
@@ -130,12 +151,12 @@ final class ProviderVault {
     func apiKey(providerID: String) -> String? {
         try? keychain.get(account: "provider:\(providerID):api-key")
     }
+
     func deleteAPIKey(providerID: String) {
         keychain.delete(account: "provider:\(providerID):api-key")
     }
 
 }
-
 
 enum PathCapability: String, Sendable { case read, write, delete }
 
@@ -146,8 +167,10 @@ final class PathAccessManager: @unchecked Sendable {
     private var sessionGrants: [String: Set<String>] = [:]
 
     init(includeDefaultRoots: Bool = true) {
-        self.fixedRoots = []
-        guard includeDefaultRoots else { return }
+        fixedRoots = []
+        guard includeDefaultRoots else {
+            return
+        }
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
         [
@@ -157,16 +180,24 @@ final class PathAccessManager: @unchecked Sendable {
             home.appendingPathComponent("Library/Application Support/TOKENICODE", isDirectory: true),
             AppPaths.shared.appSupport,
             URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        ].forEach { addFixedRoot($0) }
+        ]
+        .forEach { addFixedRoot($0) }
     }
 
-    static func emptyForTests() -> PathAccessManager { PathAccessManager(includeDefaultRoots: false) }
+    static func emptyForTests() -> PathAccessManager {
+        PathAccessManager(includeDefaultRoots: false)
+    }
 
-    func registerCWD(_ path: String) { addFixedRoot(URL(fileURLWithPath: path, isDirectory: true)) }
+    func registerCWD(_ path: String) {
+        addFixedRoot(URL(fileURLWithPath: path, isDirectory: true))
+    }
+
     func addFixedRoot(_ url: URL) {
         let canonical = Self.canonicalURL(url)
         lock.lock(); defer { lock.unlock() }
-        if !fixedRoots.contains(where: { Self.path(canonical.path, startsWith: $0.path) }) { fixedRoots.append(canonical) }
+        if !fixedRoots.contains(where: { Self.path(canonical.path, startsWith: $0.path) }) {
+            fixedRoots.append(canonical)
+        }
     }
 
     func addGrant(sessionID: String, path: String) {
@@ -184,12 +215,22 @@ final class PathAccessManager: @unchecked Sendable {
         let canonical = Self.canonicalURL(URL(fileURLWithPath: path))
         let canonicalPath = canonical.path
         lock.lock(); defer { lock.unlock() }
-        if fixedRoots.contains(where: { Self.path(canonicalPath, startsWith: $0.path) }) { return canonical }
-        if let sessionID, let grants = sessionGrants[sessionID], grants.contains(where: { Self.path(canonicalPath, startsWith: $0) }) { return canonical }
-        throw NSError(domain: "LiquidCode.PathAccess", code: 403, userInfo: [NSLocalizedDescriptionKey: "Path '\(canonicalPath)' is outside the allowed workspace. Authorize it before \(capability.rawValue)."])
+        if fixedRoots.contains(where: { Self.path(canonicalPath, startsWith: $0.path) }) {
+            return canonical
+        }
+        if let sessionID, let grants = sessionGrants[sessionID], grants.contains(where: { Self.path(canonicalPath, startsWith: $0) }) {
+            return canonical
+        }
+        throw NSError(
+            domain: "LiquidCode.PathAccess",
+            code: 403,
+            userInfo: [NSLocalizedDescriptionKey: "Path '\(canonicalPath)' is outside the allowed workspace. Authorize it before \(capability.rawValue)."]
+        )
     }
 
-    static func canonicalPath(_ path: String) -> String { canonicalURL(URL(fileURLWithPath: path)).path }
+    static func canonicalPath(_ path: String) -> String {
+        canonicalURL(URL(fileURLWithPath: path)).path
+    }
 
     static func canonicalURL(_ url: URL) -> URL {
         let fm = FileManager.default
@@ -213,10 +254,12 @@ final class PathAccessManager: @unchecked Sendable {
     }
 
     fileprivate static func path(_ path: String, startsWith prefix: String) -> Bool {
-        let p = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
-        let r = URL(fileURLWithPath: prefix).standardizedFileURL.pathComponents
-        guard r.count <= p.count else { return false }
-        return zip(p, r).allSatisfy(==)
+        let pathComponents = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
+        let rootComponents = URL(fileURLWithPath: prefix).standardizedFileURL.pathComponents
+        guard rootComponents.count <= pathComponents.count else {
+            return false
+        }
+        return zip(pathComponents, rootComponents).allSatisfy(==)
     }
 }
 
@@ -286,21 +329,26 @@ final class DirectoryWatchManager: @unchecked Sendable {
         )
         let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
         let callback: FSEventStreamCallback = { _, info, numEvents, eventPaths, _, _ in
-            guard let info else { return }
+            guard let info else {
+                return
+            }
             let context = Unmanaged<WatchContext>.fromOpaque(info).takeUnretainedValue()
-            guard let manager = context.manager else { return }
+            guard let manager = context.manager else {
+                return
+            }
             let paths = (unsafeBitCast(eventPaths, to: NSArray.self) as? [String]) ?? []
             manager.handleEvents(root: context.root, eventPaths: Array(paths.prefix(numEvents)), onChange: context.onChange)
         }
-        guard let stream = FSEventStreamCreate(
-            kCFAllocatorDefault,
-            callback,
-            &context,
-            [root] as CFArray,
-            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.15,
-            flags
-        ) else {
+        guard
+            let stream = FSEventStreamCreate(
+                kCFAllocatorDefault,
+                callback,
+                &context,
+                [root] as CFArray,
+                FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+                0.15,
+                flags
+            ) else {
             throw NSError(domain: "LiquidCode.DirectoryWatchManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create watcher for \(root)"])
         }
         FSEventStreamSetDispatchQueue(stream, queue)
@@ -349,29 +397,43 @@ final class DirectoryWatchManager: @unchecked Sendable {
         let current = snapshotFingerprints(root: root)
         let diff = Set(diffPaths(previous: previous, current: current, root: root))
         lastFingerprints[root] = current
-        if !eventPaths.isEmpty && visibleEvents.isEmpty && diff.isEmpty { return }
+        if !eventPaths.isEmpty && visibleEvents.isEmpty && diff.isEmpty {
+            return
+        }
         let changed = Array(diff.union(visibleEvents)).sorted()
-        if !changed.isEmpty { onChange(changed) }
+        if !changed.isEmpty {
+            onChange(changed)
+        }
     }
 
     private func pollChanges(root: String, onChange: @escaping @Sendable ([String]) -> Void) {
-        guard watches[root] != nil else { return }
+        guard watches[root] != nil else {
+            return
+        }
         let previous = lastFingerprints[root] ?? snapshotFingerprints(root: root)
         let current = snapshotFingerprints(root: root)
         let changed = diffPaths(previous: previous, current: current, root: root)
         lastFingerprints[root] = current
-        if !changed.isEmpty { onChange(changed.sorted()) }
+        if !changed.isEmpty {
+            onChange(changed.sorted())
+        }
     }
 
     private func diffPaths(previous: [String: FileFingerprint], current: [String: FileFingerprint], root: String) -> [String] {
-        Set(previous.keys).union(current.keys)
+        Set(previous.keys)
+            .union(current.keys)
             .filter { previous[$0] != current[$0] }
             .filter { PathAccessManager.path($0, startsWith: root) && !isIgnoredPath($0, root: root) }
     }
 
     private func snapshotFingerprints(root: String) -> [String: FileFingerprint] {
         let rootURL = URL(fileURLWithPath: root, isDirectory: true)
-        guard let enumerator = FileManager.default.enumerator(at: rootURL, includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey, .fileSizeKey], options: [.skipsPackageDescendants]) else {
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: rootURL,
+                includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey, .fileSizeKey],
+                options: [.skipsPackageDescendants]
+            ) else {
             return [root: fingerprint(for: rootURL)]
         }
         var out: [String: FileFingerprint] = [root: fingerprint(for: rootURL)]
@@ -379,11 +441,15 @@ final class DirectoryWatchManager: @unchecked Sendable {
             let path = PathAccessManager.canonicalPath(url.path)
             let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             if isIgnoredPath(path, root: root) {
-                if isDirectory { enumerator.skipDescendants() }
+                if isDirectory {
+                    enumerator.skipDescendants()
+                }
                 continue
             }
             out[path] = fingerprint(for: url)
-            if out.count >= 256 { break }
+            if out.count >= 256 {
+                break
+            }
         }
         return out
     }
@@ -400,21 +466,54 @@ final class DirectoryWatchManager: @unchecked Sendable {
     private func isIgnoredPath(_ path: String, root: String) -> Bool {
         let rootComponents = URL(fileURLWithPath: root).standardizedFileURL.pathComponents
         let pathComponents = URL(fileURLWithPath: path).standardizedFileURL.pathComponents
-        guard pathComponents.count > rootComponents.count else { return false }
+        guard pathComponents.count > rootComponents.count else {
+            return false
+        }
         return pathComponents.dropFirst(rootComponents.count).contains { ignoredSegments.contains($0) }
     }
 }
 
 final class FileSystemService {
-    private let ignoredNames: Set<String> = [".git", ".claude", "node_modules", "__pycache__", ".artifacts", ".build", ".build-release", ".swiftpm", ".xcode-derived", "DerivedData", ".venv", "venv", "target", ".next", ".nuxt", ".parcel-cache", "coverage", ".turbo", ".svelte-kit", "dist", "build"]
+    private let ignoredNames: Set<String> = [
+        ".git",
+        ".claude",
+        "node_modules",
+        "__pycache__",
+        ".artifacts",
+        ".build",
+        ".build-release",
+        ".swiftpm",
+        ".xcode-derived",
+        "DerivedData",
+        ".venv",
+        "venv",
+        "target",
+        ".next",
+        ".nuxt",
+        ".parcel-cache",
+        "coverage",
+        ".turbo",
+        ".svelte-kit",
+        "dist",
+        "build"
+    ]
     private let access: PathAccessManager
 
-    init(access: PathAccessManager = .shared) { self.access = access }
+    init(access: PathAccessManager = .shared) {
+        self.access = access
+    }
 
-    func registerWorkspace(_ path: String) { access.registerCWD(path) }
-    func addGrant(sessionID: String, path: String) { access.addGrant(sessionID: sessionID, path: path) }
-    func clearGrants(sessionID: String) { access.clearGrants(sessionID: sessionID) }
-    func validate(_ path: String, sessionID: String?, capability: PathCapability) throws -> URL { try access.validate(path, sessionID: sessionID, capability: capability) }
+    func registerWorkspace(_ path: String) {
+        access.registerCWD(path)
+    }
+
+    func addGrant(sessionID: String, path: String) {
+        access.addGrant(sessionID: sessionID, path: path)
+    }
+
+    func clearGrants(sessionID: String) {
+        access.clearGrants(sessionID: sessionID)
+    }
 
     func loadTree(root: URL, sessionID: String? = nil, maxDepth: Int = 4) throws -> [FileNode] {
         let allowed = try access.validate(root.path, sessionID: sessionID, capability: .read)
@@ -422,26 +521,36 @@ final class FileSystemService {
     }
 
     private func buildChildren(_ url: URL, depth: Int, maxDepth: Int) -> [FileNode] {
-        guard depth <= maxDepth,
-              let urls = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return [] }
+        guard
+            depth <= maxDepth,
+            let urls = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
+            return []
+        }
         return urls
             .filter { !ignoredNames.contains($0.lastPathComponent) }
             .sorted { lhs, rhs in
                 let ld = (try? lhs.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
                 let rd = (try? rhs.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-                if ld != rd { return ld && !rd }
+                if ld != rd {
+                    return ld && !rd
+                }
                 return lhs.lastPathComponent.localizedStandardCompare(rhs.lastPathComponent) == .orderedAscending
             }
             .map { child in
                 let isDir = (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-                return FileNode(name: child.lastPathComponent, path: PathAccessManager.canonicalPath(child.path), isDirectory: isDir, children: isDir ? buildChildren(child, depth: depth + 1, maxDepth: maxDepth) : [])
+                return FileNode(
+                    name: child.lastPathComponent,
+                    path: PathAccessManager.canonicalPath(child.path),
+                    isDirectory: isDir,
+                    children: isDir ? buildChildren(child, depth: depth + 1, maxDepth: maxDepth) : []
+                )
             }
     }
 
     func readText(_ path: String, sessionID: String? = nil) throws -> String {
         let url = try access.validate(path, sessionID: sessionID, capability: .read)
         let data = try Data(contentsOf: url)
-        return String(data: data, encoding: .utf8) ?? String(decoding: data.prefix(512_000), as: UTF8.self)
+        return String(data: data, encoding: .utf8) ?? String(data: Data(data.prefix(512_000)), encoding: .isoLatin1) ?? ""
     }
 
     func imageInfo(_ path: String, sessionID: String? = nil) throws -> (size: String, dimensions: String) {
@@ -465,24 +574,38 @@ final class FileSystemService {
         let url = try access.validate(path, sessionID: sessionID, capability: .write)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     }
+
     func trash(_ path: String, sessionID: String? = nil) throws {
         let url = try access.validate(path, sessionID: sessionID, capability: .delete)
         var resultingURL: NSURL?; try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
     }
-    func delete(_ path: String, sessionID: String? = nil) throws { try trash(path, sessionID: sessionID) }
+
+    func delete(_ path: String, sessionID: String? = nil) throws {
+        try trash(path, sessionID: sessionID)
+    }
+
     func rename(_ path: String, to newPath: String, sessionID: String? = nil) throws {
         let src = try access.validate(path, sessionID: sessionID, capability: .write)
         let dst = try access.validate(newPath, sessionID: sessionID, capability: .write)
         try FileManager.default.moveItem(at: src, to: dst)
     }
-    func copy(_ path: String, to newPath: String, sessionID: String? = nil) throws {
-        let src = try access.validate(path, sessionID: sessionID, capability: .read)
-        let dst = try access.validate(newPath, sessionID: sessionID, capability: .write)
-        try FileManager.default.copyItem(at: src, to: dst)
+
+    func reveal(_ path: String, sessionID: String? = nil) throws {
+        NSWorkspace.shared.activateFileViewerSelecting([try access.validate(
+            path,
+            sessionID: sessionID,
+            capability: .read
+        )]) }
+
+    func open(_ path: String, sessionID: String? = nil) throws {
+        NSWorkspace.shared.open(try access.validate(path, sessionID: sessionID, capability: .read))
     }
-    func reveal(_ path: String, sessionID: String? = nil) throws { NSWorkspace.shared.activateFileViewerSelecting([try access.validate(path, sessionID: sessionID, capability: .read)]) }
-    func open(_ path: String, sessionID: String? = nil) throws { NSWorkspace.shared.open(try access.validate(path, sessionID: sessionID, capability: .read)) }
-    func openInVSCode(_ path: String, sessionID: String? = nil) throws { Process.launchedProcess(launchPath: "/usr/bin/env", arguments: ["code", try access.validate(path, sessionID: sessionID, capability: .read).path]) }
+
+    func openInVSCode(_ path: String, sessionID: String? = nil) throws {
+        Process.launchedProcess(
+            launchPath: "/usr/bin/env",
+            arguments: ["code", try access.validate(path, sessionID: sessionID, capability: .read).path]
+        ) }
 }
 
 final class MCPService {
@@ -500,9 +623,15 @@ final class MCPService {
     func saveAppServers(_ servers: [MCPServer]) throws {
         let obj: [String: Any] = ["mcpServers": Dictionary(uniqueKeysWithValues: servers.map { server in
             var payload: [String: Any] = ["type": server.transport]
-            if let command = server.command { payload["command"] = command }
-            if let url = server.url { payload["url"] = url }
-            if !server.args.isEmpty { payload["args"] = server.args }
+            if let command = server.command {
+                payload["command"] = command
+            }
+            if let url = server.url {
+                payload["url"] = url
+            }
+            if !server.args.isEmpty {
+                payload["args"] = server.args
+            }
             return (server.name, payload)
         })]
         let data = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
@@ -510,11 +639,16 @@ final class MCPService {
     }
 
     private func readMCPFile(_ url: URL, source: String) -> [MCPServer] {
-        guard let data = try? Data(contentsOf: url),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let rawServers = normalizedMCPServers(root["mcpServers"]) else { return [] }
+        guard
+            let data = try? Data(contentsOf: url),
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let rawServers = normalizedMCPServers(root["mcpServers"]) else {
+            return []
+        }
         return rawServers.compactMap { name, raw in
-            guard let dict = raw as? [String: Any] else { return nil }
+            guard let dict = raw as? [String: Any] else {
+                return nil
+            }
             let transport = dict["type"] as? String ?? (dict["url"] != nil ? "http" : "stdio")
             return MCPServer(
                 name: name,
@@ -526,29 +660,40 @@ final class MCPService {
                 source: source,
                 lastError: nil
             )
-        }.sorted { $0.name < $1.name }
+        }
+        .sorted { $0.name < $1.name }
     }
 
     private func normalizedMCPServers(_ value: Any?) -> [String: Any]? {
-        guard let outer = value as? [String: Any] else { return nil }
-        if let inner = outer["mcpServers"] as? [String: Any] { return inner }
+        guard let outer = value as? [String: Any] else {
+            return nil
+        }
+        if let inner = outer["mcpServers"] as? [String: Any] {
+            return inner
+        }
         return outer
     }
 }
 
 final class SkillService {
     private let access: PathAccessManager
-    init(access: PathAccessManager = .shared) { self.access = access }
+    init(access: PathAccessManager = .shared) {
+        self.access = access
+    }
 
     func loadSkills(projectPath: String?) -> [SkillInfo] {
         var roots: [(URL, String)] = []
         let home = FileManager.default.homeDirectoryForCurrentUser
         roots.append((home.appendingPathComponent(".claude/skills"), "global"))
         roots.append((home.appendingPathComponent(".config/claude/skills"), "global"))
-        if let projectPath { roots.append((URL(fileURLWithPath: projectPath).appendingPathComponent(".claude/skills"), "project")) }
+        if let projectPath {
+            roots.append((URL(fileURLWithPath: projectPath).appendingPathComponent(".claude/skills"), "project"))
+        }
         var skills: [SkillInfo] = []
         for (root, scope) in roots {
-            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else { continue }
+            guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else {
+                continue
+            }
             for case let url as URL in enumerator where url.lastPathComponent == "SKILL.md" {
                 let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
                 skills.append(parseSkill(text: text, path: url.path, scope: scope))
@@ -569,11 +714,15 @@ final class SkillService {
         var activeListKey: String?
         if lines.first == "---" {
             for line in lines.dropFirst() {
-                if line == "---" { break }
+                if line == "---" {
+                    break
+                }
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed.hasPrefix("-"), activeListKey == "allowed_tools" {
                     let value = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-                    if !value.isEmpty { allowedTools.append(Self.cleanedYAMLScalar(value)) }
+                    if !value.isEmpty {
+                        allowedTools.append(Self.cleanedYAMLScalar(value))
+                    }
                     continue
                 }
                 activeListKey = nil
@@ -583,12 +732,17 @@ final class SkillService {
                         name = Self.cleanedYAMLScalar(value)
                     case "description":
                         description = Self.cleanedYAMLScalar(value)
-                    case "disable_model_invocation", "disable-model-invocation":
+                    case "disable_model_invocation",
+                         "disable-model-invocation":
                         disabled = value.localizedCaseInsensitiveContains("true")
-                    case "allowed_tools", "allowed-tools":
+                    case "allowed_tools",
+                         "allowed-tools":
                         let parsed = Self.yamlListValue(value)
-                        if parsed.isEmpty, value.trimmingCharacters(in: .whitespaces).isEmpty { activeListKey = "allowed_tools" }
-                        else { allowedTools.append(contentsOf: parsed) }
+                        if parsed.isEmpty, value.trimmingCharacters(in: .whitespaces).isEmpty {
+                            activeListKey = "allowed_tools"
+                        } else {
+                            allowedTools.append(contentsOf: parsed)
+                        }
                     case "model":
                         model = Self.cleanedYAMLScalar(value)
                     case "context":
@@ -601,7 +755,9 @@ final class SkillService {
                 }
             }
         }
-        if description.isEmpty { description = lines.first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }) ?? "" }
+        if description.isEmpty {
+            description = lines.first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }) ?? ""
+        }
         return SkillInfo(
             name: name,
             description: description,
@@ -617,18 +773,25 @@ final class SkillService {
     }
 
     private static func yamlKeyValue(_ line: String) -> (key: String, value: String)? {
-        guard let colon = line.firstIndex(of: ":") else { return nil }
+        guard let colon = line.firstIndex(of: ":") else {
+            return nil
+        }
         let key = line[..<colon].trimmingCharacters(in: .whitespacesAndNewlines)
         let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-        guard !key.isEmpty else { return nil }
+        guard !key.isEmpty else {
+            return nil
+        }
         return (key, value)
     }
 
     private static func yamlListValue(_ value: String) -> [String] {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
+        guard !trimmed.isEmpty else {
+            return []
+        }
         if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
-            return trimmed.dropFirst().dropLast()
+            return trimmed.dropFirst()
+                .dropLast()
                 .split(separator: ",")
                 .map { cleanedYAMLScalar(String($0)) }
                 .filter { !$0.isEmpty }
@@ -638,7 +801,9 @@ final class SkillService {
 
     private static func cleanedYAMLScalar(_ raw: String) -> String {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let comment = text.firstIndex(of: "#") { text = String(text[..<comment]).trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let comment = text.firstIndex(of: "#") {
+            text = String(text[..<comment]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         if (text.hasPrefix("\"") && text.hasSuffix("\"")) || (text.hasPrefix("'") && text.hasSuffix("'")) {
             text = String(text.dropFirst().dropLast())
         }
@@ -649,48 +814,69 @@ final class SkillService {
         let url = try access.validate(skill.path, sessionID: nil, capability: .write)
         try skill.content.write(to: url, atomically: true, encoding: .utf8)
     }
+
     func deleteSkill(_ skill: SkillInfo) throws {
         let url = try access.validate(skill.path, sessionID: nil, capability: .delete)
         try FileManager.default.removeItem(at: url)
     }
 }
 
-
 enum SessionJSONLCodec {
     static func parsedObjects(path: String) -> [[String: Any]] {
-        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return [] }
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return []
+        }
         return content.split(separator: "\n").compactMap { line in
-            guard let data = line.data(using: .utf8) else { return nil }
+            guard let data = line.data(using: .utf8) else {
+                return nil
+            }
             return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         }
     }
 
     static func searchableText(from obj: [String: Any]) -> (role: ChatMessage.Role, text: String)? {
-        if obj["isMeta"] as? Bool == true || obj["isSidechain"] as? Bool == true { return nil }
+        if obj["isMeta"] as? Bool == true || obj["isSidechain"] as? Bool == true {
+            return nil
+        }
         let type = obj["type"] as? String ?? ""
         let message = obj["message"] as? [String: Any]
         let roleRaw = message?["role"] as? String ?? obj["role"] as? String ?? type
         let role: ChatMessage.Role
-        if type == "human" || roleRaw == "human" || roleRaw == "user" || type == "user" { role = .user }
-        else if roleRaw == "assistant" || type == "assistant" { role = .assistant }
-        else { return nil }
+        if type == "human" || roleRaw == "human" || roleRaw == "user" || type == "user" {
+            role = .user
+        } else if roleRaw == "assistant" || type == "assistant" {
+            role = .assistant
+        } else {
+            return nil
+        }
         let text = extractPlainText(message?["content"] ?? obj["content"])
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
         return (role, text)
     }
 
     static func extractSessionInfo(_ url: URL) -> (preview: String, cwd: String) {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return ("", "") }
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+            return ("", "")
+        }
         var preview = ""
         var cwd = ""
         for line in content.split(separator: "\n").prefix(100) {
-            guard let data = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-            if cwd.isEmpty, let value = obj["cwd"] as? String, !value.isEmpty { cwd = value }
+            guard
+                let data = line.data(using: .utf8),
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+            if cwd.isEmpty, let value = obj["cwd"] as? String, !value.isEmpty {
+                cwd = value
+            }
             if preview.isEmpty, let match = searchableText(from: obj), match.role == .user {
                 preview = String(match.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
             }
-            if !cwd.isEmpty && !preview.isEmpty { break }
+            if !cwd.isEmpty && !preview.isEmpty {
+                break
+            }
         }
         return (preview, cwd)
     }
@@ -738,7 +924,9 @@ enum SessionJSONLCodec {
             separator = "/"
         }
         let parts = trimmed.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
-        guard !parts.isEmpty else { return encoded }
+        guard !parts.isEmpty else {
+            return encoded
+        }
         var decoded: [String] = []
         var index = 0
         while index < parts.count {
@@ -749,7 +937,7 @@ enum SessionJSONLCodec {
             var found = false
             if index < upper {
                 for end in stride(from: upper, through: index + 1, by: -1) {
-                    let slice = Array(parts[index..<end])
+                    let slice = Array(parts[index ..< end])
                     for joiner in ["-", " ", "."] {
                         let candidate = slice.joined(separator: joiner)
                         let full = parent + (parent.hasSuffix(separator) ? "" : separator) + candidate
@@ -760,19 +948,23 @@ enum SessionJSONLCodec {
                             break
                         }
                     }
-                    if found { break }
+                    if found {
+                        break
+                    }
                 }
             }
             if !found && parts[index].isEmpty {
                 let start = index
-                while index < parts.count && parts[index].isEmpty { index += 1 }
+                while index < parts.count && parts[index].isEmpty {
+                    index += 1
+                }
                 let prefix = String(repeating: ".", count: index - start)
                 if index < parts.count {
                     var dotFound = false
                     let remainingUpper = min(parts.count, index + 10)
                     for end in stride(from: remainingUpper, through: index + 1, by: -1) {
                         for joiner in ["-", " ", "."] {
-                            let candidate = prefix + Array(parts[index..<end]).joined(separator: joiner)
+                            let candidate = prefix + Array(parts[index ..< end]).joined(separator: joiner)
                             let full = parent + (parent.hasSuffix(separator) ? "" : separator) + candidate
                             if fileManager.fileExists(atPath: full) {
                                 decoded.append(candidate)
@@ -781,7 +973,9 @@ enum SessionJSONLCodec {
                                 break
                             }
                         }
-                        if dotFound { break }
+                        if dotFound {
+                            break
+                        }
                     }
                     if !dotFound {
                         decoded.append(prefix + parts[index])
@@ -800,40 +994,62 @@ enum SessionJSONLCodec {
     }
 
     private static func extractPlainText(_ value: Any?) -> String {
-        if let text = value as? String { return text }
+        if let text = value as? String {
+            return text
+        }
         if let blocks = value as? [[String: Any]] {
             return blocks.compactMap { block in
                 let type = block["type"] as? String ?? ""
-                if type == "tool_result" || type == "tool_use" || type == "thinking" || type == "image" { return nil }
-                if type == "text", let text = block["text"] as? String { return text }
-                if let nested = block["content"] { return extractPlainText(nested) }
+                if type == "tool_result" || type == "tool_use" || type == "thinking" || type == "image" {
+                    return nil
+                }
+                if type == "text", let text = block["text"] as? String {
+                    return text
+                }
+                if let nested = block["content"] {
+                    return extractPlainText(nested)
+                }
                 return nil
-            }.joined(separator: " ")
+            }
+            .joined(separator: " ")
         }
-        if let blocks = value as? [Any] { return blocks.map { extractPlainText($0) }.joined(separator: " ") }
+        if let blocks = value as? [Any] {
+            return blocks.map { extractPlainText($0) }.joined(separator: " ")
+        }
         return ""
     }
 
     private static func renderAssistantMarkdown(_ value: Any?, conversationOnly: Bool) -> String {
-        guard let blocks = value as? [[String: Any]] else { return extractPlainText(value) }
+        guard let blocks = value as? [[String: Any]] else {
+            return extractPlainText(value)
+        }
         return blocks.compactMap { block in
             let type = block["type"] as? String ?? ""
-            if type == "text" { return block["text"] as? String }
-            if conversationOnly { return nil }
+            if type == "text" {
+                return block["text"] as? String
+            }
+            if conversationOnly {
+                return nil
+            }
             if type == "tool_use" {
                 let name = block["name"] as? String ?? "Tool"
                 return "**Tool: \(name)**\n\n```json\n\(prettyJSON(block["input"] ?? [:]))\n```"
             }
             return nil
-        }.joined(separator: "\n\n")
+        }
+        .joined(separator: "\n\n")
     }
 
     private static func prettyJSON(_ value: Any) -> String {
-        guard JSONSerialization.isValidJSONObject(value),
-              let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else { return String(describing: value) }
-        return String(decoding: data, as: UTF8.self)
+        guard
+            JSONSerialization.isValidJSONObject(value),
+            let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]) else {
+            return String(describing: value)
+        }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
+
 final class SessionIndexService {
     private let home: URL
     private let fileManager: FileManager
@@ -843,7 +1059,9 @@ final class SessionIndexService {
         self.fileManager = fileManager
     }
 
-    func trackedSessionsPath() -> URL { home.appendingPathComponent(".tokenicode/tracked_sessions.txt") }
+    func trackedSessionsPath() -> URL {
+        home.appendingPathComponent(".tokenicode/tracked_sessions.txt")
+    }
 
     func loadTrackedSessionIDs() -> Set<String> {
         let path = trackedSessionsPath()
@@ -851,10 +1069,14 @@ final class SessionIndexService {
         if let text = try? String(contentsOf: path, encoding: .utf8) {
             for line in text.split(separator: "\n") {
                 let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty && !trimmed.hasPrefix("desk_") { ids.insert(trimmed) }
+                if !trimmed.isEmpty && !trimmed.hasPrefix("desk_") {
+                    ids.insert(trimmed)
+                }
             }
         }
-        if ids.isEmpty { ids = migrateTrackedIDsFromSessionNames() }
+        if ids.isEmpty {
+            ids = migrateTrackedIDsFromSessionNames()
+        }
         _ = rebuildPathIndexIfNeeded(for: ids)
         writeTrackedSessionIDs(ids)
         return ids
@@ -862,12 +1084,19 @@ final class SessionIndexService {
 
     func trackSession(_ id: String, projectDir: String? = nil, path: String? = nil) {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("desk_") else { return }
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("desk_") else {
+            return
+        }
         var ids = loadTrackedSessionIDs()
         ids.insert(trimmed)
         var index = loadSessionPathIndex()
-        if let path, !path.isEmpty { index[trimmed] = path }
-        else if let projectDir, !projectDir.isEmpty { index[trimmed] = defaultSessionPath(id: trimmed, projectDir: projectDir).path }
+        if let path, !path.isEmpty {
+            index[trimmed] = path
+        } else if
+            let projectDir,
+            !projectDir.isEmpty {
+            index[trimmed] = defaultSessionPath(id: trimmed, projectDir: projectDir).path
+        }
         writeTrackedSessionIDs(ids)
         writeSessionPathIndex(index)
     }
@@ -883,10 +1112,14 @@ final class SessionIndexService {
 
     func listSessions() -> [SessionRecord] {
         let tracked = loadTrackedSessionIDs()
-        guard !tracked.isEmpty else { return [] }
+        guard !tracked.isEmpty else {
+            return []
+        }
         let index = rebuildPathIndexIfNeeded(for: tracked)
         let sessions = tracked.compactMap { id -> SessionRecord? in
-            guard let file = sessionPath(for: id, index: index) else { return nil }
+            guard let file = sessionPath(for: id, index: index) else {
+                return nil
+            }
             let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey])
             let info = SessionJSONLCodec.extractSessionInfo(file)
             let encodedProject = file.deletingLastPathComponent().lastPathComponent == "sessions"
@@ -895,10 +1128,20 @@ final class SessionIndexService {
             let decodedProjectDir = SessionJSONLCodec.decodeProjectName(encodedProject, fileManager: fileManager)
             let projectDirPath = info.cwd.isEmpty ? decodedProjectDir : info.cwd
             let preview = info.preview.isEmpty ? "Claude session" : info.preview
-            return SessionRecord(id: id, path: file.path, project: projectDirPath, projectDir: projectDirPath, modifiedAt: attrs?.contentModificationDate ?? .distantPast, preview: preview, cliResumeID: id)
+            return SessionRecord(
+                id: id,
+                path: file.path,
+                project: projectDirPath,
+                projectDir: projectDirPath,
+                modifiedAt: attrs?.contentModificationDate ?? .distantPast,
+                preview: preview,
+                cliResumeID: id
+            )
         }
         return sessions.sorted { lhs, rhs in
-            if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt > rhs.modifiedAt }
+            if lhs.modifiedAt != rhs.modifiedAt {
+                return lhs.modifiedAt > rhs.modifiedAt
+            }
             return lhs.id < rhs.id
         }
     }
@@ -915,12 +1158,17 @@ final class SessionIndexService {
         try SessionJSONLCodec.exportJSON(path: path, outputPath: outputPath)
     }
 
-    static func decodeProjectName(_ encoded: String) -> String { SessionJSONLCodec.decodeProjectName(encoded) }
+    static func decodeProjectName(_ encoded: String) -> String {
+        SessionJSONLCodec.decodeProjectName(encoded)
+    }
 
     private func migrateTrackedIDsFromSessionNames() -> Set<String> {
         let names = home.appendingPathComponent(".claude/tokenicode_session_names.json")
-        guard let data = try? Data(contentsOf: names),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+        guard
+            let data = try? Data(contentsOf: names),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
         let ids = Set(object.keys.filter { !$0.hasPrefix("desk_") })
         _ = rebuildPathIndexIfNeeded(for: ids)
         let indexedIDs = Set(loadSessionPathIndex().keys)
@@ -928,10 +1176,14 @@ final class SessionIndexService {
     }
 
     private func rebuildPathIndexIfNeeded(for ids: Set<String>) -> [String: String] {
-        guard !ids.isEmpty else { return [:] }
+        guard !ids.isEmpty else {
+            return [:]
+        }
         var index = loadSessionPathIndex().filter { fileManager.fileExists(atPath: $0.value) }
         let missing = ids.subtracting(index.keys)
-        guard !missing.isEmpty else { return index }
+        guard !missing.isEmpty else {
+            return index
+        }
         for (id, url) in locateTrackedSessionFiles(ids: missing) {
             index[id] = url.path
         }
@@ -941,12 +1193,18 @@ final class SessionIndexService {
 
     private func locateTrackedSessionFiles(ids: Set<String>) -> [String: URL] {
         let root = home.appendingPathComponent(".claude/projects", isDirectory: true)
-        guard let projectDirs = try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return [:] }
+        guard let projectDirs = try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            return [:]
+        }
         var remaining = ids
         var found: [String: URL] = [:]
         for projectDir in projectDirs {
-            guard !remaining.isEmpty else { break }
-            guard ((try? projectDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) else { continue }
+            guard !remaining.isEmpty else {
+                break
+            }
+            guard (try? projectDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false else {
+                continue
+            }
             for id in remaining {
                 let candidates = [
                     projectDir.appendingPathComponent(id).appendingPathExtension("jsonl"),
@@ -962,7 +1220,9 @@ final class SessionIndexService {
     }
 
     private func sessionPath(for id: String, index: [String: String]) -> URL? {
-        if let stored = index[id], fileManager.fileExists(atPath: stored) { return URL(fileURLWithPath: stored) }
+        if let stored = index[id], fileManager.fileExists(atPath: stored) {
+            return URL(fileURLWithPath: stored)
+        }
         return nil
     }
 
@@ -977,7 +1237,9 @@ final class SessionIndexService {
         String(path.map { $0 == "/" || $0 == " " || $0 == "." ? "-" : $0 })
     }
 
-    private func sessionPathIndexURL() -> URL { home.appendingPathComponent(".tokenicode/tracked_session_paths.json") }
+    private func sessionPathIndexURL() -> URL {
+        home.appendingPathComponent(".tokenicode/tracked_session_paths.json")
+    }
 
     private func loadSessionPathIndex() -> [String: String] {
         JSONFile.load([String: String].self, from: sessionPathIndexURL()) ?? [:]
@@ -1006,7 +1268,9 @@ struct ShellResult {
 struct Shell {
     static func capture(_ launchPath: String, _ args: [String], environment: [String: String]? = nil) -> String? {
         let result = run(launchPath, args, environment: environment)
-        guard result.status == 0 else { return nil }
+        guard result.status == 0 else {
+            return nil
+        }
         let text = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
     }
@@ -1019,7 +1283,9 @@ struct Shell {
         process.arguments = args
         process.standardOutput = out
         process.standardError = err
-        if let environment { process.environment = environment }
+        if let environment {
+            process.environment = environment
+        }
         do { try process.run() } catch { return ShellResult(status: -1, stdout: "", stderr: error.localizedDescription) }
         process.waitUntilExit()
         let stdout = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""

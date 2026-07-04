@@ -1,6 +1,6 @@
-import XCTest
 import CryptoKit
 @testable import LiquidCode
+import XCTest
 
 final class RuntimeParityTests: XCTestCase {
     func testPathAccessFixedRootGrantAndRevocation() throws {
@@ -125,14 +125,14 @@ final class RuntimeParityTests: XCTestCase {
             supportsThinkingEffort: false
         )
 
-        let args = ClaudeCLIEngine.buildLaunchArguments(
+        let args = ClaudeCLIEngine.buildLaunchArguments(.init(
             mcpConfigPath: "/tmp/mcp.json",
             resumeSessionID: "resume-1",
             model: "provider-model",
             mode: .plan,
             thinkingLevel: .high,
             capabilities: capabilities
-        )
+        ))
 
         XCTAssertFalse(args.contains("--include-partial-messages"))
         XCTAssertFalse(args.contains("--settings"))
@@ -172,7 +172,9 @@ final class RuntimeParityTests: XCTestCase {
             "message": ["role": "user", "content": [["type": "text", "text": "change file"]]]
         ]
         let events = StreamEventParser.events(from: echo, sessionID: "s1")
-        guard case .message(_, let message) = try XCTUnwrap(events.first) else { return XCTFail("expected message") }
+        guard case .message(_, let message) = try XCTUnwrap(events.first) else {
+            return XCTFail("expected message")
+        }
         XCTAssertEqual(message.role, .user)
         XCTAssertEqual(message.checkpointUuid, checkpoint)
 
@@ -182,12 +184,17 @@ final class RuntimeParityTests: XCTestCase {
             "message": ["role": "user", "content": [["type": "tool_result", "content": "ok"]]]
         ]
         let toolEvents = StreamEventParser.events(from: toolResult, sessionID: "s1")
-        guard case .message(_, let toolMessage) = try XCTUnwrap(toolEvents.first) else { return XCTFail("expected tool result message") }
+        guard case .message(_, let toolMessage) = try XCTUnwrap(toolEvents.first) else {
+            return XCTFail("expected tool result message")
+        }
         XCTAssertNil(toolMessage.checkpointUuid)
     }
 
     func testPermissionAndRewindPayloadsUseControlProtocolShape() throws {
-        let permission = try ClaudeControlProtocol.permissionResponseJSON(requestID: "req-1", response: ["behavior": "allow", "updatedInput": ["file_path": "a.txt"], "toolUseID": "tool-1"])
+        let permission = try ClaudeControlProtocol.permissionResponseJSON(
+            requestID: "req-1",
+            response: ["behavior": "allow", "updatedInput": ["file_path": "a.txt"], "toolUseID": "tool-1"]
+        )
         XCTAssertTrue(permission.contains("\"type\":\"control_response\""))
         XCTAssertTrue(permission.contains("\"request_id\":\"req-1\""))
         XCTAssertTrue(permission.contains("\"toolUseID\":\"tool-1\""))
@@ -206,7 +213,9 @@ final class RuntimeParityTests: XCTestCase {
         let exp = expectation(description: "watcher emits change")
         exp.assertForOverFulfill = false
         try watcher.watchDirectory(root.path) { paths in
-            if paths.contains(where: { $0 == root.path || $0.hasSuffix("created.txt") }) { exp.fulfill() }
+            if paths.contains(where: { $0 == root.path || $0.hasSuffix("created.txt") }) {
+                exp.fulfill()
+            }
         }
         try "hello".write(to: root.appendingPathComponent("created.txt"), atomically: true, encoding: .utf8)
         wait(for: [exp], timeout: 1.5)
@@ -230,9 +239,13 @@ final class RuntimeParityTests: XCTestCase {
         try watcher.watchDirectory(root.path) { paths in
             events.append(paths)
             if paths.contains(where: { $0.hasSuffix("Sources/Feature/Nested.swift") }) {
-                if !FileManager.default.fileExists(atPath: watchedFile.path) { deleteExp.fulfill() }
-                else if (try? String(contentsOf: watchedFile, encoding: .utf8)) == "modified" { modifyExp.fulfill() }
-                else { createExp.fulfill() }
+                if !FileManager.default.fileExists(atPath: watchedFile.path) {
+                    deleteExp.fulfill()
+                } else if (try? String(contentsOf: watchedFile, encoding: .utf8)) == "modified" {
+                    modifyExp.fulfill()
+                } else {
+                    createExp.fulfill()
+                }
             } else if events.values.count >= 3, !FileManager.default.fileExists(atPath: watchedFile.path) {
                 deleteExp.fulfill()
             }
@@ -259,7 +272,9 @@ final class RuntimeParityTests: XCTestCase {
         let exp = expectation(description: "watcher emits visible change without ignored tree")
         exp.assertForOverFulfill = false
         try watcher.watchDirectory(root.path) { paths in
-            guard paths.contains(where: { $0.hasSuffix("src/main.swift") }) else { return }
+            guard paths.contains(where: { $0.hasSuffix("src/main.swift") }) else {
+                return
+            }
             XCTAssertFalse(paths.contains(where: { $0.contains("/node_modules/") || $0.hasSuffix("/node_modules") }), paths.joined(separator: "\n"))
             XCTAssertLessThan(paths.count, 32, "Ignored dependency trees should not flood a single visible change snapshot")
             exp.fulfill()
@@ -285,7 +300,9 @@ final class RuntimeParityTests: XCTestCase {
 
         try watcher.watchDirectory(root.path) { paths in
             recorder.append(paths)
-            guard paths.contains(where: { $0.hasSuffix("Sources/Main.swift") }) else { return }
+            guard paths.contains(where: { $0.hasSuffix("Sources/Main.swift") }) else {
+                return
+            }
             XCTAssertFalse(paths.contains(where: { $0.contains("/.artifacts/") || $0.contains("/.xcode-derived/") }), paths.joined(separator: "\n"))
             exp.fulfill()
         }
@@ -302,7 +319,7 @@ final class RuntimeParityTests: XCTestCase {
         let root = try temporaryDirectory(prefix: "lc-watch-large")
         let visible = root.appendingPathComponent("src", isDirectory: true)
         try FileManager.default.createDirectory(at: visible, withIntermediateDirectories: true)
-        for index in 0..<80 {
+        for index in 0 ..< 80 {
             try "seed \(index)".write(to: visible.appendingPathComponent(String(format: "file-%03d.txt", index)), atomically: true, encoding: .utf8)
         }
         let target = visible.appendingPathComponent("file-073.txt")
@@ -312,7 +329,9 @@ final class RuntimeParityTests: XCTestCase {
         let exp = expectation(description: "watcher emits incremental modify only")
         exp.assertForOverFulfill = false
         try watcher.watchDirectory(root.path) { paths in
-            guard !paths.isEmpty else { return }
+            guard !paths.isEmpty else {
+                return
+            }
             XCTAssertLessThan(paths.count, 10, paths.joined(separator: "\n"))
             XCTAssertFalse(paths.contains(unrelated), paths.joined(separator: "\n"))
             exp.fulfill()
@@ -345,7 +364,6 @@ final class RuntimeParityTests: XCTestCase {
         }
         XCTFail("External file creation did not update changedFiles and fileTree within 1s. changed=\(model.changedFiles)")
     }
-
 
     func testMCPScratchSupportsSingleAndDoubleNestedAndCleanup() throws {
         let home = try temporaryDirectory(prefix: "lc-home")
@@ -393,13 +411,27 @@ final class RuntimeParityTests: XCTestCase {
         let exitExp = expectation(description: "engine emits exit")
         let engine = ClaudeCLIEngine(home: home, environment: ["PATH": fake.deletingLastPathComponent().path, "HOME": home.path])
 
-        try engine.startSession(.init(prompt: "", cwd: home.path, model: nil, sessionID: "desk/cleanup", resumeSessionID: nil, thinkingLevel: .off, mode: .ask, provider: nil, providerAPIKey: nil)) { event in
+        try engine.startSession(.init(
+            prompt: "",
+            cwd: home.path,
+            model: nil,
+            sessionID: "desk/cleanup",
+            resumeSessionID: nil,
+            thinkingLevel: .off,
+            mode: .ask,
+            provider: nil,
+            providerAPIKey: nil
+        )) { event in
             events.append(event)
-            if case .exited(let sessionID) = event, sessionID == "desk/cleanup" { exitExp.fulfill() }
+            if case .exited(let sessionID) = event, sessionID == "desk/cleanup" {
+                exitExp.fulfill()
+            }
         }
 
         wait(for: [exitExp], timeout: 2)
-        XCTAssertEqual(events.values.compactMap { event -> String? in if case .exited(let id) = event { return id }; return nil }, ["desk/cleanup"])
+        XCTAssertEqual(events.values.compactMap { event -> String? in if case .exited(let id) = event {
+            return id
+        }; return nil }, ["desk/cleanup"])
         XCTAssertEqual(engine.listActiveProcesses(), [])
         XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(".tokenicode/mcp-session-desk_cleanup.json").path))
     }
@@ -412,10 +444,10 @@ final class RuntimeParityTests: XCTestCase {
         let pids = home.appendingPathComponent("pids.txt")
         let terms = home.appendingPathComponent("terms.txt")
         try makeExecutableScript(at: fake, body: #"""
-echo "$$" >> "$LIQUID_TEST_PIDS"
-trap 'echo "$$" >> "$LIQUID_TEST_TERMS"; exit 0' TERM INT
-while true; do sleep 0.1; done
-"""#)
+            echo "$$" >> "$LIQUID_TEST_PIDS"
+            trap 'echo "$$" >> "$LIQUID_TEST_TERMS"; exit 0' TERM INT
+            while true; do sleep 0.1; done
+        """#)
         let env = [
             "PATH": fake.deletingLastPathComponent().path,
             "HOME": home.path,
@@ -423,7 +455,17 @@ while true; do sleep 0.1; done
             "LIQUID_TEST_TERMS": terms.path
         ]
         let engine = ClaudeCLIEngine(home: home, environment: env)
-        let request = ClaudeSessionStartRequest(prompt: "", cwd: home.path, model: nil, sessionID: "same-session", resumeSessionID: nil, thinkingLevel: .off, mode: .ask, provider: nil, providerAPIKey: nil)
+        let request = ClaudeSessionStartRequest(
+            prompt: "",
+            cwd: home.path,
+            model: nil,
+            sessionID: "same-session",
+            resumeSessionID: nil,
+            thinkingLevel: .off,
+            mode: .ask,
+            provider: nil,
+            providerAPIKey: nil
+        )
 
         try engine.startSession(request) { _ in }
         XCTAssertTrue(waitUntil(timeout: 2) { lineCount(at: pids) == 1 })
@@ -451,10 +493,10 @@ while true; do sleep 0.1; done
         try "broken".write(to: target, atomically: true, encoding: .utf8)
         try FileManager.default.createDirectory(at: fake.deletingLastPathComponent(), withIntermediateDirectories: true)
         try makeExecutableScript(at: fake, body: #"""
-printf '%s\n' "$*" > "$LIQUID_REWIND_ARGS"
-printf 'restored\n' > edited.txt
-echo 'rewind ok'
-"""#)
+            printf '%s\n' "$*" > "$LIQUID_REWIND_ARGS"
+            printf 'restored\n' > edited.txt
+            echo 'rewind ok'
+        """#)
         let env = ["PATH": fake.deletingLastPathComponent().path, "HOME": home.path, "LIQUID_REWIND_ARGS": argsOut.path]
         let engine = ClaudeCLIEngine(home: home, environment: env)
         let checkpoint = "123e4567-e89b-12d3-a456-426614174000"
@@ -482,7 +524,8 @@ echo 'rewind ok'
         let jsonl = [
             #"{"type":"system","cwd":"\#(project.path)"}"#,
             #"{"type":"human","uuid":"cp-1","message":{"role":"user","content":[{"type":"text","text":"please find needle in project"}]}}"#,
-            #"{"type":"assistant","uuid":"a-1","parent_uuid":"cp-1","message":{"role":"assistant","content":[{"type":"text","text":"needle response"},{"type":"tool_use","id":"tool-1","name":"Read","input":{"file_path":"a.txt"}}]}}"#
+            #"{"type":"assistant","uuid":"a-1","parent_uuid":"cp-1","message":{"role":"assistant","content":[{"type":"text","text":"needle response"},"# +
+                #"{"type":"tool_use","id":"tool-1","name":"Read","input":{"file_path":"a.txt"}}]}}"#
         ].joined(separator: "\n") + "\n"
         try jsonl.write(to: trackedFile, atomically: true, encoding: .utf8)
         try jsonl.write(to: untrackedFile, atomically: true, encoding: .utf8)
@@ -495,9 +538,6 @@ echo 'rewind ok'
         XCTAssertEqual(sessions.map(\.id), [trackedID])
         XCTAssertEqual(sessions.first?.projectDir, project.path)
         XCTAssertEqual(SessionIndexService.decodeProjectName(encoded), project.path)
-
-        let search = SearchService().search(query: "needle", sessions: sessions)
-        XCTAssertEqual(search, [SessionSearchResult(sessionID: trackedID, snippet: "please find needle in project", matchCount: 2, matchRole: .user)])
 
         let messages = index.loadMessages(path: trackedFile.path)
         XCTAssertEqual(messages.first?.checkpointUuid, "cp-1")
@@ -572,20 +612,21 @@ echo 'rewind ok'
         let npmBin = home.appendingPathComponent(".liquidcode/npm/bin", isDirectory: true)
         try FileManager.default.createDirectory(at: npmBin, withIntermediateDirectories: true)
         let fakeNPM = npmBin.appendingPathComponent("npm")
-        try makeExecutableScript(at: fakeNPM, body: #"""
-prefix=""
-for arg in "$@"; do
-  case "$arg" in
-    --prefix=*) prefix="${arg#--prefix=}" ;;
-  esac
-done
-mkdir -p "$prefix/bin"
-cat > "$prefix/bin/claude" <<'EOS'
-#!/bin/sh
-echo 'Claude Code 4.5.6'
-EOS
-chmod +x "$prefix/bin/claude"
-"""#)
+        let fakeNPMBody = [
+            "prefix=\"\"",
+            "for arg in \"$@\"; do",
+            "case \"$arg\" in",
+            "--prefix=*) prefix=\"${arg#--prefix=}\" ;;",
+            "esac",
+            "done",
+            "mkdir -p \"$prefix/bin\"",
+            "cat > \"$prefix/bin/claude\" <<'EOS'",
+            "#!/bin/sh",
+            "echo 'Claude Code 4.5.6'",
+            "EOS",
+            "chmod +x \"$prefix/bin/claude\""
+        ].joined(separator: "\n")
+        try makeExecutableScript(at: fakeNPM, body: fakeNPMBody)
         let missingRelease = try temporaryDirectory(prefix: "lc-cli-missing-release")
         let events = EventRecorder()
         let service = CLIService(home: home, environment: ["PATH": ""], releaseBases: [missingRelease])
@@ -600,7 +641,9 @@ chmod +x "$prefix/bin/claude"
     }
 
     private func argumentValue(after flag: String, in args: [String]) -> String? {
-        guard let index = args.firstIndex(of: flag), index + 1 < args.count else { return nil }
+        guard let index = args.firstIndex(of: flag), index + 1 < args.count else {
+            return nil
+        }
         return args[index + 1]
     }
 
@@ -613,14 +656,18 @@ chmod +x "$prefix/bin/claude"
     private func waitUntil(timeout: TimeInterval, interval: TimeInterval = 0.025, _ condition: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if condition() { return true }
+            if condition() {
+                return true
+            }
             Thread.sleep(forTimeInterval: interval)
         }
         return condition()
     }
 
     private func lineCount(at url: URL) -> Int {
-        guard let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty else { return 0 }
+        guard let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty else {
+            return 0
+        }
         return text.split(separator: "\n", omittingEmptySubsequences: false).filter { !$0.isEmpty }.count
     }
 
@@ -637,25 +684,41 @@ chmod +x "$prefix/bin/claude"
         try script.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
+
     private final class EventRecorder: @unchecked Sendable {
         private let lock = NSLock()
         private var storage: [CLIProgressEvent] = []
-        var values: [CLIProgressEvent] { lock.lock(); defer { lock.unlock() }; return storage }
-        func append(_ event: CLIProgressEvent) { lock.lock(); storage.append(event); lock.unlock() }
+        var values: [CLIProgressEvent] {
+            lock.lock(); defer { lock.unlock() }; return storage
+        }
+
+        func append(_ event: CLIProgressEvent) {
+            lock.lock(); storage.append(event); lock.unlock()
+        }
     }
 
     private final class PathEventRecorder: @unchecked Sendable {
         private let lock = NSLock()
         private var storage: [[String]] = []
-        var values: [[String]] { lock.lock(); defer { lock.unlock() }; return storage }
-        func append(_ paths: [String]) { lock.lock(); storage.append(paths); lock.unlock() }
+        var values: [[String]] {
+            lock.lock(); defer { lock.unlock() }; return storage
+        }
+
+        func append(_ paths: [String]) {
+            lock.lock(); storage.append(paths); lock.unlock()
+        }
     }
 
     private final class ClaudeEventRecorder: @unchecked Sendable {
         private let lock = NSLock()
         private var storage: [ClaudeEvent] = []
-        var values: [ClaudeEvent] { lock.lock(); defer { lock.unlock() }; return storage }
-        func append(_ event: ClaudeEvent) { lock.lock(); storage.append(event); lock.unlock() }
+        var values: [ClaudeEvent] {
+            lock.lock(); defer { lock.unlock() }; return storage
+        }
+
+        func append(_ event: ClaudeEvent) {
+            lock.lock(); storage.append(event); lock.unlock()
+        }
     }
 
     private func temporaryDirectory(prefix: String) throws -> URL {

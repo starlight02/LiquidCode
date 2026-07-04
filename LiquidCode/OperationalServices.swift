@@ -1,7 +1,7 @@
 import AppKit
-import Foundation
 import CryptoKit
 import Darwin
+import Foundation
 
 final class CLIService: @unchecked Sendable {
     static let gcsBase = URL(string: "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases")!
@@ -12,7 +12,12 @@ final class CLIService: @unchecked Sendable {
     private let releaseBases: [URL]
     private let fileManager: FileManager
 
-    init(home: URL = FileManager.default.homeDirectoryForCurrentUser, environment: [String: String] = ProcessInfo.processInfo.environment, releaseBases: [URL]? = nil, fileManager: FileManager = .default) {
+    init(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        releaseBases: [URL]? = nil,
+        fileManager: FileManager = .default
+    ) {
         self.home = home
         self.environment = environment
         self.releaseBases = releaseBases ?? [Self.gcsBase, Self.mirrorBase]
@@ -45,9 +50,14 @@ final class CLIService: @unchecked Sendable {
             let native = isNativeBinary(url)
             let valid = exists && fileManager.isExecutableFile(atPath: path)
             var issues: [String] = []
-            if symlinkExists && !exists { issues.append("broken symlink (target no longer exists)") }
-            else if !valid { issues.append("not a valid executable") }
-            if valid && !native { issues += shebangIssues(url) }
+            if symlinkExists && !exists {
+                issues.append("broken symlink (target no longer exists)")
+            } else if !valid {
+                issues.append("not a valid executable")
+            }
+            if valid && !native {
+                issues += shebangIssues(url)
+            }
             let version = issues.isEmpty ? runVersion(path) : nil
             return CLICandidate(path: path, source: source, isNative: native, version: version, issues: issues)
         }
@@ -59,7 +69,12 @@ final class CLIService: @unchecked Sendable {
         return CLIUpdateCheck(current: current, latest: latest, updateAvailable: latest.map { Self.versionGreater($0, than: current ?? "0") } ?? false)
     }
 
-    func installOrUpdate(preferChina: Bool = false, releaseBases bases: [URL]? = nil, allowNPMFallback: Bool = true, progress: @escaping @Sendable (CLIProgressEvent) -> Void) -> CLIActionResult {
+    func installOrUpdate(
+        preferChina: Bool = false,
+        releaseBases bases: [URL]? = nil,
+        allowNPMFallback: Bool = true,
+        progress: @escaping @Sendable (CLIProgressEvent) -> Void
+    ) -> CLIActionResult {
         let orderedBases = bases ?? (preferChina ? [Self.mirrorBase, Self.gcsBase] : releaseBases)
         progress(CLIProgressEvent(phase: .checking, percent: 0.05, message: "Checking Claude CLI release sources"))
         do {
@@ -86,7 +101,9 @@ final class CLIService: @unchecked Sendable {
 
     func selectNativeSources(releaseBases bases: [URL]? = nil) throws -> [(base: URL, version: String)] {
         let versions = (bases ?? releaseBases).compactMap { base -> (URL, String)? in latestVersion(from: [base]).map { (base, $0) } }
-        guard !versions.isEmpty else { throw NSError(domain: "LiquidCode.CLI", code: 404, userInfo: [NSLocalizedDescriptionKey: "No native release source reachable"]) }
+        guard !versions.isEmpty else {
+            throw NSError(domain: "LiquidCode.CLI", code: 404, userInfo: [NSLocalizedDescriptionKey: "No native release source reachable"])
+        }
         return versions.sorted { lhs, rhs in Self.versionGreater(lhs.1, than: rhs.1) }
     }
 
@@ -113,7 +130,9 @@ final class CLIService: @unchecked Sendable {
         var report = CLIRepairReport()
         for candidate in diagnose() {
             report.scanned.append(candidate.path)
-            guard !candidate.issues.isEmpty else { continue }
+            guard !candidate.issues.isEmpty else {
+                continue
+            }
             if isAppLocalPath(candidate.path) {
                 let cleanup = cleanupCLI(targets: [candidate.path])
                 report.removed += cleanup.removed
@@ -122,58 +141,10 @@ final class CLIService: @unchecked Sendable {
                 report.notes.append("Skipped non-app-local CLI \(candidate.path): \(candidate.issues.joined(separator: ", "))")
             }
         }
-        if report.removed.isEmpty && report.notes.isEmpty { report.notes.append("No repairable CLI issues found") }
-        return report
-    }
-
-    func pinCLI(path: String) throws {
-        guard fileManager.isExecutableFile(atPath: path) else { throw NSError(domain: "LiquidCode.CLI", code: 400, userInfo: [NSLocalizedDescriptionKey: "CLI at '\(path)' is not executable"]) }
-        let pin = ["path": path]
-        let data = try JSONSerialization.data(withJSONObject: pin, options: [.prettyPrinted, .sortedKeys])
-        try fileManager.createDirectory(at: pinPath().deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: pinPath(), options: [.atomic])
-    }
-
-    func unpinCLI() throws {
-        if fileManager.fileExists(atPath: pinPath().path) { try fileManager.removeItem(at: pinPath()) }
-    }
-
-    func pinnedCLI() -> String? { pinnedCLIPath() }
-
-    func installCommand() -> (String, [String]) {
-        let prefix = npmPrefixDir().path
-        return (findInPath("npm") ?? "/usr/bin/env", findInPath("npm") == nil ? ["npm", "install", "-g", "@anthropic-ai/claude-code@latest", "--prefix=\(prefix)"] : ["install", "-g", "@anthropic-ai/claude-code@latest", "--prefix=\(prefix)"])
-    }
-
-    func updateCommand() -> (String, [String]) { installCommand() }
-
-    func run(_ command: (String, [String]), progress: @escaping @Sendable (String) -> Void, completion: @escaping @Sendable (Bool) -> Void) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process()
-            let out = Pipe(); let err = Pipe()
-            process.executableURL = URL(fileURLWithPath: command.0)
-            process.arguments = command.1
-            process.standardOutput = out
-            process.standardError = err
-            out.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty { progress(String(decoding: data, as: UTF8.self)) }
-            }
-            err.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty { progress(String(decoding: data, as: UTF8.self)) }
-            }
-            do {
-                try process.run()
-                process.waitUntilExit()
-                completion(process.terminationStatus == 0)
-            } catch {
-                progress(error.localizedDescription)
-                completion(false)
-            }
-            out.fileHandleForReading.readabilityHandler = nil
-            err.fileHandleForReading.readabilityHandler = nil
+        if report.removed.isEmpty && report.notes.isEmpty {
+            report.notes.append("No repairable CLI issues found")
         }
+        return report
     }
 
     func openTerminalLogin() {
@@ -194,16 +165,22 @@ final class CLIService: @unchecked Sendable {
         var manifestFound = false
         for source in sources where source.version == version {
             let manifestURL = source.base.appendingPathComponent(version).appendingPathComponent("manifest.json")
-            guard let manifestData = try? fetchData(manifestURL),
-                  let manifest = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
-                  let platforms = manifest["platforms"] as? [String: Any],
-                  let info = platforms[platform] as? [String: Any] else { continue }
+            guard
+                let manifestData = try? fetchData(manifestURL),
+                let manifest = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+                let platforms = manifest["platforms"] as? [String: Any],
+                let info = platforms[platform] as? [String: Any] else {
+                continue
+            }
             checksum = info["checksum"] as? String ?? ""
             binaryName = info["binary"] as? String ?? binaryName
             manifestFound = true
             break
         }
-        guard manifestFound else { throw NSError(domain: "LiquidCode.CLI", code: 404, userInfo: [NSLocalizedDescriptionKey: "Cannot fetch manifest for \(version) on \(platform)"]) }
+        guard manifestFound
+        else {
+            throw NSError(domain: "LiquidCode.CLI", code: 404, userInfo: [NSLocalizedDescriptionKey: "Cannot fetch manifest for \(version) on \(platform)"])
+        }
 
         let installDir = home.appendingPathComponent(".claude/local", isDirectory: true)
         try fileManager.createDirectory(at: installDir, withIntermediateDirectories: true)
@@ -213,47 +190,73 @@ final class CLIService: @unchecked Sendable {
         for source in sources where source.version == version {
             let url = source.base.appendingPathComponent(version).appendingPathComponent(platform).appendingPathComponent(binaryName)
             progress(CLIProgressEvent(phase: .downloading, percent: 0.2, message: "Downloading \(url.absoluteString)"))
-            guard let data = try? fetchData(url) else { continue }
-            if !checksum.isEmpty && sha256Hex(data) != checksum { continue }
+            guard let data = try? fetchData(url) else {
+                continue
+            }
+            if !checksum.isEmpty && sha256Hex(data) != checksum {
+                continue
+            }
             try data.write(to: tmp, options: [.atomic])
             downloaded = true
             break
         }
-        guard downloaded else { throw NSError(domain: "LiquidCode.CLI", code: 502, userInfo: [NSLocalizedDescriptionKey: "All native download sources failed"]) }
+        guard downloaded else {
+            throw NSError(domain: "LiquidCode.CLI", code: 502, userInfo: [NSLocalizedDescriptionKey: "All native download sources failed"])
+        }
         chmod(tmp.path, 0o755)
-        if fileManager.fileExists(atPath: dest.path) { try fileManager.removeItem(at: dest) }
+        if fileManager.fileExists(atPath: dest.path) {
+            try fileManager.removeItem(at: dest)
+        }
         try fileManager.moveItem(at: tmp, to: dest)
         progress(CLIProgressEvent(phase: .installing, percent: 0.9, message: "Installed \(dest.path)"))
         return version
     }
 
     private func installViaNPM() throws -> String? {
-        guard let npm = findInPath("npm") else { throw NSError(domain: "LiquidCode.CLI", code: 127, userInfo: [NSLocalizedDescriptionKey: "npm not found for fallback install"]) }
+        guard let npm = findInPath("npm") else {
+            throw NSError(domain: "LiquidCode.CLI", code: 127, userInfo: [NSLocalizedDescriptionKey: "npm not found for fallback install"])
+        }
         let prefix = npmPrefixDir()
         let cache = home.appendingPathComponent(".liquidcode/npm-cache", isDirectory: true)
         try fileManager.createDirectory(at: prefix, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: cache, withIntermediateDirectories: true)
         let args = ["install", "-g", "@anthropic-ai/claude-code@latest", "--prefix=\(prefix.path)", "--cache=\(cache.path)"]
         let result = Shell.run(npm, args, environment: environmentWithEnrichedPath())
-        guard result.status == 0 else { throw NSError(domain: "LiquidCode.CLI", code: Int(result.status), userInfo: [NSLocalizedDescriptionKey: result.stderr.isEmpty ? "npm install failed" : result.stderr]) }
+        guard result.status == 0 else {
+            throw NSError(
+                domain: "LiquidCode.CLI",
+                code: Int(result.status),
+                userInfo: [NSLocalizedDescriptionKey: result.stderr.isEmpty ? "npm install failed" : result.stderr]
+            ) }
         return runVersion(resolveCandidate(from: diagnose())?.path ?? home.appendingPathComponent(".claude/local/claude").path)
     }
 
     private func latestVersion(from bases: [URL]) -> String? {
         bases.compactMap { base -> String? in
-            guard let data = try? fetchData(base.appendingPathComponent("latest")), let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+            guard
+                let data = try? fetchData(base.appendingPathComponent("latest")), let value = String(data: data, encoding: .utf8)?.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ),
+                !value.isEmpty else {
+                return nil
+            }
             return value
-        }.max { lhs, rhs in Self.versionGreater(rhs, than: lhs) }
+        }
+        .max { lhs, rhs in Self.versionGreater(rhs, than: lhs) }
     }
 
     private func candidatePaths() -> [(String, CLISource)] {
         var out: [(String, CLISource)] = []
         var seen = Set<String>()
         func add(_ path: String, _ source: CLISource) {
-            guard seen.insert(path).inserted else { return }
+            guard seen.insert(path).inserted else {
+                return
+            }
             out.append((path, source))
         }
-        if let pinned = pinnedCLIPath() { add(pinned, .dynamic) }
+        if let pinned = pinnedCLIPath() {
+            add(pinned, .dynamic)
+        }
         add(home.appendingPathComponent(".claude/local/claude").path, .official)
         add(home.appendingPathComponent(".npm-global/bin/claude").path, .system)
         add(home.appendingPathComponent(".local/bin/claude").path, .system)
@@ -263,54 +266,111 @@ final class CLIService: @unchecked Sendable {
         add(npmPrefixDir().appendingPathComponent("bin/claude").path, .appLocal)
         add(home.appendingPathComponent(".volta/bin/claude").path, .versionManager)
         add(home.appendingPathComponent(".bun/bin/claude").path, .versionManager)
-        for entry in (environment["PATH"] ?? "").split(separator: ":") where !entry.isEmpty { add(URL(fileURLWithPath: String(entry)).appendingPathComponent("claude").path, .dynamic) }
+        for entry in (environment["PATH"] ?? "").split(separator: ":") where !entry.isEmpty {
+            add(
+                URL(fileURLWithPath: String(entry)).appendingPathComponent("claude").path,
+                .dynamic
+            ) }
         return out
     }
 
-    private func resolveCandidate(from candidates: [CLICandidate]) -> CLICandidate? { candidates.first { $0.issues.isEmpty } }
+    private func resolveCandidate(from candidates: [CLICandidate]) -> CLICandidate? {
+        candidates.first { $0.issues.isEmpty }
+    }
 
-    private func runVersion(_ path: String) -> String? { Shell.capture(path, ["--version"], environment: environmentWithEnrichedPath()).flatMap(Self.extractSemver) }
+    private func runVersion(_ path: String) -> String? {
+        Shell.capture(path, ["--version"], environment: environmentWithEnrichedPath()).flatMap(Self.extractSemver)
+    }
 
     private func findInPath(_ name: String) -> String? {
         for entry in enrichedPath().split(separator: ":") {
             let candidate = URL(fileURLWithPath: String(entry)).appendingPathComponent(name).path
-            if fileManager.isExecutableFile(atPath: candidate) { return candidate }
+            if fileManager.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
         }
         return nil
     }
 
     private func isNativeBinary(_ url: URL) -> Bool {
-        guard let data = try? Data(contentsOf: url).prefix(4) else { return false }
+        guard let data = try? Data(contentsOf: url).prefix(4) else {
+            return false
+        }
         let bytes = Array(data)
-        return bytes.starts(with: [0x7f, 0x45, 0x4c, 0x46]) || bytes.starts(with: [0x4d, 0x5a]) || bytes.starts(with: [0xcf, 0xfa, 0xed, 0xfe]) || bytes.starts(with: [0xca, 0xfe, 0xba, 0xbe]) || bytes.starts(with: [0xfe, 0xed, 0xfa, 0xcf])
+        return bytes.starts(with: [0x7f, 0x45, 0x4c, 0x46]) || bytes.starts(with: [0x4d, 0x5a]) || bytes.starts(with: [0xcf, 0xfa, 0xed, 0xfe]) || bytes.starts(with: [
+            0xca,
+            0xfe,
+            0xba,
+            0xbe
+        ]) || bytes.starts(with: [0xfe, 0xed, 0xfa, 0xcf])
     }
 
     private func shebangIssues(_ url: URL) -> [String] {
-        guard let data = try? Data(contentsOf: url).prefix(256), let text = String(data: data, encoding: .utf8), text.hasPrefix("#!") else { return [] }
+        guard let data = try? Data(contentsOf: url).prefix(256), let text = String(data: data, encoding: .utf8), text.hasPrefix("#!") else {
+            return []
+        }
         let first = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? ""
         let parts = first.dropFirst(2).split(separator: " ").map(String.init)
-        guard parts.first == "/usr/bin/env", let tool = parts.dropFirst().first, findInPath(tool) == nil else { return [] }
+        guard parts.first == "/usr/bin/env", let tool = parts.dropFirst().first, findInPath(tool) == nil else {
+            return []
+        }
         return ["shebang interpreter '\(tool)' not found"]
     }
 
-    private func fetchData(_ url: URL) throws -> Data { try Data(contentsOf: url) }
-    private func appLocalCLIDir() -> URL { home.appendingPathComponent("Library/Application Support/LiquidCode/cli", isDirectory: true) }
-    private func npmPrefixDir() -> URL { home.appendingPathComponent(".liquidcode/npm", isDirectory: true) }
-    private func pinPath() -> URL { home.appendingPathComponent(".tokenicode/cli-pin.json") }
-    private func legacyPinPath() -> URL { home.appendingPathComponent(".her/cli-pin.json") }
-    private func isAppLocalPath(_ path: String) -> Bool { path.hasPrefix(appLocalCLIDir().path) || path.hasPrefix(npmPrefixDir().path) }
+    private func fetchData(_ url: URL) throws -> Data {
+        try Data(contentsOf: url)
+    }
+
+    private func appLocalCLIDir() -> URL {
+        home.appendingPathComponent("Library/Application Support/LiquidCode/cli", isDirectory: true)
+    }
+
+    private func npmPrefixDir() -> URL {
+        home.appendingPathComponent(".liquidcode/npm", isDirectory: true)
+    }
+
+    private func pinPath() -> URL {
+        home.appendingPathComponent(".tokenicode/cli-pin.json")
+    }
+
+    private func legacyPinPath() -> URL {
+        home.appendingPathComponent(".her/cli-pin.json")
+    }
+
+    private func isAppLocalPath(_ path: String) -> Bool {
+        path.hasPrefix(appLocalCLIDir().path) || path.hasPrefix(npmPrefixDir().path)
+    }
 
     private func pinnedCLIPath() -> String? {
         for url in [pinPath(), legacyPinPath()] {
-            guard let data = try? Data(contentsOf: url), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let path = obj["path"] as? String, !path.isEmpty else { continue }
-            if fileManager.isExecutableFile(atPath: path) { return path }
+            guard
+                let data = try? Data(contentsOf: url), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let path = obj["path"] as? String,
+                !path.isEmpty else {
+                continue
+            }
+            if fileManager.isExecutableFile(atPath: path) {
+                return path
+            }
         }
         return nil
     }
 
     private func enrichedPath() -> String {
-        var parts = [home.appendingPathComponent(".claude/local").path, npmPrefixDir().appendingPathComponent("bin").path, home.appendingPathComponent(".npm-global/bin").path, home.appendingPathComponent(".local/bin").path, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
-        if let existing = environment["PATH"] { parts.append(existing) }
+        var parts = [
+            home.appendingPathComponent(".claude/local").path,
+            npmPrefixDir().appendingPathComponent("bin").path,
+            home.appendingPathComponent(".npm-global/bin").path,
+            home.appendingPathComponent(".local/bin").path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ]
+        if let existing = environment["PATH"] {
+            parts.append(existing)
+        }
         return parts.joined(separator: ":")
     }
 
@@ -321,41 +381,60 @@ final class CLIService: @unchecked Sendable {
     }
 
     private func checkAuth() -> String {
-        if fileManager.fileExists(atPath: home.appendingPathComponent(".claude/credentials.json").path) { return "authenticated" }
-        if fileManager.fileExists(atPath: home.appendingPathComponent(".claude.json").path) { return "configured" }
+        if fileManager.fileExists(atPath: home.appendingPathComponent(".claude/credentials.json").path) {
+            return "authenticated"
+        }
+        if fileManager.fileExists(atPath: home.appendingPathComponent(".claude.json").path) {
+            return "configured"
+        }
         return "not authenticated"
     }
 
     private func nativePlatformKey() -> String {
         #if os(macOS) && arch(arm64)
-        return "darwin-arm64"
+            return "darwin-arm64"
         #elseif os(macOS) && arch(x86_64)
-        return "darwin-x64"
+            return "darwin-x64"
         #elseif os(Linux) && arch(x86_64)
-        return "linux-x64"
+            return "linux-x64"
         #else
-        return "unsupported"
+            return "unsupported"
         #endif
     }
 
-    private func defaultBinaryName() -> String { "claude" }
+    private func defaultBinaryName() -> String {
+        "claude"
+    }
 
-    private func sha256Hex(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
-    private func shellQuote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    private func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func shellQuote(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
 
     static func extractSemver(_ raw: String) -> String? {
         let pattern = #"\d+(?:\.\d+){1,3}"#
-        guard let regex = try? NSRegularExpression(pattern: pattern), let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)), let range = Range(match.range, in: raw) else { return raw.split(separator: " ").first.map(String.init) }
+        guard
+            let regex = try? NSRegularExpression(pattern: pattern), let match = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)), let range = Range(
+                match.range,
+                in: raw
+            ) else {
+            return raw.split(separator: " ").first.map(String.init)
+        }
         return String(raw[range])
     }
 
     static func versionGreater(_ lhs: String, than rhs: String) -> Bool {
         let left = lhs.split(separator: ".").map { Int($0.filter(\.isNumber)) ?? 0 }
         let right = rhs.split(separator: ".").map { Int($0.filter(\.isNumber)) ?? 0 }
-        for index in 0..<max(left.count, right.count) {
-            let l = index < left.count ? left[index] : 0
-            let r = index < right.count ? right[index] : 0
-            if l != r { return l > r }
+        for index in 0 ..< max(left.count, right.count) {
+            let leftPart = index < left.count ? left[index] : 0
+            let rightPart = index < right.count ? right[index] : 0
+            if leftPart != rightPart {
+                return leftPart > rightPart
+            }
         }
         return false
     }
@@ -365,69 +444,9 @@ final class ShareService {
     func share(path: String, from view: NSView?) {
         let url = URL(fileURLWithPath: path)
         let picker = NSSharingServicePicker(items: [url])
-        if let view { picker.show(relativeTo: .zero, of: view, preferredEdge: .minY) }
-    }
-
-    func copyForWeChat(path: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([URL(fileURLWithPath: path) as NSURL])
-        NSWorkspace.shared.open(URL(string: "weixin://") ?? URL(fileURLWithPath: "/Applications/WeChat.app"))
-    }
-}
-
-final class SearchService {
-    func search(query: String, sessions: [SessionRecord]) -> [SessionSearchResult] {
-        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard normalized.count >= 2 else { return [] }
-        var results: [SessionSearchResult] = []
-        for session in sessions {
-            guard let path = session.path, let result = searchFile(path: path, query: normalized, sessionID: session.id) else { continue }
-            results.append(result)
-        }
-        return results.sorted { lhs, rhs in
-            if lhs.matchCount != rhs.matchCount { return lhs.matchCount > rhs.matchCount }
-            let lm = sessions.first { $0.id == lhs.sessionID }?.modifiedAt ?? .distantPast
-            let rm = sessions.first { $0.id == rhs.sessionID }?.modifiedAt ?? .distantPast
-            if lm != rm { return lm > rm }
-            return lhs.sessionID < rhs.sessionID
+        if let view {
+            picker.show(relativeTo: .zero, of: view, preferredEdge: .minY)
         }
     }
 
-    func contentMatches(query: String, sessions: [SessionRecord]) -> [String: Int] {
-        Dictionary(uniqueKeysWithValues: search(query: query, sessions: sessions).map { ($0.sessionID, $0.matchCount) })
-    }
-
-    private func searchFile(path: String, query: String, sessionID: String) -> SessionSearchResult? {
-        var matchCount = 0
-        var firstSnippet = ""
-        var firstRole: ChatMessage.Role = .assistant
-        for obj in SessionJSONLCodec.parsedObjects(path: path) {
-            guard let match = SessionJSONLCodec.searchableText(from: obj) else { continue }
-            let lower = match.text.lowercased()
-            guard lower.contains(query) else { continue }
-            matchCount += 1
-            if firstSnippet.isEmpty, let snippet = snippet(in: match.text, lowercasedText: lower, query: query) {
-                firstSnippet = snippet
-                firstRole = match.role
-            }
-        }
-        guard matchCount > 0 else { return nil }
-        return SessionSearchResult(sessionID: sessionID, snippet: firstSnippet, matchCount: matchCount, matchRole: firstRole)
-    }
-
-    private func snippet(in text: String, lowercasedText: String, query: String) -> String? {
-        let lowerChars = Array(lowercasedText)
-        let queryChars = Array(query)
-        guard queryChars.count <= lowerChars.count else { return nil }
-        for index in 0...(lowerChars.count - queryChars.count) where Array(lowerChars[index..<(index + queryChars.count)]) == queryChars {
-            let original = Array(text)
-            let start = max(0, index - 75)
-            let end = min(original.count, index + queryChars.count + 75)
-            var value = String(original[start..<end])
-            if start > 0 { value = "..." + value }
-            if end < original.count { value += "..." }
-            return value
-        }
-        return nil
-    }
 }

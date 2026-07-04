@@ -199,8 +199,12 @@ final class OnboardingService {
 
     func executeTokenicodeMigration() throws -> OnboardingMigrationResult {
         var state = loadState()
-        if state.skippedTokenicodeMigrationAt != nil { throw OnboardingMigrationError.skippedTokenicodeMigration }
-        if hasExistingLiquidCodeProviders() { throw OnboardingMigrationError.existingLiquidCodeProviders }
+        if state.skippedTokenicodeMigrationAt != nil {
+            throw OnboardingMigrationError.skippedTokenicodeMigration
+        }
+        if hasExistingLiquidCodeProviders() {
+            throw OnboardingMigrationError.existingLiquidCodeProviders
+        }
         guard let payload = loadTokenicodeProviderPayload(), !payload.providerFile.providers.isEmpty else {
             throw OnboardingMigrationError.noTokenicodeProviders
         }
@@ -238,7 +242,9 @@ final class OnboardingService {
 
     func rollbackTokenicodeMigration() throws {
         var state = loadState()
-        guard let backup = state.backup else { throw OnboardingMigrationError.rollbackUnavailable }
+        guard let backup = state.backup else {
+            throw OnboardingMigrationError.rollbackUnavailable
+        }
         try restoreFile(at: liquidProvidersURL, existed: backup.providersFileExisted, base64: backup.providersFileBase64)
         try restoreFile(at: liquidSettingsURL, existed: backup.settingsFileExisted, base64: backup.settingsFileBase64)
         for providerID in backup.importedProviderIDs {
@@ -254,7 +260,9 @@ final class OnboardingService {
     }
 
     private func hasExistingLiquidCodeProviders() -> Bool {
-        guard let file = currentProviderFile() else { return false }
+        guard let file = currentProviderFile() else {
+            return false
+        }
         return !file.providers.isEmpty
     }
 
@@ -268,21 +276,29 @@ final class OnboardingService {
     }
 
     private func loadTokenicodeProviderPayload() -> TokenicodeProviderPayload? {
-        guard let data = try? Data(contentsOf: tokenicodeProvidersURL),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        guard
+            let data = try? Data(contentsOf: tokenicodeProvidersURL),
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
 
         let rawProviders = root["providers"] as? [[String: Any]] ?? []
         var providers: [ProviderRecord] = []
         var apiKeys: [String: String] = [:]
 
         for raw in rawProviders {
-            guard let id = raw["id"] as? String, !id.isEmpty else { continue }
+            guard let id = raw["id"] as? String, !id.isEmpty else {
+                continue
+            }
             let formatRaw = raw["apiFormat"] as? String ?? "anthropic"
             let mappings = (raw["modelMappings"] as? [[String: Any]] ?? []).reduce(into: [String: String]()) { output, item in
-                guard let tier = item["tier"] as? String,
-                      let model = item["providerModel"] as? String,
-                      !tier.isEmpty,
-                      !model.isEmpty else { return }
+                guard
+                    let tier = item["tier"] as? String,
+                    let model = item["providerModel"] as? String,
+                    !tier.isEmpty,
+                    !model.isEmpty else {
+                    return
+                }
                 output[tier] = model
             }
             let baseURL = (raw["baseUrl"] as? String) ?? (raw["baseURL"] as? String) ?? ""
@@ -296,7 +312,9 @@ final class OnboardingService {
                 preset: raw["preset"] as? String,
                 proxyURL: raw["proxyUrl"] as? String
             )
-            if let key = raw["apiKey"] as? String, !key.isEmpty { apiKeys[id] = key }
+            if let key = raw["apiKey"] as? String, !key.isEmpty {
+                apiKeys[id] = key
+            }
             providers.append(record)
         }
 
@@ -309,13 +327,17 @@ final class OnboardingService {
     }
 
     private func base64ContentsIfPresent(_ url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = try? Data(contentsOf: url) else {
+            return nil
+        }
         return data.base64EncodedString()
     }
 
     private func restoreFile(at url: URL, existed: Bool, base64: String?) throws {
         if existed {
-            guard let base64, let data = Data(base64Encoded: base64) else { throw OnboardingMigrationError.invalidBackup }
+            guard let base64, let data = Data(base64Encoded: base64) else {
+                throw OnboardingMigrationError.invalidBackup
+            }
             try ensureParentDirectory(for: url)
             try data.write(to: url, options: [.atomic])
         } else if fileManager.fileExists(atPath: url.path) {

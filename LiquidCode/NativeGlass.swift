@@ -5,18 +5,18 @@ enum GlassRole { case sidebar, toolbar, inspector, composer, commandPalette, per
 enum GlassProminence { case subtle, regular, prominent }
 
 enum LiquidGlassToken {
-    static let sidebarWidth: CGFloat = 240
-    static let inspectorWidth: CGFloat = 340
+    static let sidebarWidth: CGFloat = 260
+    static let inspectorWidth: CGFloat = 390
+    static let chatMinWidth: CGFloat = 620
     static let chatMaxWidth: CGFloat = 960
     static let composerMaxWidth: CGFloat = 920
+    static let minWindowWidth: CGFloat = 1320
+    static let minWindowHeight: CGFloat = 820
     static let cardRadius: CGFloat = 18
     static let panelRadius: CGFloat = 30
-    static let panelSpacing: CGFloat = 10
+    static let panelSpacing: CGFloat = 8
     static let controlRadius: CGFloat = 13
-    static let modalRadius: CGFloat = 28
     static let hairline = Color.secondary.opacity(0.14)
-    static let sidebarFill = Color(nsColor: .windowBackgroundColor).opacity(0.62)
-    static let chatFill = Color(nsColor: .textBackgroundColor).opacity(0.72)
     static let selectedFill = Color.accentColor.opacity(0.12)
 }
 
@@ -170,7 +170,6 @@ struct LiquidGlassControlModifier<S: Shape>: ViewModifier {
             content
                 .glassEffect(glass, in: shape)
                 .contentShape(shape)
-                .opacity(disabled ? 0.55 : 1)
         } else {
             content
                 .background { LiquidGlassControlBackground(active: active, disabled: disabled, radius: fallbackRadius, intensity: fallbackIntensity) }
@@ -195,7 +194,14 @@ extension View {
         fallbackRadius: CGFloat = LiquidGlassToken.controlRadius,
         fallbackIntensity: GlassProminence = .regular
     ) -> some View {
-        modifier(LiquidGlassControlModifier(shape: shape, active: active, disabled: disabled, interactive: interactive, fallbackRadius: fallbackRadius, fallbackIntensity: fallbackIntensity))
+        modifier(LiquidGlassControlModifier(
+            shape: shape,
+            active: active,
+            disabled: disabled,
+            interactive: interactive,
+            fallbackRadius: fallbackRadius,
+            fallbackIntensity: fallbackIntensity
+        ))
     }
 }
 
@@ -228,81 +234,13 @@ struct LiquidGlassControlBackground: View {
     }
 
     private var fill: Color {
-        if active { return Color.accentColor.opacity(colorScheme == .dark ? 0.34 : 0.20) }
+        if active {
+            return Color.accentColor.opacity(colorScheme == .dark ? 0.34 : 0.20)
+        }
         switch intensity {
         case .subtle: return Color.white.opacity(colorScheme == .dark ? 0.07 : 0.18)
         case .regular: return Color.white.opacity(colorScheme == .dark ? 0.10 : 0.26)
         case .prominent: return Color.white.opacity(colorScheme == .dark ? 0.16 : 0.34)
-        }
-    }
-}
-
-private struct LiquidGlassSurface: View {
-    let role: GlassRole
-    let prominence: GlassProminence
-    let cornerRadius: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: baseColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            RadialGradient(
-                colors: [Color.white.opacity(colorScheme == .dark ? 0.12 : 0.56), .clear],
-                center: .topLeading,
-                startRadius: 0,
-                endRadius: 420
-            )
-            RadialGradient(
-                colors: [Color.accentColor.opacity(colorScheme == .dark ? 0.13 : 0.12), .clear],
-                center: .bottomTrailing,
-                startRadius: 8,
-                endRadius: 520
-            )
-        }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-    }
-
-    private var baseColors: [Color] {
-        let glassAlpha: Double
-        switch prominence {
-        case .subtle: glassAlpha = colorScheme == .dark ? 0.10 : 0.20
-        case .regular: glassAlpha = colorScheme == .dark ? 0.14 : 0.26
-        case .prominent: glassAlpha = colorScheme == .dark ? 0.20 : 0.34
-        }
-        let roleBoost: Double = (role == .sidebar || role == .inspector) ? 0.06 : 0.0
-        if colorScheme == .dark {
-            return [
-                Color.white.opacity(glassAlpha + roleBoost * 0.45),
-                Color.blue.opacity(0.055 + roleBoost * 0.25),
-                Color.white.opacity(glassAlpha * 0.42)
-            ]
-        }
-        return [
-            Color.white.opacity(glassAlpha + roleBoost),
-            Color.white.opacity((glassAlpha + roleBoost) * 0.55),
-            Color.accentColor.opacity(0.055 + roleBoost * 0.25)
-        ]
-    }
-}
-
-struct GlassGroup<Content: View>: View {
-    let spacing: CGFloat
-    @ViewBuilder var content: Content
-
-    init(spacing: CGFloat = 8, @ViewBuilder content: () -> Content) {
-        self.spacing = spacing
-        self.content = content()
-    }
-
-    var body: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: spacing) { content }
-        } else {
-            content
         }
     }
 }
@@ -321,22 +259,30 @@ struct LiquidGlassCard: ViewModifier {
 }
 
 extension View {
-    func liquidGlassCard(role: GlassRole = .floatingCard, prominence: GlassProminence = .regular, radius: CGFloat = LiquidGlassToken.cardRadius, padding: CGFloat = 0) -> some View {
+    func liquidGlassCard(
+        role: GlassRole = .floatingCard,
+        prominence: GlassProminence = .regular,
+        radius: CGFloat = LiquidGlassToken.cardRadius,
+        padding: CGFloat = 0
+    ) -> some View {
         modifier(LiquidGlassCard(role: role, prominence: prominence, radius: radius, padding: padding))
     }
 
     func tokenicodeControl(active: Bool = false, radius: CGFloat = LiquidGlassToken.controlRadius) -> some View {
-        self
-            .lineLimit(1)
+        lineLimit(1)
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
-            .foregroundStyle(active ? Color.accentColor : Color.primary.opacity(0.78))
-            .liquidGlassControl(RoundedRectangle(cornerRadius: radius, style: .continuous), active: active, fallbackRadius: radius, fallbackIntensity: active ? .prominent : .regular)
+            .foregroundStyle(active ? Color.white : Color.primary.opacity(0.78))
+            .liquidGlassControl(
+                RoundedRectangle(cornerRadius: radius, style: .continuous),
+                active: active,
+                fallbackRadius: radius,
+                fallbackIntensity: active ? .prominent : .regular
+            )
     }
 
     func tokenicodeRow(active: Bool = false, radius: CGFloat = 14) -> some View {
-        self
-            .padding(.horizontal, 10)
+        padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(active ? LiquidGlassToken.selectedFill : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -348,8 +294,13 @@ struct NativeGlassBackground: NSViewRepresentable {
     let role: GlassRole
     let prominence: GlassProminence
 
-    func makeNSView(context: Context) -> NSView { makeGlassView() }
-    func updateNSView(_ nsView: NSView, context: Context) { configure(nsView) }
+    func makeNSView(context: Context) -> NSView {
+        makeGlassView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        configure(nsView)
+    }
 
     private func makeGlassView() -> NSView {
         let view = NSVisualEffectView()
@@ -368,18 +319,6 @@ struct NativeGlassBackground: NSViewRepresentable {
             visual.isEmphasized = prominence == .prominent
         }
         view.layer?.backgroundColor = Self.fallbackColor(for: prominence).cgColor
-    }
-
-    private var groupName: String {
-        switch role {
-        case .sidebar: "liquidcode.sidebar"
-        case .toolbar: "liquidcode.toolbar"
-        case .inspector: "liquidcode.inspector"
-        case .composer: "liquidcode.composer"
-        case .commandPalette: "liquidcode.commandPalette"
-        case .permissionSheet: "liquidcode.permissionSheet"
-        case .floatingCard: "liquidcode.floatingCard"
-        }
     }
 
     private var material: NSVisualEffectView.Material {
@@ -407,11 +346,16 @@ struct WindowAccessor: NSViewRepresentable {
     let configure: @MainActor (NSWindow) -> Void
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        DispatchQueue.main.async { if let window = view.window { MainActor.assumeIsolated { configure(window) } } }
+        DispatchQueue.main.async { if let window = view.window {
+            MainActor.assumeIsolated { configure(window) }
+        } }
         return view
     }
+
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { if let window = nsView.window { MainActor.assumeIsolated { configure(window) } } }
+        DispatchQueue.main.async { if let window = nsView.window {
+            MainActor.assumeIsolated { configure(window) }
+        } }
     }
 }
 

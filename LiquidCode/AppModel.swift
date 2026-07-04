@@ -33,7 +33,6 @@ final class AppModel: ObservableObject {
     @Published var composerTextBySession: [String: String] = [:]
     @Published var searchText = ""
     @Published var sessionGroups: [SessionTaskGroup] = []
-    @Published var selectedGroupID: String?
     @Published var showArchivedSessions = false
     @Published var showRunningSessionsOnly = false
     @Published var sessionSelectionMode = false
@@ -64,38 +63,71 @@ final class AppModel: ObservableObject {
     private let sessionIndex = SessionIndexService()
     private let cliService = CLIService()
     private let shareService = ShareService()
-    private let searchService = SearchService()
     private let onboardingService = OnboardingService()
-    private var refreshTimer: Timer?
     private var filePreviewCleanContent = ""
 
     init(engine: ClaudeEngine = ClaudeCLIEngine()) {
         self.engine = engine
     }
 
-    var selectedSession: SessionRecord? { sessions.first { $0.id == selectedSessionID } }
-    var selectedMessages: [ChatMessage] { messagesBySession[selectedSessionID ?? ""] ?? [] }
-    var selectedStreamingText: String { streamingTextBySession[selectedSessionID ?? ""] ?? "" }
-    var selectedToolCalls: [ToolCall] { toolCallsBySession[selectedSessionID ?? ""] ?? [] }
-    var activeProvider: ProviderRecord? { providers.first { $0.id == activeProviderID } }
-    var hasActiveTurn: Bool { !pendingPermissions.isEmpty || streamingTextBySession.values.contains { !$0.isEmpty } || !activeTurnSnapshots.isEmpty }
-    var selectedHasActiveTurn: Bool { selectedSessionID.map { hasActiveTurn(for: $0) } ?? false }
-    var selectedPendingUserMessages: [PendingUserMessage] { selectedSessionID.flatMap { pendingUserMessagesBySession[$0] } ?? [] }
-    var selectedLastUserMessage: ChatMessage? { selectedSessionID.flatMap { lastUserMessage(in: $0) } }
-    var selectedChatFindTargets: [ChatFindTarget] { chatFindTargets(in: selectedMessages, query: chatFindText) }
+    deinit { directoryWatcher.unwatchAll(); engine.killAll() }
+}
+
+extension AppModel {
+
+    var selectedSession: SessionRecord? {
+        sessions.first { $0.id == selectedSessionID }
+    }
+
+    var selectedMessages: [ChatMessage] {
+        messagesBySession[selectedSessionID ?? ""] ?? []
+    }
+
+    var selectedStreamingText: String {
+        streamingTextBySession[selectedSessionID ?? ""] ?? ""
+    }
+
+    var selectedToolCalls: [ToolCall] {
+        toolCallsBySession[selectedSessionID ?? ""] ?? []
+    }
+
+    var activeProvider: ProviderRecord? {
+        providers.first { $0.id == activeProviderID }
+    }
+
+    var hasActiveTurn: Bool {
+        !pendingPermissions.isEmpty || streamingTextBySession.values.contains { !$0.isEmpty } || !activeTurnSnapshots.isEmpty
+    }
+
+    var selectedHasActiveTurn: Bool {
+        selectedSessionID.map { hasActiveTurn(for: $0) } ?? false
+    }
+
+    var selectedPendingUserMessages: [PendingUserMessage] {
+        selectedSessionID.flatMap { pendingUserMessagesBySession[$0] } ?? []
+    }
+
+    var selectedLastUserMessage: ChatMessage? {
+        selectedSessionID.flatMap { lastUserMessage(in: $0) }
+    }
+
+    var selectedChatFindTargets: [ChatFindTarget] {
+        chatFindTargets(in: selectedMessages, query: chatFindText)
+    }
+
     var selectedChatFindTarget: ChatFindTarget? {
         let targets = selectedChatFindTargets
-        guard !targets.isEmpty else { return nil }
+        guard !targets.isEmpty else {
+            return nil
+        }
         return targets[min(max(chatFindIndex, 0), targets.count - 1)]
     }
 
-
     func hasActiveTurn(for sessionID: String) -> Bool {
         pendingPermissions.contains { $0.sessionID == sessionID } ||
-        !(streamingTextBySession[sessionID] ?? "").isEmpty ||
-        activeTurnSnapshots[sessionID] != nil
+            !(streamingTextBySession[sessionID] ?? "").isEmpty ||
+            activeTurnSnapshots[sessionID] != nil
     }
-
 
     private func canonicalFilePath(_ path: String) -> String {
         URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
@@ -104,7 +136,9 @@ final class AppModel: ObservableObject {
     private func existingDirectoryPath(_ path: String) -> String? {
         let canonical = PathAccessManager.canonicalPath(path)
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: canonical, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+        guard FileManager.default.fileExists(atPath: canonical, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return nil
+        }
         return canonical
     }
 
@@ -117,12 +151,16 @@ final class AppModel: ObservableObject {
     }
 
     private func sameFilePath(_ lhs: String?, _ rhs: String?) -> Bool {
-        guard let lhs, let rhs else { return false }
+        guard let lhs, let rhs else {
+            return false
+        }
         return canonicalFilePath(lhs) == canonicalFilePath(rhs)
     }
 
     private func snapshotComposerState(for sessionID: String?) {
-        guard let sessionID else { return }
+        guard let sessionID else {
+            return
+        }
         composerTextBySession[sessionID] = composerText
         attachmentsBySession[sessionID] = attachments
     }
@@ -139,19 +177,29 @@ final class AppModel: ObservableObject {
 
     func updateComposerText(_ text: String) {
         composerText = text
-        if let selectedSessionID { composerTextBySession[selectedSessionID] = text }
+        if let selectedSessionID {
+            composerTextBySession[selectedSessionID] = text
+        }
     }
 
     private func setComposerText(_ text: String, for sessionID: String? = nil) {
         let target = sessionID ?? selectedSessionID
-        if target == selectedSessionID { composerText = text }
-        if let target { composerTextBySession[target] = text }
+        if target == selectedSessionID {
+            composerText = text
+        }
+        if let target {
+            composerTextBySession[target] = text
+        }
     }
 
     private func setAttachments(_ next: [AttachmentChip], for sessionID: String? = nil) {
         let target = sessionID ?? selectedSessionID
-        if target == selectedSessionID { attachments = next }
-        if let target { attachmentsBySession[target] = next }
+        if target == selectedSessionID {
+            attachments = next
+        }
+        if let target {
+            attachmentsBySession[target] = next
+        }
     }
 
     private func appendToComposer(_ suffix: String) {
@@ -165,7 +213,9 @@ final class AppModel: ObservableObject {
     func searchChatNext(direction: Int = 1) {
         let targets = selectedChatFindTargets
         guard !targets.isEmpty else {
-            if !chatFindText.isEmpty { toastWarning("No matches", chatFindText) }
+            if !chatFindText.isEmpty {
+                toastWarning("No matches", chatFindText)
+            }
             chatFindIndex = 0
             return
         }
@@ -175,21 +225,31 @@ final class AppModel: ObservableObject {
 
     func resolveMarkdownImageURL(_ source: String) -> URL? {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard !trimmed.lowercased().hasPrefix("http://"), !trimmed.lowercased().hasPrefix("https://") else { return nil }
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+        guard !trimmed.lowercased().hasPrefix("http://"), !trimmed.lowercased().hasPrefix("https://") else {
+            return nil
+        }
         let url: URL
         if trimmed.lowercased().hasPrefix("file://"), let parsed = URL(string: trimmed) {
             url = parsed
         } else if trimmed.hasPrefix("/") {
             url = URL(fileURLWithPath: trimmed)
         } else {
-            guard !workingDirectory.isEmpty else { return nil }
+            guard !workingDirectory.isEmpty else {
+                return nil
+            }
             url = URL(fileURLWithPath: trimmed, relativeTo: URL(fileURLWithPath: workingDirectory, isDirectory: true)).standardizedFileURL
         }
         let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
         let allowed = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tif", "tiff", "bmp"]
-        guard allowed.contains(resolved.pathExtension.lowercased()) else { return nil }
-        guard FileManager.default.fileExists(atPath: resolved.path) else { return nil }
+        guard allowed.contains(resolved.pathExtension.lowercased()) else {
+            return nil
+        }
+        guard FileManager.default.fileExists(atPath: resolved.path) else {
+            return nil
+        }
         return resolved
     }
 
@@ -203,7 +263,9 @@ final class AppModel: ObservableObject {
 
     private func finishTurn(sessionID: String, shouldDrainQueue: Bool) {
         activeTurnSnapshots.removeValue(forKey: sessionID)
-        guard shouldDrainQueue, let queued = pendingUserMessagesBySession[sessionID], !queued.isEmpty else { return }
+        guard shouldDrainQueue, let queued = pendingUserMessagesBySession[sessionID], !queued.isEmpty else {
+            return
+        }
         pendingUserMessagesBySession[sessionID] = []
         let merged = queued.map(\.content).joined(separator: "\n\n")
         let mergedAttachments = queued.flatMap(\.attachments)
@@ -218,13 +280,17 @@ final class AppModel: ObservableObject {
         let queued = pendingUserMessagesBySession.removeValue(forKey: sessionID) ?? []
         let existingDraft = sessionID == selectedSessionID ? composerText : composerTextBySession[sessionID] ?? ""
         let parts = ([stopped?.content, existingDraft] + queued.map(\.content)).compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        if !parts.isEmpty { setComposerText(parts.joined(separator: "\n\n"), for: sessionID) }
-        let restoredAttachments = (stopped?.attachments ?? []) + (sessionID == selectedSessionID ? attachments : attachmentsBySession[sessionID] ?? []) + queued.flatMap(\.attachments)
+        if !parts.isEmpty {
+            setComposerText(parts.joined(separator: "\n\n"), for: sessionID)
+        }
+        let restoredAttachments = (stopped?.attachments ?? []) + (sessionID == selectedSessionID ? attachments : attachmentsBySession[sessionID] ?? []) + queued
+            .flatMap(\.attachments)
         setAttachments(restoredAttachments, for: sessionID)
         if let stopped {
             messagesBySession[sessionID]?.removeAll { $0.id == stopped.messageID }
         }
     }
+
     private func modelTier(for model: String) -> String? {
         let map = [
             "claude-fable-5": "opus",
@@ -252,17 +318,28 @@ final class AppModel: ObservableObject {
 
     private func resolvedModelForActiveProvider() throws -> String {
         let selected = settings.selectedModel
-        guard let provider = activeProvider else { return cliModelName(selected) }
-        if let direct = provider.modelMappings[selected]?.trimmingCharacters(in: .whitespacesAndNewlines), !direct.isEmpty { return direct }
-        if let tier = modelTier(for: selected), let mapped = provider.modelMappings[tier]?.trimmingCharacters(in: .whitespacesAndNewlines), !mapped.isEmpty { return mapped }
+        guard let provider = activeProvider else {
+            return cliModelName(selected)
+        }
+        if let direct = provider.modelMappings[selected]?.trimmingCharacters(in: .whitespacesAndNewlines), !direct.isEmpty {
+            return direct
+        }
+        if let tier = modelTier(for: selected), let mapped = provider.modelMappings[tier]?.trimmingCharacters(in: .whitespacesAndNewlines), !mapped.isEmpty {
+            return mapped
+        }
         if let tier = modelTier(for: selected), !provider.modelMappings.isEmpty {
-            throw AppError(title: "Provider model mapping missing", message: "\(provider.name) has no \(tier) mapping for \(selected). Add a mapping in Settings → Providers before sending.")
+            throw AppError(
+                title: "Provider model mapping missing",
+                message: "\(provider.name) has no \(tier) mapping for \(selected). Add a mapping in Settings → Providers before sending."
+            )
         }
         return cliModelName(selected)
     }
 
     func bootstrap() {
         settings = JSONFile.load(AppSettings.self, from: AppPaths.shared.settingsFile) ?? AppSettings()
+        settings.sidebarWidth = min(450, max(Double(LiquidGlassToken.sidebarWidth), settings.sidebarWidth))
+        settings.secondaryWidth = min(620, max(Double(LiquidGlassToken.inspectorWidth), settings.secondaryWidth))
         recentProjects = JSONFile.load([RecentProject].self, from: AppPaths.shared.recentProjectsFile) ?? []
         let providerFile = providerVault.load()
         providers = providerFile.providers
@@ -288,10 +365,16 @@ final class AppModel: ObservableObject {
             }
             return item
         }
-        for existing in sessions where existing.isDraft { loaded.insert(existing, at: 0) }
+        for existing in sessions where existing.isDraft {
+            loaded.insert(existing, at: 0)
+        }
         sessions = loaded.sorted { lhs, rhs in
-            if lhs.pinned != rhs.pinned { return lhs.pinned && !rhs.pinned }
-            if lhs.archived != rhs.archived { return !lhs.archived && rhs.archived }
+            if lhs.pinned != rhs.pinned {
+                return lhs.pinned && !rhs.pinned
+            }
+            if lhs.archived != rhs.archived {
+                return !lhs.archived && rhs.archived
+            }
             return lhs.modifiedAt > rhs.modifiedAt
         }
     }
@@ -340,13 +423,17 @@ final class AppModel: ObservableObject {
     }
 
     func selectNextSession() {
-        guard !sessions.isEmpty else { return }
+        guard !sessions.isEmpty else {
+            return
+        }
         let current = selectedSessionID.flatMap { id in sessions.firstIndex { $0.id == id } } ?? -1
         selectSession(sessions[(current + 1 + sessions.count) % sessions.count].id)
     }
 
     func selectPreviousSession() {
-        guard !sessions.isEmpty else { return }
+        guard !sessions.isEmpty else {
+            return
+        }
         let current = selectedSessionID.flatMap { id in sessions.firstIndex { $0.id == id } } ?? 0
         selectSession(sessions[(current - 1 + sessions.count) % sessions.count].id)
     }
@@ -354,22 +441,6 @@ final class AppModel: ObservableObject {
     func adjustFontSize(_ delta: Double) {
         settings.fontSize = min(22, max(11, settings.fontSize + delta))
         persistSettings()
-    }
-
-    func startNewDraft() {
-        snapshotComposerState(for: selectedSessionID)
-        selectedSessionID = nil
-        workingDirectory = ""
-        fileTree = []
-        resetWorkspaceChangeState()
-        directoryWatcher.unwatchAll()
-        selectedFilePath = nil
-        filePreview = ""
-        filePreviewCleanContent = ""
-        fileEditDirty = false
-        setComposerText("")
-        setAttachments([])
-        reloadMCPAndSkills()
     }
 
     func newChat() {
@@ -419,9 +490,13 @@ final class AppModel: ObservableObject {
     }
 
     func sendComposer() {
-        guard let id = selectedSessionID else { newChat(); return }
+        guard let id = selectedSessionID else {
+            newChat(); return
+        }
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else {
+            return
+        }
         let currentAttachments = attachments
         setComposerText("", for: id)
         setAttachments([], for: id)
@@ -433,10 +508,17 @@ final class AppModel: ObservableObject {
     }
 
     func send(_ text: String, attachments: [AttachmentChip] = []) {
-        guard let id = selectedSessionID else { newChat(); return }
+        guard let id = selectedSessionID else {
+            newChat(); return
+        }
         let session = sessions.first(where: { $0.id == id })
         let fallbackCWD = workingDirectory.isEmpty ? FileManager.default.homeDirectoryForCurrentUser.path : workingDirectory
-        let preferredCWD = session?.projectDir.isEmpty == false ? session!.projectDir : fallbackCWD
+        let preferredCWD: String
+        if let projectDir = session?.projectDir, !projectDir.isEmpty {
+            preferredCWD = projectDir
+        } else {
+            preferredCWD = fallbackCWD
+        }
         guard let cwd = existingDirectoryPath(preferredCWD) ?? existingDirectoryPath(fallbackCWD) else {
             setComposerText(text, for: id)
             setAttachments(attachments, for: id)
@@ -450,8 +532,12 @@ final class AppModel: ObservableObject {
             let message = ChatMessage(role: .user, content: text, attachments: attachments)
             messagesBySession[id, default: []].append(message)
             activeTurnSnapshots[id] = ActiveTurnSnapshot(messageID: message.id, content: text, attachments: attachments)
-            if toolCallsBySession[id] == nil { toolCallsBySession[id] = [] }
-            if streamingTextBySession[id] == nil { streamingTextBySession[id] = "" }
+            if toolCallsBySession[id] == nil {
+                toolCallsBySession[id] = []
+            }
+            if streamingTextBySession[id] == nil {
+                streamingTextBySession[id] = ""
+            }
             if shouldStartSession(session, sessionID: id, configuration: configuration) {
                 fileSystem.registerWorkspace(cwd)
                 try engine.startSession(ClaudeSessionStartRequest(
@@ -478,18 +564,24 @@ final class AppModel: ObservableObject {
     }
 
     private func shouldStartSession(_ session: SessionRecord?, sessionID: String, configuration: ComposerSendConfiguration) -> Bool {
-        guard let session, !session.isDraft, session.path != nil else { return true }
-        guard engine.isSessionRunning(sessionID: sessionID) else { return true }
-        guard let previous = sendConfigurationBySession[sessionID] else { return true }
+        guard let session, !session.isDraft, session.path != nil else {
+            return true
+        }
+        guard engine.isSessionRunning(sessionID: sessionID) else {
+            return true
+        }
+        guard let previous = sendConfigurationBySession[sessionID] else {
+            return true
+        }
         return previous != configuration
     }
 
     func interrupt() {
-        guard let id = selectedSessionID else { return }
+        guard let id = selectedSessionID else {
+            return
+        }
         do { try engine.interrupt(sessionID: id) } catch { showError("Failed to interrupt", error.localizedDescription) }
     }
-
-    func killSelected() { if let id = selectedSessionID { engine.kill(sessionID: id); handle(.exited(sessionID: id)) } }
 
     func respondPermission(_ permission: PermissionRequest, allow: Bool, editedInput: String? = nil) {
         do {
@@ -522,11 +614,19 @@ final class AppModel: ObservableObject {
                 streamingTextBySession[sessionID] = ""
             }
             appendMessage(message, sessionID: sessionID)
-        case .toolStarted(let sessionID, let tool), .toolUpdated(let sessionID, let tool):
+        case .toolStarted(let sessionID, let tool),
+             .toolUpdated(let sessionID, let tool):
             upsertTool(tool, sessionID: sessionID)
         case .permissionRequested(let permission):
             pendingPermissions.append(permission)
-            var tool = ToolCall(id: permission.toolUseID ?? permission.requestID, sessionID: permission.sessionID, name: permission.toolName, inputPreview: permission.inputJSON, status: .waitingForPermission, parentID: permission.parentToolUseID)
+            var tool = ToolCall(
+                id: permission.toolUseID ?? permission.requestID,
+                sessionID: permission.sessionID,
+                name: permission.toolName,
+                inputPreview: permission.inputJSON,
+                status: .waitingForPermission,
+                parentID: permission.parentToolUseID
+            )
             tool.resultPreview = permission.summary
             upsertTool(tool, sessionID: permission.sessionID)
         case .turnCompleted(let sessionID):
@@ -537,7 +637,9 @@ final class AppModel: ObservableObject {
             finishTurn(sessionID: sessionID, shouldDrainQueue: true)
             reloadSessions()
         case .stderr(let sessionID, let text):
-            if text.lowercased().contains("error") { appendMessage(ChatMessage(role: .error, content: text), sessionID: sessionID) }
+            if text.lowercased().contains("error") {
+                appendMessage(ChatMessage(role: .error, content: text), sessionID: sessionID)
+            }
         case .exited(let sessionID):
             if let text = streamingTextBySession[sessionID], !text.isEmpty {
                 appendMessage(ChatMessage(role: .assistant, content: text), sessionID: sessionID)
@@ -551,7 +653,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-
     private func backfillCheckpoint(_ checkpoint: String, echo: ChatMessage, sessionID: String) {
         var messages = messagesBySession[sessionID] ?? []
         if let idx = messages.indices.reversed().first(where: { messages[$0].role == .user && messages[$0].checkpointUuid == nil }) {
@@ -560,11 +661,15 @@ final class AppModel: ObservableObject {
         } else if !messages.contains(where: { $0.id == echo.id }) {
             messagesBySession[sessionID, default: []].append(echo)
         }
-        if let idx = sessions.firstIndex(where: { $0.id == sessionID }) { sessions[idx].lastCheckpointUUID = checkpoint }
+        if let idx = sessions.firstIndex(where: { $0.id == sessionID }) {
+            sessions[idx].lastCheckpointUUID = checkpoint
+        }
     }
 
     private func startWatchingWorkspace() {
-        guard !workingDirectory.isEmpty else { return }
+        guard !workingDirectory.isEmpty else {
+            return
+        }
         guard let root = existingDirectoryPath(workingDirectory) else {
             directoryWatcher.unwatchAll()
             fileTree = []
@@ -576,7 +681,9 @@ final class AppModel: ObservableObject {
             directoryWatcher.unwatchAll()
             try directoryWatcher.watchDirectory(root) { [weak self] paths in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self else {
+                        return
+                    }
                     for path in paths {
                         self.changedFiles.insert(path)
                         self.fileChangeBadges[path] = self.fileChangeBadges[path] ?? "M"
@@ -602,16 +709,35 @@ final class AppModel: ObservableObject {
 
     private func upsertTool(_ tool: ToolCall, sessionID: String) {
         var tools = toolCallsBySession[sessionID] ?? []
-        if let idx = tools.firstIndex(where: { $0.id == tool.id }) { tools[idx] = tool } else { tools.append(tool) }
+        if let idx = tools.firstIndex(where: { $0.id == tool.id }) {
+            tools[idx] = tool
+        } else {
+            tools.append(tool)
+        }
         toolCallsBySession[sessionID] = tools
     }
 
-    func togglePin(_ session: SessionRecord) { mutateSession(session.id) { $0.pinned.toggle() } }
-    func toggleArchive(_ session: SessionRecord) { mutateSession(session.id) { $0.archived.toggle() } }
-    func rename(_ session: SessionRecord, to title: String) { mutateSession(session.id) { $0.customTitle = title } }
+}
+
+extension AppModel {
+    func togglePin(_ session: SessionRecord) {
+        mutateSession(session.id) { $0.pinned.toggle() }
+    }
+
+    func toggleArchive(_ session: SessionRecord) {
+        mutateSession(session.id) { $0.archived.toggle() }
+    }
+
+    func rename(_ session: SessionRecord, to title: String) {
+        mutateSession(session.id) { $0.customTitle = title }
+    }
+
     func toggleSessionSelection(_ session: SessionRecord) {
-        if selectedSessionIDs.contains(session.id) { selectedSessionIDs.remove(session.id) }
-        else { selectedSessionIDs.insert(session.id) }
+        if selectedSessionIDs.contains(session.id) {
+            selectedSessionIDs.remove(session.id)
+        } else {
+            selectedSessionIDs.insert(session.id)
+        }
         sessionSelectionMode = !selectedSessionIDs.isEmpty
     }
 
@@ -622,11 +748,15 @@ final class AppModel: ObservableObject {
 
     func toggleSessionSelectionMode() {
         sessionSelectionMode.toggle()
-        if !sessionSelectionMode { selectedSessionIDs.removeAll() }
+        if !sessionSelectionMode {
+            selectedSessionIDs.removeAll()
+        }
     }
 
     func archiveSelectedSessions() {
-        for id in selectedSessionIDs { mutateSession(id) { $0.archived = true } }
+        for id in selectedSessionIDs {
+            mutateSession(id) { $0.archived = true }
+        }
         toastSuccess("Archived sessions", "\(selectedSessionIDs.count) session(s)")
         clearSessionSelection()
     }
@@ -659,8 +789,12 @@ final class AppModel: ObservableObject {
             originalPath: session.path,
             deletedAt: Date()
         )
-        if let cliID = session.cliResumeID ?? (session.id.hasPrefix("desk_") ? nil : session.id) { sessionIndex.untrackSession(cliID) }
-        if let path = session.path { try? fileSystem.delete(path, sessionID: session.id) }
+        if let cliID = session.cliResumeID ?? (session.id.hasPrefix("desk_") ? nil : session.id) {
+            sessionIndex.untrackSession(cliID)
+        }
+        if let path = session.path {
+            try? fileSystem.delete(path, sessionID: session.id)
+        }
         sessions.removeAll { $0.id == session.id }
         messagesBySession.removeValue(forKey: session.id)
         streamingTextBySession.removeValue(forKey: session.id)
@@ -672,18 +806,24 @@ final class AppModel: ObservableObject {
         activeTurnSnapshots.removeValue(forKey: session.id)
         sendConfigurationBySession.removeValue(forKey: session.id)
         selectedSessionIDs.remove(session.id)
-        if selectedSessionID == session.id { selectedSessionID = sessions.first?.id }
+        if selectedSessionID == session.id {
+            selectedSessionID = sessions.first?.id
+        }
         saveSessionMeta()
         toastWarning("Deleted session", "Undo is available for \(session.title)")
     }
 
     private func backupSessionForUndo(_ session: SessionRecord) -> String? {
-        guard let path = session.path, FileManager.default.fileExists(atPath: path) else { return nil }
+        guard let path = session.path, FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
         let backupDir = AppPaths.shared.appSupport.appendingPathComponent("Trash/Sessions", isDirectory: true)
         let backup = backupDir.appendingPathComponent("\(session.id)-\(Int(Date().timeIntervalSince1970)).jsonl")
         do {
             try FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
-            if FileManager.default.fileExists(atPath: backup.path) { try FileManager.default.removeItem(at: backup) }
+            if FileManager.default.fileExists(atPath: backup.path) {
+                try FileManager.default.removeItem(at: backup)
+            }
             try FileManager.default.copyItem(atPath: path, toPath: backup.path)
             return backup.path
         } catch {
@@ -693,8 +833,12 @@ final class AppModel: ObservableObject {
     }
 
     func undoLastSessionDelete() {
-        guard let snapshot = recentlyDeletedSession else { return }
-        if let original = snapshot.originalPath, let backup = snapshot.backupPath, FileManager.default.fileExists(atPath: backup), !FileManager.default.fileExists(atPath: original) {
+        guard let snapshot = recentlyDeletedSession else {
+            return
+        }
+        if
+            let original = snapshot.originalPath, let backup = snapshot.backupPath, FileManager.default.fileExists(atPath: backup),
+            !FileManager.default.fileExists(atPath: original) {
             do {
                 try FileManager.default.createDirectory(at: URL(fileURLWithPath: original).deletingLastPathComponent(), withIntermediateDirectories: true)
                 try FileManager.default.copyItem(atPath: backup, toPath: original)
@@ -718,14 +862,23 @@ final class AppModel: ObservableObject {
     }
 
     private func mutateSession(_ id: String, _ body: (inout SessionRecord) -> Void) {
-        guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        guard let idx = sessions.firstIndex(where: { $0.id == id }) else {
+            return
+        }
         body(&sessions[idx]); saveSessionMeta()
     }
 
     func reloadFileTree() {
-        guard !workingDirectory.isEmpty else { fileTree = []; return }
-        guard let root = existingDirectoryPath(workingDirectory) else { fileTree = []; return }
-        do { fileTree = try fileSystem.loadTree(root: URL(fileURLWithPath: root), sessionID: selectedSessionID) } catch { fileTree = []; showError("Load files failed", error.localizedDescription) }
+        guard !workingDirectory.isEmpty else {
+            fileTree = []; return
+        }
+        guard let root = existingDirectoryPath(workingDirectory) else {
+            fileTree = []; return
+        }
+        do { fileTree = try fileSystem.loadTree(root: URL(fileURLWithPath: root), sessionID: selectedSessionID) } catch { fileTree = []; showError(
+            "Load files failed",
+            error.localizedDescription
+        ) }
     }
 
     func openFile(_ path: String) {
@@ -761,12 +914,16 @@ final class AppModel: ObservableObject {
     }
 
     func markFilePreviewEdited() {
-        guard selectedFilePath != nil else { fileEditDirty = false; return }
+        guard selectedFilePath != nil else {
+            fileEditDirty = false; return
+        }
         fileEditDirty = filePreview != filePreviewCleanContent
     }
 
     func saveSelectedFile() {
-        guard let path = selectedFilePath else { return }
+        guard let path = selectedFilePath else {
+            return
+        }
         do {
             try fileSystem.writeText(path, text: filePreview, sessionID: selectedSessionID)
             changedFiles.insert(path)
@@ -782,13 +939,19 @@ final class AppModel: ObservableObject {
     }
 
     func reloadSelectedFile() {
-        guard let path = selectedFilePath else { return }
-        guard resolveDirtyFileChange() else { return }
+        guard let path = selectedFilePath else {
+            return
+        }
+        guard resolveDirtyFileChange() else {
+            return
+        }
         openFile(path)
     }
 
     @discardableResult private func resolveDirtyFileChange() -> Bool {
-        guard fileEditDirty else { return true }
+        guard fileEditDirty else {
+            return true
+        }
         let alert = NSAlert()
         alert.messageText = "Unsaved file changes"
         alert.informativeText = "Save the current file before changing the preview selection?"
@@ -810,14 +973,20 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult func requestOpenFile(_ path: String) -> Bool {
-        if sameFilePath(selectedFilePath, path) { secondaryTab = .files; return true }
-        guard resolveDirtyFileChange() else { return false }
+        if sameFilePath(selectedFilePath, path) {
+            secondaryTab = .files; return true
+        }
+        guard resolveDirtyFileChange() else {
+            return false
+        }
         openFile(path)
         return sameFilePath(selectedFilePath, path)
     }
 
     func requestCloseFilePreview() {
-        guard resolveDirtyFileChange() else { return }
+        guard resolveDirtyFileChange() else {
+            return
+        }
         selectedFilePath = nil
         filePreview = ""
         filePreviewCleanContent = ""
@@ -826,7 +995,9 @@ final class AppModel: ObservableObject {
 
     @discardableResult func requestSelectFilePath(_ path: String) -> Bool {
         if !sameFilePath(selectedFilePath, path) {
-            guard resolveDirtyFileChange() else { return false }
+            guard resolveDirtyFileChange() else {
+                return false
+            }
             selectedFilePath = path
             filePreview = ""
             filePreviewCleanContent = ""
@@ -836,155 +1007,234 @@ final class AppModel: ObservableObject {
     }
 
     func requestRenameSelectedFile(to newName: String) {
-        guard resolveDirtyFileChange() else { return }
+        guard resolveDirtyFileChange() else {
+            return
+        }
         renameSelectedFile(to: newName)
     }
 
     func requestDeleteSelectedFile() {
-        guard resolveDirtyFileChange() else { return }
+        guard resolveDirtyFileChange() else {
+            return
+        }
         deleteSelectedFile()
     }
 
     func requestRenameFile(_ path: String, to newName: String) {
-        guard requestSelectFilePath(path) else { return }
+        guard requestSelectFilePath(path) else {
+            return
+        }
         requestRenameSelectedFile(to: newName)
     }
 
     func requestDeleteFile(_ path: String) {
-        guard requestSelectFilePath(path) else { return }
+        guard requestSelectFilePath(path) else {
+            return
+        }
         requestDeleteSelectedFile()
     }
 
     func requestRevealFile(_ path: String) {
-        guard requestSelectFilePath(path) else { return }
+        guard requestSelectFilePath(path) else {
+            return
+        }
         revealSelectedFile()
     }
 
     func requestOpenExternalFile(_ path: String) {
-        guard requestSelectFilePath(path) else { return }
+        guard requestSelectFilePath(path) else {
+            return
+        }
         openSelectedFile()
     }
 
     func requestCopyFilePath(_ path: String) {
-        guard requestSelectFilePath(path) else { return }
+        guard requestSelectFilePath(path) else {
+            return
+        }
         copySelectedPath()
     }
 
     func requestInsertFilePath(_ path: String) {
-        guard requestSelectFilePath(path) else { return }
+        guard requestSelectFilePath(path) else {
+            return
+        }
         insertSelectedPathIntoChat()
     }
 
     func requestShareFile(_ path: String) {
-        guard requestSelectFilePath(path) else { return }
+        guard requestSelectFilePath(path) else {
+            return
+        }
         shareSelectedFile()
     }
 
     func requestInsertFileContent(_ path: String) {
         if !sameFilePath(selectedFilePath, path) {
-            guard resolveDirtyFileChange() else { return }
+            guard resolveDirtyFileChange() else {
+                return
+            }
             openFile(path)
         }
-        guard sameFilePath(selectedFilePath, path) else { return }
+        guard sameFilePath(selectedFilePath, path) else {
+            return
+        }
         insertSelectedContentIntoChat()
     }
 
-    func revealSelectedFile() { if let path = selectedFilePath { do { try fileSystem.reveal(path, sessionID: selectedSessionID) } catch { showError("Reveal failed", error.localizedDescription) } } }
-    func openSelectedFile() { if let path = selectedFilePath { do { try fileSystem.open(path, sessionID: selectedSessionID) } catch { showError("Open failed", error.localizedDescription) } } }
-    func openSelectedInVSCode() { if let path = selectedFilePath { do { try fileSystem.openInVSCode(path, sessionID: selectedSessionID) } catch { showError("Open in VS Code failed", error.localizedDescription) } } }
+    func revealSelectedFile() {
+        if let path = selectedFilePath {
+            do { try fileSystem.reveal(path, sessionID: selectedSessionID) } catch { showError(
+                "Reveal failed",
+                error.localizedDescription
+            ) } } }
+
+    func openSelectedFile() {
+        if let path = selectedFilePath {
+            do { try fileSystem.open(path, sessionID: selectedSessionID) } catch { showError(
+                "Open failed",
+                error.localizedDescription
+            ) } } }
+
+    func openSelectedInVSCode() {
+        if let path = selectedFilePath {
+            do { try fileSystem.openInVSCode(path, sessionID: selectedSessionID) } catch { showError(
+                "Open in VS Code failed",
+                error.localizedDescription
+            ) } } }
 
     private func availablePath(in directory: URL, name: String) -> URL {
         let base = directory.appendingPathComponent(name)
-        guard (try? fileSystem.exists(base.path, sessionID: selectedSessionID)) == true else { return base }
+        guard (try? fileSystem.exists(base.path, sessionID: selectedSessionID)) == true else {
+            return base
+        }
         let ext = base.pathExtension
         let stem = base.deletingPathExtension().lastPathComponent
-        for index in 2...999 {
+        for index in 2 ... 999 {
             let candidate = directory.appendingPathComponent("\(stem) \(index)").appendingPathExtension(ext)
-            if (try? fileSystem.exists(candidate.path, sessionID: selectedSessionID)) != true { return candidate }
+            if (try? fileSystem.exists(candidate.path, sessionID: selectedSessionID)) != true {
+                return candidate
+            }
         }
         return directory.appendingPathComponent("\(stem) \(UUID().uuidString.prefix(6))").appendingPathExtension(ext)
     }
 
-    func createFile(named name: String) {
-        guard !workingDirectory.isEmpty else { return }
-        createFile(inDirectory: workingDirectory, named: name)
-    }
-
     func createFile(inDirectory directory: String, named name: String = "untitled.txt") {
         let url = availablePath(in: URL(fileURLWithPath: directory), name: name)
-        do { try fileSystem.writeText(url.path, text: "", sessionID: selectedSessionID); changedFiles.insert(url.path); fileChangeBadges[url.path] = "A"; reloadFileTree(); toastSuccess("Created file", url.lastPathComponent) } catch { showError("Create file failed", error.localizedDescription) }
-    }
-
-    func createFolder(named name: String) {
-        guard !workingDirectory.isEmpty else { return }
-        createFolder(inDirectory: workingDirectory, named: name)
+        do {
+            try fileSystem.writeText(url.path, text: "", sessionID: selectedSessionID); changedFiles
+                .insert(url.path); fileChangeBadges[url.path] = "A"; reloadFileTree(); toastSuccess(
+                    "Created file",
+                    url.lastPathComponent
+                ) } catch { showError("Create file failed", error.localizedDescription) }
     }
 
     func createFolder(inDirectory directory: String, named name: String) {
         let url = availablePath(in: URL(fileURLWithPath: directory), name: name)
-        do { try fileSystem.createDirectory(url.path, sessionID: selectedSessionID); changedFiles.insert(url.path); fileChangeBadges[url.path] = "A"; reloadFileTree(); toastSuccess("Created folder", url.lastPathComponent) } catch { showError("Create folder failed", error.localizedDescription) }
+        do {
+            try fileSystem.createDirectory(url.path, sessionID: selectedSessionID); changedFiles.insert(url.path); fileChangeBadges[url.path] = "A"; reloadFileTree(); toastSuccess(
+                "Created folder",
+                url.lastPathComponent
+            ) } catch { showError("Create folder failed", error.localizedDescription) }
     }
 
     func renameSelectedFile(to newName: String) {
-        guard let path = selectedFilePath else { return }
+        guard let path = selectedFilePath else {
+            return
+        }
         let dest = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent(newName).path
-        do { try fileSystem.rename(path, to: dest, sessionID: selectedSessionID); changedFiles.insert(path); changedFiles.insert(dest); fileChangeBadges[path] = "D"; fileChangeBadges[dest] = "A"; selectedFilePath = dest; filePreviewCleanContent = filePreview; fileEditDirty = false; reloadFileTree(); toastSuccess("Renamed", newName) } catch { showError("Rename failed", error.localizedDescription) }
+        do {
+            try fileSystem.rename(path, to: dest, sessionID: selectedSessionID); changedFiles.insert(path); changedFiles
+                .insert(dest); fileChangeBadges[path] = "D"; fileChangeBadges[dest] = "A"; selectedFilePath = dest; filePreviewCleanContent = filePreview; fileEditDirty =
+                false; reloadFileTree(); toastSuccess(
+                    "Renamed",
+                    newName
+                ) } catch { showError("Rename failed", error.localizedDescription) }
     }
 
     func deleteSelectedFile() {
-        guard let path = selectedFilePath else { return }
-        do { try fileSystem.delete(path, sessionID: selectedSessionID); changedFiles.insert(path); fileChangeBadges[path] = "D"; selectedFilePath = nil; filePreview = ""; filePreviewCleanContent = ""; fileEditDirty = false; reloadFileTree(); toastSuccess("Deleted", URL(fileURLWithPath: path).lastPathComponent) } catch { showError("Delete failed", error.localizedDescription) }
+        guard let path = selectedFilePath else {
+            return
+        }
+        do {
+            try fileSystem.delete(path, sessionID: selectedSessionID); changedFiles
+                .insert(path); fileChangeBadges[path] = "D"; selectedFilePath = nil; filePreview = ""; filePreviewCleanContent = ""; fileEditDirty =
+                false; reloadFileTree(); toastSuccess(
+                    "Deleted",
+                    URL(fileURLWithPath: path).lastPathComponent
+                ) } catch { showError("Delete failed", error.localizedDescription) }
     }
 
     func copySelectedPath() {
-        guard let path = selectedFilePath else { return }
+        guard let path = selectedFilePath else {
+            return
+        }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(path, forType: .string); toastSuccess("Copied path", path)
     }
 
-    func copySelectedContent() {
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(filePreview, forType: .string); toastSuccess("Copied file content", selectedFilePath ?? "")
-    }
+    func insertSelectedPathIntoChat() {
+        if let path = selectedFilePath {
+            appendToComposer(" @\(path)")
+        } }
 
-    func insertSelectedPathIntoChat() { if let path = selectedFilePath { appendToComposer(" @\(path)") } }
-    func insertSelectedContentIntoChat() { if !filePreview.isEmpty { appendToComposer("\n\n```\n\(filePreview)\n```") } }
-    func shareSelectedFile() { if let path = selectedFilePath { shareService.share(path: path, from: nil) } }
-    func shareSelectedFileToWeChat() { if let path = selectedFilePath { shareService.copyForWeChat(path: path); toastSuccess("Copied for WeChat", path) } }
+    func insertSelectedContentIntoChat() {
+        if !filePreview.isEmpty {
+            appendToComposer("\n\n```\n\(filePreview)\n```")
+        } }
+
+    func shareSelectedFile() {
+        if let path = selectedFilePath {
+            shareService.share(path: path, from: nil)
+        } }
 
     func attachFiles() {
         let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = true
         if panel.runModal() == .OK {
             var next = attachments
             for url in panel.urls {
-                if let id = selectedSessionID { fileSystem.addGrant(sessionID: id, path: url.path) }
+                if let id = selectedSessionID {
+                    fileSystem.addGrant(sessionID: id, path: url.path)
+                }
                 let values = try? url.resourceValues(forKeys: [.fileSizeKey])
-                next.append(AttachmentChip(name: url.lastPathComponent, path: url.path, size: Int64(values?.fileSize ?? 0), isImage: ["png", "jpg", "jpeg", "gif", "webp"].contains(url.pathExtension.lowercased())))
+                next.append(AttachmentChip(
+                    name: url.lastPathComponent,
+                    path: url.path,
+                    size: Int64(values?.fileSize ?? 0),
+                    isImage: ["png", "jpg", "jpeg", "gif", "webp"].contains(url.pathExtension.lowercased())
+                ))
             }
             setAttachments(next)
         }
     }
 
-    func removeAttachment(_ attachment: AttachmentChip) { setAttachments(attachments.filter { $0.id != attachment.id }) }
-
+    func removeAttachment(_ attachment: AttachmentChip) {
+        setAttachments(attachments.filter { $0.id != attachment.id })
+    }
 
     func requestRewindToLastUserMessage() {
         performRewind(.restoreAll)
     }
 
     func performRewind(_ action: RewindAction) {
-        guard let id = selectedSessionID,
-              let session = sessions.first(where: { $0.id == id }),
-              let turn = lastUserMessage(in: id) else {
+        guard
+            let id = selectedSessionID,
+            let session = sessions.first(where: { $0.id == id }),
+            let turn = lastUserMessage(in: id) else {
             showError("Rewind unavailable", "No user turn is available to rewind.")
             return
         }
 
         switch action {
         case .restoreAll:
-            guard let output = restoreCodeToCheckpoint(session: session, turn: turn) else { return }
+            guard let output = restoreCodeToCheckpoint(session: session, turn: turn) else {
+                return
+            }
             rewindConversation(sessionID: id, toMessageID: turn.id)
             toastInfo("Rewind restored", output.isEmpty ? "Conversation and files restored to the last user turn." : output)
         case .restoreCode:
-            guard let output = restoreCodeToCheckpoint(session: session, turn: turn) else { return }
+            guard let output = restoreCodeToCheckpoint(session: session, turn: turn) else {
+                return
+            }
             toastInfo("Code restored", output.isEmpty ? "Files restored to the last Claude checkpoint." : output)
         case .restoreConversation:
             rewindConversation(sessionID: id, toMessageID: turn.id)
@@ -994,8 +1244,6 @@ final class AppModel: ObservableObject {
             toastInfo("Summary command ready", "Review and send the /compact command when ready.")
         }
     }
-
-    func summarizeFromHere() { setComposerText("/compact Summarize the conversation from this point and preserve open tasks.") }
 
     private func lastUserMessage(in sessionID: String) -> ChatMessage? {
         (messagesBySession[sessionID] ?? []).last { $0.role == .user }
@@ -1022,7 +1270,9 @@ final class AppModel: ObservableObject {
     }
 
     private func rewindConversation(sessionID: String, toMessageID messageID: String) {
-        guard let index = (messagesBySession[sessionID] ?? []).lastIndex(where: { $0.id == messageID }) else { return }
+        guard let index = (messagesBySession[sessionID] ?? []).lastIndex(where: { $0.id == messageID }) else {
+            return
+        }
         messagesBySession[sessionID] = Array((messagesBySession[sessionID] ?? []).prefix(index + 1))
         streamingTextBySession[sessionID] = ""
         pendingUserMessagesBySession[sessionID] = []
@@ -1039,14 +1289,12 @@ final class AppModel: ObservableObject {
         saveSessionMeta()
     }
 
+}
+
+extension AppModel {
     func reloadMCPAndSkills() {
         mcpServers = mcpService.loadServers(projectPath: workingDirectory.isEmpty ? nil : workingDirectory)
         skills = skillService.loadSkills(projectPath: workingDirectory.isEmpty ? nil : workingDirectory)
-    }
-
-    func saveSelectedSkill() {
-        guard let skill = selectedSkill else { return }
-        do { try skillService.writeSkill(skill); reloadMCPAndSkills(); toastSuccess("Saved skill", skill.name) } catch { showError("Save skill failed", error.localizedDescription) }
     }
 
     func useSkillInComposer(_ skill: SkillInfo) {
@@ -1062,7 +1310,9 @@ final class AppModel: ObservableObject {
 
     func duplicateSkill(_ skill: SkillInfo) {
         if sameFilePath(selectedFilePath, skill.path) {
-            guard resolveDirtyFileChange() else { return }
+            guard resolveDirtyFileChange() else {
+                return
+            }
         }
         let originalURL = URL(fileURLWithPath: skill.path)
         let parent = originalURL.deletingLastPathComponent().deletingLastPathComponent()
@@ -1076,7 +1326,9 @@ final class AppModel: ObservableObject {
         let targetDir = parent.appendingPathComponent(candidateName, isDirectory: true)
         let targetFile = targetDir.appendingPathComponent("SKILL.md")
         do {
-            if !workingDirectory.isEmpty { fileSystem.registerWorkspace(workingDirectory) }
+            if !workingDirectory.isEmpty {
+                fileSystem.registerWorkspace(workingDirectory)
+            }
             try fileSystem.createDirectory(targetDir.path, sessionID: selectedSessionID)
             try fileSystem.writeText(targetFile.path, text: skillContent(skill.content, settingName: candidateName), sessionID: selectedSessionID)
             reloadMCPAndSkills()
@@ -1107,13 +1359,19 @@ final class AppModel: ObservableObject {
     }
 
     func deleteSelectedSkill() {
-        guard let skill = selectedSkill else { return }
+        guard let skill = selectedSkill else {
+            return
+        }
         if sameFilePath(selectedFilePath, skill.path) {
-            guard resolveDirtyFileChange() else { return }
+            guard resolveDirtyFileChange() else {
+                return
+            }
         }
         do {
             try skillService.deleteSkill(skill)
-            if sameFilePath(selectedFilePath, skill.path) { requestCloseFilePreview() }
+            if sameFilePath(selectedFilePath, skill.path) {
+                requestCloseFilePreview()
+            }
             selectedSkill = nil
             reloadMCPAndSkills()
             toastSuccess("Deleted skill", skill.name)
@@ -1121,7 +1379,9 @@ final class AppModel: ObservableObject {
     }
 
     func toggleSelectedSkillEnabled() {
-        guard var skill = selectedSkill else { return }
+        guard var skill = selectedSkill else {
+            return
+        }
         skill.disabled.toggle()
         let source = sameFilePath(selectedFilePath, skill.path) ? filePreview : skill.content
         skill.content = skillContent(source, settingDisabled: skill.disabled)
@@ -1145,17 +1405,21 @@ final class AppModel: ObservableObject {
         let legacyKey = "disable-model-invocation"
         var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") {
-            var frontmatter = Array(lines[1..<end])
+            var frontmatter = Array(lines[1 ..< end])
             var wroteCanonical = false
             frontmatter = frontmatter.compactMap { line in
                 if line.hasPrefix("\(canonicalKey):") {
                     wroteCanonical = true
                     return "\(canonicalKey): \(disabled)"
                 }
-                if line.hasPrefix("\(legacyKey):") { return nil }
+                if line.hasPrefix("\(legacyKey):") {
+                    return nil
+                }
                 return line
             }
-            if !wroteCanonical { frontmatter.insert("\(canonicalKey): \(disabled)", at: 0) }
+            if !wroteCanonical {
+                frontmatter.insert("\(canonicalKey): \(disabled)", at: 0)
+            }
             lines = ["---"] + frontmatter + Array(lines[end...])
             return lines.joined(separator: "\n")
         }
@@ -1165,7 +1429,7 @@ final class AppModel: ObservableObject {
     private func skillContent(_ content: String, settingName name: String) -> String {
         var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if lines.first == "---", let end = lines.dropFirst().firstIndex(of: "---") {
-            var frontmatter = Array(lines[1..<end])
+            var frontmatter = Array(lines[1 ..< end])
             var wroteName = false
             frontmatter = frontmatter.map { line in
                 if line.hasPrefix("name:") {
@@ -1174,7 +1438,9 @@ final class AppModel: ObservableObject {
                 }
                 return line
             }
-            if !wroteName { frontmatter.insert("name: \(name)", at: 0) }
+            if !wroteName {
+                frontmatter.insert("name: \(name)", at: 0)
+            }
             lines = ["---"] + frontmatter + Array(lines[end...])
             return lines.joined(separator: "\n")
         }
@@ -1207,15 +1473,32 @@ final class AppModel: ObservableObject {
         mcpServers.removeAll { $0.name == server.name && $0.source == "LiquidCode" }
         saveAppMCPServers()
     }
+
     func testMCPServer(_ server: MCPServer) {
-        if let url = server.url, URL(string: url) != nil { toastSuccess("MCP config valid", "\(server.name) uses \(url)"); return }
-        guard let command = server.command?.split(separator: " ").first.map(String.init), !command.isEmpty else { toastWarning("MCP config incomplete", "\(server.name) has no command or URL"); return }
+        if let url = server.url, URL(string: url) != nil {
+            toastSuccess("MCP config valid", "\(server.name) uses \(url)"); return
+        }
+        guard let command = server.command?.split(separator: " ").first.map(String.init), !command.isEmpty else {
+            toastWarning(
+                "MCP config incomplete",
+                "\(server.name) has no command or URL"
+            ); return }
         let resolved = command.contains("/") ? (FileManager.default.isExecutableFile(atPath: command) ? command : nil) : Shell.capture("/usr/bin/env", ["which", command])
-        if let resolved, !resolved.isEmpty { toastSuccess("MCP command found", "\(server.name): \(resolved)") } else { toastWarning("MCP command missing", "\(server.name): \(command)") }
+        if let resolved, !resolved.isEmpty {
+            toastSuccess("MCP command found", "\(server.name): \(resolved)")
+        } else {
+            toastWarning(
+                "MCP command missing",
+                "\(server.name): \(command)"
+            ) }
     }
 
     private func saveAppMCPServers() {
-        do { try mcpService.saveAppServers(mcpServers.filter { $0.source == "LiquidCode" }); reloadMCPAndSkills(); toastSuccess("Saved MCP", "App-local MCP profile updated") } catch { showError("Save MCP failed", error.localizedDescription) }
+        do { try mcpService.saveAppServers(mcpServers.filter { $0.source == "LiquidCode" }); reloadMCPAndSkills(); toastSuccess("Saved MCP", "App-local MCP profile updated")
+        } catch { showError(
+            "Save MCP failed",
+            error.localizedDescription
+        ) }
     }
 
     private func appLocalMCPServer(name: String, commandLine: String) -> MCPServer {
@@ -1252,7 +1535,11 @@ final class AppModel: ObservableObject {
                 continue
             }
             if let activeQuote = quote {
-                if char == activeQuote { quote = nil } else { current.append(char) }
+                if char == activeQuote {
+                    quote = nil
+                } else {
+                    current.append(char)
+                }
                 continue
             }
             if char == "\"" || char == "'" {
@@ -1260,47 +1547,75 @@ final class AppModel: ObservableObject {
                 continue
             }
             if char.isWhitespace {
-                if !current.isEmpty { words.append(current); current = "" }
+                if !current.isEmpty {
+                    words.append(current); current = ""
+                }
             } else {
                 current.append(char)
             }
         }
-        if !current.isEmpty { words.append(current) }
+        if !current.isEmpty {
+            words.append(current)
+        }
         return words
     }
 
     func saveProviders() {
-        do { try providerVault.save(.init(activeProviderID: activeProviderID, providers: providers)); persistSettings() } catch { showError("Save providers failed", error.localizedDescription) }
+        do { try providerVault.save(.init(activeProviderID: activeProviderID, providers: providers)); persistSettings() } catch { showError(
+            "Save providers failed",
+            error.localizedDescription
+        ) }
     }
 
     func setProviderKey(providerID: String, key: String) {
         do { try providerVault.setAPIKey(key, providerID: providerID) } catch { showError("Save API key failed", error.localizedDescription) }
     }
+
     func testActiveProvider() {
-        guard let activeProvider else { showError("No provider", "Select or add a provider first."); return }
+        guard let activeProvider else {
+            showError("No provider", "Select or add a provider first."); return
+        }
         let hasKey = providerVault.apiKey(providerID: activeProvider.id)?.isEmpty == false
         let mapping = (try? resolvedModelForActiveProvider()) ?? "missing mapping"
         showError("Provider check", "Keychain key: \(hasKey ? "present" : "missing")\nBase URL: \(activeProvider.baseURL)\nResolved model: \(mapping)")
     }
 
-
     func addProvider() {
-        let provider = ProviderRecord(id: UUID().uuidString, name: "Custom Provider", baseURL: "https://api.anthropic.com", apiFormat: .anthropic, modelMappings: [:], extraEnv: [:])
+        let provider = ProviderRecord(
+            id: UUID().uuidString,
+            name: "Custom Provider",
+            baseURL: "https://api.anthropic.com",
+            apiFormat: .anthropic,
+            modelMappings: [:],
+            extraEnv: [:]
+        )
         providers.append(provider); activeProviderID = provider.id; saveProviders()
     }
 
     func addProvider(from preset: ProviderPreset) {
         let existingCount = providers.filter { $0.preset == preset.id }.count
         let suffix = existingCount > 0 ? " (\(existingCount + 1))" : ""
-        let provider = ProviderRecord(id: UUID().uuidString, name: preset.name + suffix, baseURL: preset.baseURL, apiFormat: preset.apiFormat, modelMappings: preset.modelMappings, extraEnv: preset.extraEnv, preset: preset.id)
+        let provider = ProviderRecord(
+            id: UUID().uuidString,
+            name: preset.name + suffix,
+            baseURL: preset.baseURL,
+            apiFormat: preset.apiFormat,
+            modelMappings: preset.modelMappings,
+            extraEnv: preset.extraEnv,
+            preset: preset.id
+        )
         providers.append(provider)
         activeProviderID = provider.id
         saveProviders()
-        if let keyURL = preset.keyURL, let url = URL(string: keyURL) { NSWorkspace.shared.open(url) }
+        if let keyURL = preset.keyURL, let url = URL(string: keyURL) {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func deleteActiveProvider() {
-        guard let activeProviderID else { return }
+        guard let activeProviderID else {
+            return
+        }
         providers.removeAll { $0.id == activeProviderID }
         self.activeProviderID = providers.first?.id
         saveProviders()
@@ -1308,7 +1623,11 @@ final class AppModel: ObservableObject {
 
     func exportProviders() {
         let panel = NSSavePanel(); panel.nameFieldStringValue = "liquidcode-providers.json"
-        if panel.runModal() == .OK, let url = panel.url { try? JSONEncoder.liquid.encode(ProviderVault.ProviderFile(activeProviderID: activeProviderID, providers: providers)).write(to: url) }
+        if
+            panel.runModal() == .OK,
+            let url = panel.url {
+            try? JSONEncoder.liquid.encode(ProviderVault.ProviderFile(activeProviderID: activeProviderID, providers: providers)).write(to: url)
+        }
     }
 
     func importProviders() {
@@ -1395,13 +1714,17 @@ final class AppModel: ObservableObject {
         switch phase {
         case .checking: return .checking
         case .downloading: return .downloading
-        case .installing, .npmFallback, .repairing: return .installing
+        case .installing,
+             .npmFallback,
+             .repairing: return .installing
         case .complete: return .complete
         case .failed: return .failed
         }
     }
 
-    func openClaudeLogin() { cliService.openTerminalLogin(); setupProgress = SetupProgress(phase: .authenticating, percent: 0.5, message: "Claude login opened in Terminal") }
+    func openClaudeLogin() {
+        cliService.openTerminalLogin(); setupProgress = SetupProgress(phase: .authenticating, percent: 0.5, message: "Claude login opened in Terminal")
+    }
 
     func openClaudeConfig() {
         let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json").path
@@ -1412,53 +1735,78 @@ final class AppModel: ObservableObject {
         do { try fileSystem.reveal(AppPaths.shared.logs.path, sessionID: nil) } catch { showError("Reveal logs failed", error.localizedDescription) }
     }
 
-    func showChangelog() { changelogOpen = true }
+    func showChangelog() {
+        changelogOpen = true
+    }
 
     private func showToast(_ kind: ToastMessage.Kind, _ title: String, _ message: String) {
         let next = ToastMessage(kind: kind, title: title, message: message)
         toast = next
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(4))
-            if toast?.id == next.id { toast = nil }
+            if toast?.id == next.id {
+                toast = nil
+            }
         }
     }
 
-    func toastInfo(_ title: String, _ message: String) { showToast(.info, title, message) }
-    func toastSuccess(_ title: String, _ message: String) { showToast(.success, title, message) }
-    func toastWarning(_ title: String, _ message: String) { showToast(.warning, title, message) }
+    func toastInfo(_ title: String, _ message: String) {
+        showToast(.info, title, message)
+    }
 
-    func loadSessionGroups() { sessionGroups = JSONFile.load([SessionTaskGroup].self, from: AppPaths.shared.appSupport.appendingPathComponent("groups.json")) ?? [] }
-    func saveSessionGroups() { try? JSONFile.save(sessionGroups, to: AppPaths.shared.appSupport.appendingPathComponent("groups.json")) }
+    func toastSuccess(_ title: String, _ message: String) {
+        showToast(.success, title, message)
+    }
+
+    func toastWarning(_ title: String, _ message: String) {
+        showToast(.warning, title, message)
+    }
+
+    func loadSessionGroups() {
+        sessionGroups = JSONFile.load([SessionTaskGroup].self, from: AppPaths.shared.appSupport.appendingPathComponent("groups.json")) ?? []
+    }
+
+    func saveSessionGroups() {
+        try? JSONFile.save(sessionGroups, to: AppPaths.shared.appSupport.appendingPathComponent("groups.json"))
+    }
 
     func createGroup(name: String) {
-        guard !workingDirectory.isEmpty else { return }
+        guard !workingDirectory.isEmpty else {
+            return
+        }
         sessionGroups.append(SessionTaskGroup(name: name, projectPath: workingDirectory, sessionIDs: [])); saveSessionGroups()
     }
 
     func addSession(_ session: SessionRecord, to group: SessionTaskGroup) {
-        guard let idx = sessionGroups.firstIndex(where: { $0.id == group.id }) else { return }
-        guard session.projectDir == sessionGroups[idx].projectPath else { return }
-        if !sessionGroups[idx].sessionIDs.contains(session.id) { sessionGroups[idx].sessionIDs.append(session.id); sessionGroups[idx].updatedAt = Date(); saveSessionGroups() }
+        guard let idx = sessionGroups.firstIndex(where: { $0.id == group.id }) else {
+            return
+        }
+        guard session.projectDir == sessionGroups[idx].projectPath else {
+            return
+        }
+        if !sessionGroups[idx].sessionIDs.contains(session.id) {
+            sessionGroups[idx].sessionIDs.append(session.id); sessionGroups[idx].updatedAt = Date(); saveSessionGroups()
+        }
     }
 
     func removeSession(_ session: SessionRecord, from group: SessionTaskGroup) {
-        guard let idx = sessionGroups.firstIndex(where: { $0.id == group.id }) else { return }
+        guard let idx = sessionGroups.firstIndex(where: { $0.id == group.id }) else {
+            return
+        }
         sessionGroups[idx].sessionIDs.removeAll { $0 == session.id }; sessionGroups[idx].updatedAt = Date(); saveSessionGroups()
     }
 
-    func renameGroup(_ group: SessionTaskGroup, to name: String) {
-        guard let idx = sessionGroups.firstIndex(where: { $0.id == group.id }) else { return }
-        sessionGroups[idx].name = name; sessionGroups[idx].updatedAt = Date(); saveSessionGroups()
+    func deleteGroup(_ group: SessionTaskGroup) {
+        sessionGroups.removeAll { $0.id == group.id }; saveSessionGroups()
     }
-
-    func deleteGroup(_ group: SessionTaskGroup) { sessionGroups.removeAll { $0.id == group.id }; saveSessionGroups() }
 
     func exportMarkdown(session: SessionRecord) {
         let panel = NSSavePanel(); panel.nameFieldStringValue = "\(session.title).md"
         if panel.runModal() == .OK, let url = panel.url {
             do {
-                if let path = session.path { try sessionIndex.exportMarkdown(path: path, outputPath: url.path) }
-                else {
+                if let path = session.path {
+                    try sessionIndex.exportMarkdown(path: path, outputPath: url.path)
+                } else {
                     let messages = messagesBySession[session.id] ?? []
                     let markdown = messages.map { "### \($0.role.rawValue)\n\n\($0.content)" }.joined(separator: "\n\n")
                     try markdown.write(to: url, atomically: true, encoding: .utf8)
@@ -1471,8 +1819,11 @@ final class AppModel: ObservableObject {
         let panel = NSSavePanel(); panel.nameFieldStringValue = "\(session.title).json"
         if panel.runModal() == .OK, let url = panel.url {
             do {
-                if let path = session.path { try sessionIndex.exportJSON(path: path, outputPath: url.path) }
-                else { try JSONEncoder.liquid.encode(messagesBySession[session.id] ?? []).write(to: url) }
+                if let path = session.path {
+                    try sessionIndex.exportJSON(path: path, outputPath: url.path)
+                } else {
+                    try JSONEncoder.liquid.encode(messagesBySession[session.id] ?? []).write(to: url)
+                }
             } catch { showError("Export JSON failed", error.localizedDescription) }
         }
     }
@@ -1490,7 +1841,9 @@ final class AppModel: ObservableObject {
         case .sendSlash(let slash): setComposerText(slash + " ")
         case .installCLI: installOrUpdateCLI()
         case .loginCLI: openClaudeLogin()
-        case .exportCurrent: if let selectedSession { exportMarkdown(session: selectedSession) }
+        case .exportCurrent: if let selectedSession {
+                exportMarkdown(session: selectedSession)
+            }
         case .rewind: requestRewindToLastUserMessage()
         case .changelog: showChangelog()
         }
@@ -1501,6 +1854,7 @@ final class AppModel: ObservableObject {
             .init(title: "New Chat", subtitle: "Open a project and start a draft", kind: .newChat),
             .init(title: "Settings", subtitle: "Providers, CLI, MCP, appearance", kind: .settings),
             .init(title: "Files Panel", subtitle: "Show project files", kind: .panel(.files)),
+            .init(title: "Plan Panel", subtitle: "Review plan drafts and approvals", kind: .panel(.plan)),
             .init(title: "Skills Panel", subtitle: "Show Claude skills", kind: .panel(.skills)),
             .init(title: "MCP Settings", subtitle: "Show MCP servers in Settings", kind: .mcpSettings),
             .init(title: "Agents Panel", subtitle: "Show agent activity overlay", kind: .agentsOverlay),
@@ -1512,13 +1866,19 @@ final class AppModel: ObservableObject {
         ]
         commands += SessionMode.allCases.map { .init(title: "Mode: \($0.label)", subtitle: $0.permissionMode, kind: .mode($0)) }
         commands += defaultModels.map { .init(title: "Model: \($0)", subtitle: "Switch Claude model", kind: .model($0)) }
-        commands += ["/compact", "/cost", "/doctor", "/help", "/init", "/memory", "/mcp", "/permissions", "/pr_comments", "/review"].map { .init(title: $0, subtitle: "Insert slash command", kind: .sendSlash($0)) }
+        commands += ["/compact", "/cost", "/doctor", "/help", "/init", "/memory", "/mcp", "/permissions", "/pr_comments", "/review"].map { .init(
+            title: $0,
+            subtitle: "Insert slash command",
+            kind: .sendSlash($0)
+        ) }
         commands += skills.map { .init(title: "/\($0.name)", subtitle: $0.description, kind: .sendSlash("/\($0.name)")) }
         return commands
     }
 
     func filteredPaletteCommands(_ query: String) -> [PaletteCommand] {
-        guard !query.isEmpty else { return paletteCommands }
+        guard !query.isEmpty else {
+            return paletteCommands
+        }
         return paletteCommands.filter { $0.title.localizedCaseInsensitiveContains(query) || $0.subtitle.localizedCaseInsensitiveContains(query) }
     }
 
@@ -1530,13 +1890,16 @@ final class AppModel: ObservableObject {
         try? JSONFile.save(recentProjects, to: AppPaths.shared.recentProjectsFile)
     }
 
-    private func showError(_ title: String, _ message: String) { currentError = AppError(title: title, message: message) }
+    private func showError(_ title: String, _ message: String) {
+        currentError = AppError(title: title, message: message)
+    }
 
-    deinit { directoryWatcher.unwatchAll(); engine.killAll() }
 }
 
 struct PaletteCommand: Identifiable, Hashable {
-    enum Kind: Hashable { case newChat, settings, panel(SecondaryTab), mcpSettings, agentsOverlay, mode(SessionMode), model(String), sendSlash(String), installCLI, loginCLI, exportCurrent, rewind, changelog }
+    enum Kind: Hashable { case newChat, settings, panel(SecondaryTab), mcpSettings, agentsOverlay, mode(SessionMode), model(String), sendSlash(String), installCLI, loginCLI,
+                               exportCurrent, rewind, changelog }
+
     let id = UUID()
     let title: String
     let subtitle: String

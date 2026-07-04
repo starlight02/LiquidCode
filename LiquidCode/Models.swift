@@ -8,16 +8,31 @@ struct AppError: Identifiable, Error, Sendable {
 }
 
 enum ThemeMode: String, Codable, CaseIterable, Identifiable, Sendable {
-    case system, light, dark
-    var id: String { rawValue }
+    case system
+    case light
+    case dark
+    var id: String {
+        rawValue
+    }
+
     var label: String {
-        switch self { case .system: "System"; case .light: "Light"; case .dark: "Dark" }
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
     }
 }
 
 enum AccentTheme: String, Codable, CaseIterable, Identifiable, Sendable {
-    case black, blue, purple, green
-    var id: String { rawValue }
+    case black
+    case blue
+    case purple
+    case green
+    var id: String {
+        rawValue
+    }
+
     var color: Color {
         switch self {
         case .black: .primary
@@ -29,11 +44,23 @@ enum AccentTheme: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 enum SessionMode: String, Codable, CaseIterable, Identifiable, Sendable {
-    case code, ask, plan, bypass
-    var id: String { rawValue }
-    var label: String {
-        switch self { case .code: "Code"; case .ask: "Ask"; case .plan: "Plan"; case .bypass: "Bypass" }
+    case code
+    case ask
+    case plan
+    case bypass
+    var id: String {
+        rawValue
     }
+
+    var label: String {
+        switch self {
+        case .code: "Code"
+        case .ask: "Ask"
+        case .plan: "Plan"
+        case .bypass: "Bypass"
+        }
+    }
+
     var permissionMode: String {
         switch self {
         case .code: "acceptEdits"
@@ -45,8 +72,14 @@ enum SessionMode: String, Codable, CaseIterable, Identifiable, Sendable {
 }
 
 enum ThinkingLevel: String, Codable, CaseIterable, Identifiable, Sendable {
-    case off, low, medium, high, max
-    var id: String { rawValue }
+    case off
+    case low
+    case medium
+    case high
+    case max
+    var id: String {
+        rawValue
+    }
 }
 
 enum RewindAction: String, CaseIterable, Identifiable, Sendable {
@@ -55,7 +88,10 @@ enum RewindAction: String, CaseIterable, Identifiable, Sendable {
     case restoreCode
     case summarize
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
+
     var label: String {
         switch self {
         case .restoreAll: "Restore all"
@@ -64,6 +100,7 @@ enum RewindAction: String, CaseIterable, Identifiable, Sendable {
         case .summarize: "Summarize from here"
         }
     }
+
     var systemImage: String {
         switch self {
         case .restoreAll: "arrow.uturn.backward.circle"
@@ -76,8 +113,19 @@ enum RewindAction: String, CaseIterable, Identifiable, Sendable {
 
 enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
     case files = "Files"
+    case plan = "Plan"
     case skills = "Skills"
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
+
+    var systemImage: String {
+        switch self {
+        case .files: "folder"
+        case .plan: "list.bullet.rectangle"
+        case .skills: "sparkles"
+        }
+    }
 }
 
 enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
@@ -86,7 +134,9 @@ enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     case mcp = "MCP"
     case cli = "CLI"
     case feedback = "Feedback"
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 }
 
 struct AppSettings: Codable, Sendable {
@@ -97,8 +147,8 @@ struct AppSettings: Codable, Sendable {
     var sessionMode: SessionMode = .ask
     var thinkingLevel: ThinkingLevel = .high
     var selectedProviderID: String?
-    var sidebarWidth: Double = 240
-    var secondaryWidth: Double = 340
+    var sidebarWidth: Double = 260
+    var secondaryWidth: Double = 390
     var locale: String = Locale.current.identifier
     var lastSeenVersion: String = ""
 }
@@ -118,27 +168,32 @@ struct SessionRecord: Identifiable, Codable, Hashable, Sendable {
     var isDraft: Bool = false
 
     var title: String {
-        if let customTitle, !customTitle.isEmpty { return customTitle }
-        if !preview.isEmpty { return preview }
-        if isDraft { return "New Chat" }
+        if let customTitle, !customTitle.isEmpty {
+            return customTitle
+        }
+        if !preview.isEmpty {
+            return preview
+        }
+        if isDraft {
+            return "New Chat"
+        }
         return id
     }
 }
 
-struct SessionSearchResult: Identifiable, Codable, Equatable, Sendable {
-    var id: String { sessionID }
-    var sessionID: String
-    var snippet: String
-    var matchCount: Int
-    var matchRole: ChatMessage.Role
-}
-
 enum CLISource: String, Codable, CaseIterable, Sendable {
-    case official, system, appLocal, versionManager, dynamic
+    case official
+    case system
+    case appLocal
+    case versionManager
+    case dynamic
 }
 
 struct CLICandidate: Identifiable, Codable, Equatable, Sendable {
-    var id: String { path }
+    var id: String {
+        path
+    }
+
     var path: String
     var source: CLISource
     var isNative: Bool
@@ -217,7 +272,15 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, role, content, timestamp, toolName, rawJSON, parentID, checkpointUuid, attachments
+        case id
+        case role
+        case content
+        case timestamp
+        case toolName
+        case rawJSON
+        case parentID
+        case checkpointUuid
+        case attachments
     }
 
     init(from decoder: Decoder) throws {
@@ -263,7 +326,10 @@ struct PermissionRequest: Identifiable, Codable, Equatable, Sendable {
 }
 
 struct FileNode: Identifiable, Codable, Hashable, Sendable {
-    var id: String { path }
+    var id: String {
+        path
+    }
+
     var name: String
     var path: String
     var isDirectory: Bool
@@ -271,7 +337,10 @@ struct FileNode: Identifiable, Codable, Hashable, Sendable {
 }
 
 struct SkillInfo: Identifiable, Codable, Hashable, Sendable {
-    var id: String { path }
+    var id: String {
+        path
+    }
+
     var name: String
     var description: String
     var path: String
@@ -285,7 +354,10 @@ struct SkillInfo: Identifiable, Codable, Hashable, Sendable {
 }
 
 struct MCPServer: Identifiable, Codable, Hashable, Sendable {
-    var id: String { name }
+    var id: String {
+        name
+    }
+
     var name: String
     var transport: String
     var command: String?
@@ -297,7 +369,9 @@ struct MCPServer: Identifiable, Codable, Hashable, Sendable {
 }
 
 struct ProviderRecord: Identifiable, Codable, Hashable, Sendable {
-    enum APIFormat: String, Codable, CaseIterable, Identifiable, Sendable { case anthropic, openai; var id: String { rawValue } }
+    enum APIFormat: String, Codable, CaseIterable, Identifiable, Sendable { case anthropic, openai; var id: String {
+        rawValue
+    } }
     var id: String
     var name: String
     var baseURL: String
@@ -305,13 +379,16 @@ struct ProviderRecord: Identifiable, Codable, Hashable, Sendable {
     var modelMappings: [String: String]
     var extraEnv: [String: String]
     var preset: String?
-    var proxyURL: String? = nil
+    var proxyURL: String?
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 }
 
 struct RecentProject: Identifiable, Codable, Hashable, Sendable {
-    var id: String { path }
+    var id: String {
+        path
+    }
+
     var name: String
     var path: String
     var lastUsed: Date

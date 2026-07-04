@@ -1,5 +1,5 @@
-import XCTest
 @testable import LiquidCode
+import XCTest
 
 final class StreamEventParserTests: XCTestCase {
     func testAssistantMessageRendersTextAndToolUseBlocks() throws {

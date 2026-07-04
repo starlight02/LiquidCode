@@ -20,7 +20,9 @@ final class LiquidCodeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard model.hasActiveTurn else { return .terminateNow }
+        guard model.hasActiveTurn else {
+            return .terminateNow
+        }
         let alert = NSAlert()
         alert.messageText = "Claude is still working"
         alert.informativeText = "A turn, tool permission, or streamed response is active. Quit anyway?"
@@ -45,13 +47,15 @@ private final class LiquidCodeMainWindowController: NSObject, NSWindowDelegate {
     }
 
     private func existingOrCreateWindow(model: AppModel) -> NSWindow {
-        if let window { return window }
+        if let window {
+            return window
+        }
         let content = LiquidCodeRootView()
             .environmentObject(model)
         let hosting = NSHostingController(rootView: content)
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let width = min(max(screenFrame.width * 0.84, 1180), 1680)
-        let height = min(max(screenFrame.height * 0.84, 760), 1040)
+        let width = min(max(screenFrame.width * 0.86, LiquidGlassToken.minWindowWidth), 1760)
+        let height = min(max(screenFrame.height * 0.86, LiquidGlassToken.minWindowHeight), 1080)
         let rect = NSRect(
             x: screenFrame.midX - width / 2,
             y: screenFrame.midY - height / 2,
@@ -65,7 +69,7 @@ private final class LiquidCodeMainWindowController: NSObject, NSWindowDelegate {
             defer: false
         )
         window.title = "LiquidCode"
-        window.minSize = NSSize(width: 1180, height: 760)
+        window.minSize = NSSize(width: LiquidGlassToken.minWindowWidth, height: LiquidGlassToken.minWindowHeight)
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.delegate = self
@@ -107,7 +111,7 @@ private struct LiquidCodeRootView: View {
     var body: some View {
         AppShellView()
             .preferredColorScheme(colorScheme)
-            .frame(minWidth: 1180, minHeight: 760)
+            .frame(minWidth: LiquidGlassToken.minWindowWidth, minHeight: LiquidGlassToken.minWindowHeight)
     }
 
     private var colorScheme: ColorScheme? {
@@ -152,7 +156,11 @@ struct LiquidCodeCommands: Commands {
         CommandMenu("Panels") {
             Button("Files") { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .files }.keyboardShortcut("1", modifiers: [.command, .option])
             Button("Skills") { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .skills }.keyboardShortcut("2", modifiers: [.command, .option])
-            Button("MCP") { LiquidCodeMainWindowController.shared.show(model: model); model.settingsTab = .mcp; model.settingsOpen = true }.keyboardShortcut("3", modifiers: [.command, .option])
+            Button("Plan") { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .plan }.keyboardShortcut("5", modifiers: [.command, .option])
+            Button("MCP") { LiquidCodeMainWindowController.shared.show(model: model); model.settingsTab = .mcp; model.settingsOpen = true }.keyboardShortcut(
+                "3",
+                modifiers: [.command, .option]
+            )
             Button("Agents") { LiquidCodeMainWindowController.shared.show(model: model); model.agentPanelOpen.toggle() }.keyboardShortcut("4", modifiers: [.command, .option])
             Button("Settings") { LiquidCodeMainWindowController.shared.show(model: model); model.settingsOpen = true }.keyboardShortcut(",")
         }
