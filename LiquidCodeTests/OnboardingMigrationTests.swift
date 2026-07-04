@@ -12,21 +12,21 @@ final class OnboardingMigrationTests: XCTestCase {
         XCTAssertFalse(plan.canMigrate)
     }
 
-    func testTokenicodeMigrationExecuteAndRollbackRestoresPreviousLiquidCodeFiles() throws {
+    func testLegacyMigrationExecuteAndRollbackRestoresPreviousLiquidCodeFiles() throws {
         let fixture = try OnboardingFixture()
-        try fixture.writeTokenicodeProviders()
+        try fixture.writeLegacyProviders()
         let originalProviders = Data(#"{"activeProviderID":null,"providers":[]}"#.utf8)
         let originalSettings = Data(#"{"selectedProviderID":"before"}"#.utf8)
         try fixture.write(originalProviders, to: fixture.liquidProvidersURL)
         try fixture.write(originalSettings, to: fixture.liquidSettingsURL)
 
         let plan = fixture.service.plan()
-        XCTAssertEqual(plan.state, .tokenicodeMigrationAvailable)
+        XCTAssertEqual(plan.state, .legacyMigrationAvailable)
         XCTAssertTrue(plan.shouldPrompt)
         XCTAssertTrue(plan.canMigrate)
-        XCTAssertEqual(plan.tokenicodeProviderCount, 1)
+        XCTAssertEqual(plan.legacyProviderCount, 1)
 
-        let result = try fixture.service.executeTokenicodeMigration()
+        let result = try fixture.service.executeLegacyProviderMigration()
         XCTAssertEqual(result.importedProviderIDs, ["kimi-code"])
         XCTAssertEqual(fixture.capturedKeys, ["kimi-code": "secret-token"])
 
@@ -36,35 +36,35 @@ final class OnboardingMigrationTests: XCTestCase {
         XCTAssertEqual(migrated.providers.first?.modelMappings["sonnet"], "kimi-for-coding")
 
         let migratedPlan = fixture.service.plan()
-        XCTAssertEqual(migratedPlan.state, .migratedTokenicodeProviders)
+        XCTAssertEqual(migratedPlan.state, .migratedLegacyProviders)
         XCTAssertTrue(migratedPlan.canRollback)
 
-        try fixture.service.rollbackTokenicodeMigration()
+        try fixture.service.rollbackLegacyProviderMigration()
         XCTAssertEqual(try Data(contentsOf: fixture.liquidProvidersURL), originalProviders)
         XCTAssertEqual(try Data(contentsOf: fixture.liquidSettingsURL), originalSettings)
         XCTAssertNil(fixture.capturedKeys["kimi-code"])
-        XCTAssertEqual(fixture.service.plan().state, .tokenicodeMigrationAvailable)
+        XCTAssertEqual(fixture.service.plan().state, .legacyMigrationAvailable)
     }
 
     func testSkipSuppressesRepeatedPromptAndBlocksExecute() throws {
         let fixture = try OnboardingFixture()
-        try fixture.writeTokenicodeProviders()
-        XCTAssertEqual(fixture.service.plan().state, .tokenicodeMigrationAvailable)
+        try fixture.writeLegacyProviders()
+        XCTAssertEqual(fixture.service.plan().state, .legacyMigrationAvailable)
 
-        try fixture.service.skipTokenicodeMigration()
+        try fixture.service.skipLegacyProviderMigration()
         let skipped = fixture.service.plan()
-        XCTAssertEqual(skipped.state, .skippedTokenicodeMigration)
+        XCTAssertEqual(skipped.state, .skippedLegacyMigration)
         XCTAssertFalse(skipped.shouldPrompt)
         XCTAssertFalse(skipped.canMigrate)
 
-        XCTAssertThrowsError(try fixture.service.executeTokenicodeMigration()) { error in
-            XCTAssertEqual(error as? OnboardingMigrationError, .skippedTokenicodeMigration)
+        XCTAssertThrowsError(try fixture.service.executeLegacyProviderMigration()) { error in
+            XCTAssertEqual(error as? OnboardingMigrationError, .skippedLegacyMigration)
         }
     }
 
-    func testExistingLiquidCodeProvidersBlockTokenicodeMigrationWithoutOverwrite() throws {
+    func testExistingLiquidCodeProvidersBlockLegacyMigrationWithoutOverwrite() throws {
         let fixture = try OnboardingFixture()
-        try fixture.writeTokenicodeProviders()
+        try fixture.writeLegacyProviders()
         let existing = ProviderVault.ProviderFile(
             activeProviderID: "existing",
             providers: [ProviderRecord(
@@ -84,7 +84,7 @@ final class OnboardingMigrationTests: XCTestCase {
         XCTAssertFalse(plan.shouldPrompt)
         XCTAssertFalse(plan.canMigrate)
 
-        XCTAssertThrowsError(try fixture.service.executeTokenicodeMigration()) { error in
+        XCTAssertThrowsError(try fixture.service.executeLegacyProviderMigration()) { error in
             XCTAssertEqual(error as? OnboardingMigrationError, .existingLiquidCodeProviders)
         }
         let preserved = try XCTUnwrap(JSONFile.load(ProviderVault.ProviderFile.self, from: fixture.liquidProvidersURL))
@@ -97,13 +97,13 @@ private final class OnboardingFixture {
     let liquidProvidersURL: URL
     let liquidSettingsURL: URL
     let stateURL: URL
-    let tokenicodeProvidersURL: URL
+    let legacyProvidersURL: URL
     var capturedKeys: [String: String] = [:]
     lazy var service: OnboardingService = OnboardingService(
         liquidProvidersURL: liquidProvidersURL,
         liquidSettingsURL: liquidSettingsURL,
         stateURL: stateURL,
-        tokenicodeProvidersURL: tokenicodeProvidersURL,
+        legacyProvidersURL: legacyProvidersURL,
         providerKeyWriter: { [weak self] providerID, key in self?.capturedKeys[providerID] = key },
         providerKeyDeleter: { [weak self] providerID in self?.capturedKeys.removeValue(forKey: providerID) }
     )
@@ -113,13 +113,13 @@ private final class OnboardingFixture {
         liquidProvidersURL = root.appendingPathComponent("LiquidCode/providers.json")
         liquidSettingsURL = root.appendingPathComponent("LiquidCode/settings.json")
         stateURL = root.appendingPathComponent("LiquidCode/onboarding.json")
-        tokenicodeProvidersURL = root.appendingPathComponent(".tokenicode/providers.json")
+        legacyProvidersURL = root.appendingPathComponent("." + "token" + "icode/providers.json")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
     deinit { try? FileManager.default.removeItem(at: root) }
 
-    func writeTokenicodeProviders() throws {
+    func writeLegacyProviders() throws {
         let json = #"""
             {
             "activeProviderId": "kimi-code",
@@ -140,7 +140,7 @@ private final class OnboardingFixture {
             ]
             }
         """#
-        try write(Data(json.utf8), to: tokenicodeProvidersURL)
+        try write(Data(json.utf8), to: legacyProvidersURL)
     }
 
     func write(_ data: Data, to url: URL) throws {

@@ -87,7 +87,7 @@ final class RuntimeParityTests: XCTestCase {
                 "CLAUDE_CODE_EFFORT_LEVEL": "ultra",
                 "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "1",
                 "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING": "1",
-                "TOKENICODE_INCLUDE_PARTIAL_MESSAGES": "1",
+                "LIQUIDCODE_INCLUDE_PARTIAL_MESSAGES": "1",
                 "KEEP_ME": "kept"
             ],
             preset: nil,
@@ -112,7 +112,7 @@ final class RuntimeParityTests: XCTestCase {
         XCTAssertNil(plan.environment["CLAUDE_CODE_EFFORT_LEVEL"])
         XCTAssertNil(plan.environment["CLAUDE_CODE_MAX_OUTPUT_TOKENS"])
         XCTAssertNil(plan.environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"])
-        XCTAssertNil(plan.environment["TOKENICODE_INCLUDE_PARTIAL_MESSAGES"])
+        XCTAssertNil(plan.environment["LIQUIDCODE_INCLUDE_PARTIAL_MESSAGES"])
         XCTAssertFalse(plan.capabilities.isNativeAnthropic)
         XCTAssertFalse(plan.capabilities.supportsThinkingEffort)
         XCTAssertEqual(plan.extraArgs, [])
@@ -371,7 +371,7 @@ final class RuntimeParityTests: XCTestCase {
         try #"{"mcpServers":{"alpha":{"command":"alpha","args":["--ok"]}}}"#.write(to: claude, atomically: true, encoding: .utf8)
         let single = try XCTUnwrap(ClaudeCLIEngine.buildMCPScratchConfig(sessionID: "desk/one", home: home))
         let singleJSON = try String(contentsOf: single, encoding: .utf8)
-        XCTAssertTrue(single.path.hasSuffix(".tokenicode/mcp-session-desk_one.json"))
+        XCTAssertTrue(single.path.hasSuffix(".liquidcode/mcp-session-desk_one.json"))
         XCTAssertTrue(singleJSON.contains("\"alpha\""))
         ClaudeCLIEngine.cleanupMCPScratchConfig(sessionID: "desk/one", home: home)
         XCTAssertFalse(FileManager.default.fileExists(atPath: single.path))
@@ -379,7 +379,7 @@ final class RuntimeParityTests: XCTestCase {
         try #"{"mcpServers":{"mcpServers":{"beta":{"command":"beta"}}}}"#.write(to: claude, atomically: true, encoding: .utf8)
         let double = try XCTUnwrap(ClaudeCLIEngine.buildMCPScratchConfig(sessionID: "desk:two", home: home))
         let doubleJSON = try String(contentsOf: double, encoding: .utf8)
-        XCTAssertTrue(double.path.hasSuffix(".tokenicode/mcp-session-desk_two.json"))
+        XCTAssertTrue(double.path.hasSuffix(".liquidcode/mcp-session-desk_two.json"))
         XCTAssertTrue(doubleJSON.contains("\"beta\""))
         XCTAssertFalse(doubleJSON.contains("\"mcpServers\" : {\n    \"mcpServers\""))
         ClaudeCLIEngine.cleanupMCPScratchConfig(at: double)
@@ -395,8 +395,8 @@ final class RuntimeParityTests: XCTestCase {
         try #"{"mcpServers":[]}"#.write(to: claude, atomically: true, encoding: .utf8)
         XCTAssertNil(ClaudeCLIEngine.buildMCPScratchConfig(sessionID: "malformed", home: home))
 
-        let tokenicode = home.appendingPathComponent(".tokenicode", isDirectory: true)
-        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: tokenicode.path)) ?? []
+        let scratchDirectory = home.appendingPathComponent(".liquidcode", isDirectory: true)
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: scratchDirectory.path)) ?? []
         XCTAssertFalse(leftovers.contains { $0.hasPrefix("mcp-session-") }, leftovers.joined(separator: ","))
     }
 
@@ -433,7 +433,7 @@ final class RuntimeParityTests: XCTestCase {
             return id
         }; return nil }, ["desk/cleanup"])
         XCTAssertEqual(engine.listActiveProcesses(), [])
-        XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(".tokenicode/mcp-session-desk_cleanup.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: home.appendingPathComponent(".liquidcode/mcp-session-desk_cleanup.json").path))
     }
 
     func testEngineRestartTerminatesPreviousRuntimeBeforeReplacement() throws {
@@ -529,9 +529,9 @@ final class RuntimeParityTests: XCTestCase {
         ].joined(separator: "\n") + "\n"
         try jsonl.write(to: trackedFile, atomically: true, encoding: .utf8)
         try jsonl.write(to: untrackedFile, atomically: true, encoding: .utf8)
-        let tokenicode = home.appendingPathComponent(".tokenicode", isDirectory: true)
-        try FileManager.default.createDirectory(at: tokenicode, withIntermediateDirectories: true)
-        try "\(trackedID)\n".write(to: tokenicode.appendingPathComponent("tracked_sessions.txt"), atomically: true, encoding: .utf8)
+        let trackingDirectory = home.appendingPathComponent(".liquidcode", isDirectory: true)
+        try FileManager.default.createDirectory(at: trackingDirectory, withIntermediateDirectories: true)
+        try "\(trackedID)\n".write(to: trackingDirectory.appendingPathComponent("tracked_sessions.txt"), atomically: true, encoding: .utf8)
 
         let index = SessionIndexService(home: home)
         let sessions = index.listSessions()

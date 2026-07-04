@@ -1,14 +1,12 @@
 # LiquidCode
 
 LiquidCode is the native SwiftUI/AppKit macOS productization track for a
-Claude Code desktop client. TOKENICODE remains the parity reference for
-release flow, resource packaging, signing, notarization, and update metadata
-until LiquidCode has its own production release history.
+Claude Code desktop client.
 
 ## Configure
 
 - First launch guides you through Claude CLI/provider setup and can migrate
-  existing TOKENICODE provider configuration with backup/rollback.
+  existing provider configuration with backup/rollback.
 - Open **Settings → Provider** to add Anthropic/OpenAI-compatible providers,
   model mappings, proxy, and extra environment variables.
 - Open **Settings → MCP** to manage app-local MCP servers. LiquidCode also
@@ -118,7 +116,6 @@ xcodebuild \
   build
 ```
 
-For visual QA, do not mix two Debug bundles with the same
-`moe.aili.LiquidCode` bundle id.
-`./scripts/dev-run.sh` builds into Xcode.app's normal DerivedData output, kills
-stale `LiquidCode.app`/debugserver processes, and opens that exact app bundle.
+## Acknowledgements
+
+[TOKENICODE](https://github.com/yiliqi78/TOKENICODE): A Beautiful Desktop Client for Claude Code

@@ -92,7 +92,7 @@ final class StreamEventParserTests: XCTestCase {
                 "tool_name": "Task",
                 "description": "Launch visual reviewer",
                 "input": [
-                    "description": "Compare TOKENICODE screenshots",
+                    "description": "Compare reference screenshots",
                     "subagent_type": "visual-reviewer"
                 ],
                 "tool_use_id": "tool-task-1",
@@ -119,7 +119,7 @@ final class StreamEventParserTests: XCTestCase {
         XCTAssertEqual(tool.name, "visual-reviewer")
         XCTAssertEqual(tool.status, .waitingForPermission)
         XCTAssertEqual(tool.parentID, "parent-tool-1")
-        XCTAssertTrue(tool.inputPreview.contains("Compare TOKENICODE screenshots"))
+        XCTAssertTrue(tool.inputPreview.contains("Compare reference screenshots"))
         XCTAssertTrue(tool.inputPreview.contains("visual-reviewer"))
         XCTAssertTrue(tool.resultPreview.contains("Launch visual reviewer"))
     }

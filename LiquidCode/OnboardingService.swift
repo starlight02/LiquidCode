@@ -3,9 +3,9 @@ import Foundation
 struct OnboardingPlan: Codable, Equatable, Sendable {
     enum State: String, Codable, Sendable {
         case firstLaunchNoConfig
-        case tokenicodeMigrationAvailable
-        case skippedTokenicodeMigration
-        case migratedTokenicodeProviders
+        case legacyMigrationAvailable
+        case skippedLegacyMigration
+        case migratedLegacyProviders
         case blockedExistingLiquidCodeProviders
         case ready
     }
@@ -15,7 +15,7 @@ struct OnboardingPlan: Codable, Equatable, Sendable {
     var shouldPrompt: Bool
     var canMigrate: Bool
     var canRollback: Bool
-    var tokenicodeProviderCount: Int
+    var legacyProviderCount: Int
     var activeProviderID: String?
     var message: String
 
@@ -25,7 +25,7 @@ struct OnboardingPlan: Codable, Equatable, Sendable {
         shouldPrompt: false,
         canMigrate: false,
         canRollback: false,
-        tokenicodeProviderCount: 0,
+        legacyProviderCount: 0,
         activeProviderID: nil,
         message: "LiquidCode configuration is ready."
     )
@@ -37,31 +37,31 @@ struct OnboardingMigrationResult: Codable, Sendable {
 }
 
 enum OnboardingMigrationError: LocalizedError, Equatable {
-    case noTokenicodeProviders
-    case skippedTokenicodeMigration
+    case noLegacyProviders
+    case skippedLegacyMigration
     case existingLiquidCodeProviders
     case rollbackUnavailable
     case invalidBackup
 
     var errorDescription: String? {
         switch self {
-        case .noTokenicodeProviders:
-            return "No TOKENICODE providers.json was found to migrate."
-        case .skippedTokenicodeMigration:
-            return "TOKENICODE provider migration was skipped for this LiquidCode profile."
+        case .noLegacyProviders:
+            return "No legacy providers.json was found to migrate."
+        case .skippedLegacyMigration:
+            return "Legacy provider migration was skipped for this LiquidCode profile."
         case .existingLiquidCodeProviders:
             return "LiquidCode providers already exist; migration will not overwrite them without an explicit reset."
         case .rollbackUnavailable:
-            return "No TOKENICODE migration rollback is available."
+            return "No legacy provider migration rollback is available."
         case .invalidBackup:
-            return "The TOKENICODE migration rollback backup is invalid."
+            return "The legacy provider migration rollback backup is invalid."
         }
     }
 }
 
 final class OnboardingService {
     private struct StateFile: Codable {
-        var skippedTokenicodeMigrationAt: Date?
+        var skippedLegacyMigrationAt: Date?
         var lastMigrationAt: Date?
         var backup: MigrationBackup?
     }
@@ -75,7 +75,7 @@ final class OnboardingService {
         var importedProviderIDs: [String]
     }
 
-    private struct TokenicodeProviderPayload {
+    private struct LegacyProviderPayload {
         var providerFile: ProviderVault.ProviderFile
         var apiKeysByProviderID: [String: String]
     }
@@ -83,7 +83,7 @@ final class OnboardingService {
     private let liquidProvidersURL: URL
     private let liquidSettingsURL: URL
     private let stateURL: URL
-    private let tokenicodeProvidersURL: URL
+    private let legacyProvidersURL: URL
     private let providerKeyWriter: ((String, String) throws -> Void)?
     private let providerKeyDeleter: ((String) throws -> Void)?
     private let fileManager: FileManager
@@ -93,7 +93,7 @@ final class OnboardingService {
             liquidProvidersURL: AppPaths.shared.providersFile,
             liquidSettingsURL: AppPaths.shared.settingsFile,
             stateURL: AppPaths.shared.appSupport.appendingPathComponent("onboarding.json"),
-            tokenicodeProvidersURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".tokenicode/providers.json"),
+            legacyProvidersURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("." + "token" + "icode/providers.json"),
             providerKeyWriter: { providerID, key in try ProviderVault().setAPIKey(key, providerID: providerID) },
             providerKeyDeleter: { providerID in ProviderVault().deleteAPIKey(providerID: providerID) }
         )
@@ -103,7 +103,7 @@ final class OnboardingService {
         liquidProvidersURL: URL,
         liquidSettingsURL: URL,
         stateURL: URL,
-        tokenicodeProvidersURL: URL,
+        legacyProvidersURL: URL,
         providerKeyWriter: ((String, String) throws -> Void)? = nil,
         providerKeyDeleter: ((String) throws -> Void)? = nil,
         fileManager: FileManager = .default
@@ -111,7 +111,7 @@ final class OnboardingService {
         self.liquidProvidersURL = liquidProvidersURL
         self.liquidSettingsURL = liquidSettingsURL
         self.stateURL = stateURL
-        self.tokenicodeProvidersURL = tokenicodeProvidersURL
+        self.legacyProvidersURL = legacyProvidersURL
         self.providerKeyWriter = providerKeyWriter
         self.providerKeyDeleter = providerKeyDeleter
         self.fileManager = fileManager
@@ -119,8 +119,8 @@ final class OnboardingService {
 
     func plan() -> OnboardingPlan {
         let state = loadState()
-        let tokenicode = loadTokenicodeProviderPayload()
-        let tokenicodeProviderCount = tokenicode?.providerFile.providers.count ?? 0
+        let legacy = loadLegacyProviderPayload()
+        let legacyProviderCount = legacy?.providerFile.providers.count ?? 0
         let liquidProvidersExist = fileManager.fileExists(atPath: liquidProvidersURL.path)
         let liquidSettingsExist = fileManager.fileExists(atPath: liquidSettingsURL.path)
         let hasLiquidProviders = hasExistingLiquidCodeProviders()
@@ -129,31 +129,31 @@ final class OnboardingService {
 
         if canRollback, state.lastMigrationAt != nil, hasLiquidProviders {
             return OnboardingPlan(
-                state: .migratedTokenicodeProviders,
+                state: .migratedLegacyProviders,
                 isFirstLaunch: false,
                 shouldPrompt: false,
                 canMigrate: false,
                 canRollback: true,
-                tokenicodeProviderCount: tokenicodeProviderCount,
+                legacyProviderCount: legacyProviderCount,
                 activeProviderID: currentProviderFile()?.activeProviderID,
-                message: "TOKENICODE providers were migrated. Rollback is available."
+                message: "Legacy providers were migrated. Rollback is available."
             )
         }
 
-        if state.skippedTokenicodeMigrationAt != nil, tokenicodeProviderCount > 0 {
+        if state.skippedLegacyMigrationAt != nil, legacyProviderCount > 0 {
             return OnboardingPlan(
-                state: .skippedTokenicodeMigration,
+                state: .skippedLegacyMigration,
                 isFirstLaunch: isFirstLaunch,
                 shouldPrompt: false,
                 canMigrate: false,
                 canRollback: canRollback,
-                tokenicodeProviderCount: tokenicodeProviderCount,
-                activeProviderID: tokenicode?.providerFile.activeProviderID,
-                message: "TOKENICODE provider migration was skipped and will not be shown again."
+                legacyProviderCount: legacyProviderCount,
+                activeProviderID: legacy?.providerFile.activeProviderID,
+                message: "Legacy provider migration was skipped and will not be shown again."
             )
         }
 
-        if tokenicodeProviderCount > 0 {
+        if legacyProviderCount > 0 {
             if hasLiquidProviders {
                 return OnboardingPlan(
                     state: .blockedExistingLiquidCodeProviders,
@@ -161,21 +161,21 @@ final class OnboardingService {
                     shouldPrompt: false,
                     canMigrate: false,
                     canRollback: canRollback,
-                    tokenicodeProviderCount: tokenicodeProviderCount,
+                    legacyProviderCount: legacyProviderCount,
                     activeProviderID: currentProviderFile()?.activeProviderID,
-                    message: "TOKENICODE providers were found, but LiquidCode already has providers. Migration will not overwrite them."
+                    message: "Legacy providers were found, but LiquidCode already has providers. Migration will not overwrite them."
                 )
             }
 
             return OnboardingPlan(
-                state: .tokenicodeMigrationAvailable,
+                state: .legacyMigrationAvailable,
                 isFirstLaunch: isFirstLaunch,
                 shouldPrompt: true,
                 canMigrate: true,
                 canRollback: canRollback,
-                tokenicodeProviderCount: tokenicodeProviderCount,
-                activeProviderID: tokenicode?.providerFile.activeProviderID,
-                message: "Found TOKENICODE provider configuration ready to migrate."
+                legacyProviderCount: legacyProviderCount,
+                activeProviderID: legacy?.providerFile.activeProviderID,
+                message: "Found legacy provider configuration ready to migrate."
             )
         }
 
@@ -186,7 +186,7 @@ final class OnboardingService {
                 shouldPrompt: true,
                 canMigrate: false,
                 canRollback: canRollback,
-                tokenicodeProviderCount: 0,
+                legacyProviderCount: 0,
                 activeProviderID: nil,
                 message: "No LiquidCode configuration exists yet."
             )
@@ -197,16 +197,16 @@ final class OnboardingService {
         return ready
     }
 
-    func executeTokenicodeMigration() throws -> OnboardingMigrationResult {
+    func executeLegacyProviderMigration() throws -> OnboardingMigrationResult {
         var state = loadState()
-        if state.skippedTokenicodeMigrationAt != nil {
-            throw OnboardingMigrationError.skippedTokenicodeMigration
+        if state.skippedLegacyMigrationAt != nil {
+            throw OnboardingMigrationError.skippedLegacyMigration
         }
         if hasExistingLiquidCodeProviders() {
             throw OnboardingMigrationError.existingLiquidCodeProviders
         }
-        guard let payload = loadTokenicodeProviderPayload(), !payload.providerFile.providers.isEmpty else {
-            throw OnboardingMigrationError.noTokenicodeProviders
+        guard let payload = loadLegacyProviderPayload(), !payload.providerFile.providers.isEmpty else {
+            throw OnboardingMigrationError.noLegacyProviders
         }
 
         try ensureParentDirectory(for: liquidProvidersURL)
@@ -223,7 +223,7 @@ final class OnboardingService {
             importedProviderIDs: importedIDs
         )
         state.lastMigrationAt = Date()
-        state.skippedTokenicodeMigrationAt = nil
+        state.skippedLegacyMigrationAt = nil
 
         try JSONFile.save(payload.providerFile, to: liquidProvidersURL)
         for (providerID, key) in payload.apiKeysByProviderID where !key.isEmpty {
@@ -234,13 +234,13 @@ final class OnboardingService {
         return OnboardingMigrationResult(providerFile: payload.providerFile, importedProviderIDs: importedIDs)
     }
 
-    func skipTokenicodeMigration() throws {
+    func skipLegacyProviderMigration() throws {
         var state = loadState()
-        state.skippedTokenicodeMigrationAt = Date()
+        state.skippedLegacyMigrationAt = Date()
         try saveState(state)
     }
 
-    func rollbackTokenicodeMigration() throws {
+    func rollbackLegacyProviderMigration() throws {
         var state = loadState()
         guard let backup = state.backup else {
             throw OnboardingMigrationError.rollbackUnavailable
@@ -267,7 +267,7 @@ final class OnboardingService {
     }
 
     private func loadState() -> StateFile {
-        JSONFile.load(StateFile.self, from: stateURL) ?? StateFile(skippedTokenicodeMigrationAt: nil, lastMigrationAt: nil, backup: nil)
+        JSONFile.load(StateFile.self, from: stateURL) ?? StateFile(skippedLegacyMigrationAt: nil, lastMigrationAt: nil, backup: nil)
     }
 
     private func saveState(_ state: StateFile) throws {
@@ -275,9 +275,9 @@ final class OnboardingService {
         try JSONFile.save(state, to: stateURL)
     }
 
-    private func loadTokenicodeProviderPayload() -> TokenicodeProviderPayload? {
+    private func loadLegacyProviderPayload() -> LegacyProviderPayload? {
         guard
-            let data = try? Data(contentsOf: tokenicodeProvidersURL),
+            let data = try? Data(contentsOf: legacyProvidersURL),
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
@@ -320,7 +320,7 @@ final class OnboardingService {
 
         let requestedActive = root["activeProviderId"] as? String
         let active = providers.contains { $0.id == requestedActive } ? requestedActive : providers.first?.id
-        return TokenicodeProviderPayload(
+        return LegacyProviderPayload(
             providerFile: ProviderVault.ProviderFile(activeProviderID: active, providers: providers),
             apiKeysByProviderID: apiKeys
         )

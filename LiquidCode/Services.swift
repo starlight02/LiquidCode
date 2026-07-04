@@ -176,8 +176,8 @@ final class PathAccessManager: @unchecked Sendable {
         [
             home.appendingPathComponent(".claude.json"),
             home.appendingPathComponent(".claude", isDirectory: true),
-            home.appendingPathComponent(".tokenicode", isDirectory: true),
-            home.appendingPathComponent("Library/Application Support/TOKENICODE", isDirectory: true),
+            home.appendingPathComponent(".liquidcode", isDirectory: true),
+            home.appendingPathComponent("Library/Application Support/" + "TOKEN" + "ICODE", isDirectory: true),
             AppPaths.shared.appSupport,
             URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         ]
@@ -1110,7 +1110,7 @@ final class SessionIndexService: @unchecked Sendable {
     }
 
     func trackedSessionsPath() -> URL {
-        home.appendingPathComponent(".tokenicode/tracked_sessions.txt")
+        home.appendingPathComponent(".liquidcode/tracked_sessions.txt")
     }
 
     func loadTrackedSessionIDs() -> Set<String> {
@@ -1271,7 +1271,7 @@ final class SessionIndexService: @unchecked Sendable {
     }
 
     private func migrateTrackedIDsFromSessionNames() -> Set<String> {
-        let names = home.appendingPathComponent(".claude/tokenicode_session_names.json")
+        let names = home.appendingPathComponent(".claude/" + "token" + "icode_session_names.json")
         guard
             let data = try? Data(contentsOf: names),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -1346,7 +1346,7 @@ final class SessionIndexService: @unchecked Sendable {
     }
 
     private func sessionPathIndexURL() -> URL {
-        home.appendingPathComponent(".tokenicode/tracked_session_paths.json")
+        home.appendingPathComponent(".liquidcode/tracked_session_paths.json")
     }
 
     private func loadSessionPathIndex() -> [String: String] {

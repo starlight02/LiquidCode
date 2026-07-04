@@ -268,7 +268,7 @@ extension View {
         modifier(LiquidGlassCard(role: role, prominence: prominence, radius: radius, padding: padding))
     }
 
-    func tokenicodeControl(active: Bool = false, radius: CGFloat = LiquidGlassToken.controlRadius) -> some View {
+    func liquidGlassButton(active: Bool = false, radius: CGFloat = LiquidGlassToken.controlRadius) -> some View {
         lineLimit(1)
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
@@ -281,7 +281,7 @@ extension View {
             )
     }
 
-    func tokenicodeRow(active: Bool = false, radius: CGFloat = 14) -> some View {
+    func liquidGlassRow(active: Bool = false, radius: CGFloat = 14) -> some View {
         padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(active ? LiquidGlassToken.selectedFill : Color.clear)

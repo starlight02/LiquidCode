@@ -1696,38 +1696,38 @@ extension AppModel {
         onboardingPlan = onboardingService.plan()
     }
 
-    func executeTokenicodeProviderMigration() {
+    func executeLegacyProviderMigration() {
         do {
-            let result = try onboardingService.executeTokenicodeMigration()
+            let result = try onboardingService.executeLegacyProviderMigration()
             providers = result.providerFile.providers
             activeProviderID = result.providerFile.activeProviderID ?? settings.selectedProviderID
             persistSettings()
             refreshOnboardingPlan()
-            toastSuccess("Migrated TOKENICODE providers", "Imported \(result.importedProviderIDs.count) providers. Rollback is available.")
+            toastSuccess("Migrated providers", "Imported \(result.importedProviderIDs.count) providers. Rollback is available.")
         } catch {
             showError("Provider migration failed", error.localizedDescription)
             refreshOnboardingPlan()
         }
     }
 
-    func skipTokenicodeProviderMigration() {
+    func skipLegacyProviderMigration() {
         do {
-            try onboardingService.skipTokenicodeMigration()
+            try onboardingService.skipLegacyProviderMigration()
             refreshOnboardingPlan()
-            toastWarning("Skipped TOKENICODE migration", "LiquidCode will not ask again for this profile.")
+            toastWarning("Skipped provider migration", "LiquidCode will not ask again for this profile.")
         } catch {
             showError("Skip migration failed", error.localizedDescription)
         }
     }
 
-    func rollbackTokenicodeProviderMigration() {
+    func rollbackLegacyProviderMigration() {
         do {
-            try onboardingService.rollbackTokenicodeMigration()
+            try onboardingService.rollbackLegacyProviderMigration()
             let providerFile = providerVault.load()
             providers = providerFile.providers
             activeProviderID = providerFile.activeProviderID ?? settings.selectedProviderID
             refreshOnboardingPlan()
-            toastSuccess("Rolled back TOKENICODE migration", "Previous LiquidCode provider configuration was restored.")
+            toastSuccess("Rolled back provider migration", "Previous LiquidCode provider configuration was restored.")
         } catch {
             showError("Rollback migration failed", error.localizedDescription)
             refreshOnboardingPlan()

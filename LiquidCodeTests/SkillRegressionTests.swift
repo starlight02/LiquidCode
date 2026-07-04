@@ -180,7 +180,7 @@ final class SkillRegressionTests: XCTestCase {
         XCTAssertFalse(enabledSkill.disabled, "legacy `disable-model-invocation: false` must parse as enabled")
     }
 
-    func testSkillFrontmatterMetadataParsesForTokenicodeStyleCards() throws {
+    func testSkillFrontmatterMetadataParsesForRichCards() throws {
         let fm = FileManager.default
         let root = try makeTempRoot()
         defer { try? fm.removeItem(at: root) }
@@ -210,7 +210,7 @@ final class SkillRegressionTests: XCTestCase {
         XCTAssertEqual(skill.version, "1.2.3")
     }
 
-    func testUseInInputAndDuplicateSkillActionsMatchTokenicodeMenu() throws {
+    func testUseInInputAndDuplicateSkillActionsMatchContextMenu() throws {
         let fm = FileManager.default
         let root = try makeTempRoot()
         defer { try? fm.removeItem(at: root) }

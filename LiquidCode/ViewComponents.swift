@@ -148,7 +148,7 @@ struct LiquidDarkCTA: View {
     }
 }
 
-struct TokenicodeLogoView: View {
+struct LiquidCodeLogoView: View {
     var compact = false
     var body: some View {
         HStack(spacing: 0) {
@@ -498,10 +498,10 @@ struct FilePreviewShellView: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        .tokenicodeControl(radius: 10)
+                        .liquidGlassButton(radius: 10)
                         Button("Save") { model.saveSelectedFile() }
                             .buttonStyle(.plain)
-                            .tokenicodeControl(active: true, radius: 10)
+                            .liquidGlassButton(active: true, radius: 10)
                     }
                     HStack(spacing: 3) {
                         ForEach(availableModes) { mode in
@@ -533,7 +533,7 @@ struct FilePreviewShellView: View {
                     Button("Delete") { model.requestDeleteSelectedFile() }
                         .buttonStyle(.plain)
                         .foregroundStyle(.red)
-                        .tokenicodeControl(radius: 10)
+                        .liquidGlassButton(radius: 10)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -756,7 +756,7 @@ struct SidebarView: View {
                 searchAndFilters
                 undoBanner
                 Divider().opacity(0.5)
-                ScrollView(showsIndicators: false) {
+                ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         taskGroupsHeader
                         taskGroups
@@ -790,7 +790,7 @@ struct SidebarView: View {
 
     private var sidebarHeader: some View {
         HStack(alignment: .center) {
-            TokenicodeLogoView()
+            LiquidCodeLogoView()
             Spacer()
             Button(action: onCollapse) { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain)
@@ -941,7 +941,7 @@ struct SidebarView: View {
                         Spacer()
                         Text("\(scopedSessions.count)").foregroundStyle(.secondary)
                     }
-                    .tokenicodeRow()
+                    .liquidGlassRow()
                 }
                 .contextMenu {
                     if let selected = model.selectedSession, selected.projectDir == group.projectPath {
@@ -973,29 +973,37 @@ struct SidebarView: View {
     }
 
     @ViewBuilder private func projectDisclosure(_ group: ProjectSessionGroup) -> some View {
-        let binding = Binding(
-            get: { isProjectExpanded(group.path) },
-            set: { projectExpansion[group.path] = $0 }
-        )
-        DisclosureGroup(isExpanded: binding) {
-            ForEach(group.sessions) { session in sessionRow(session) }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "folder")
-                    .font(.system(size: 11, weight: .semibold))
-                Text(group.name)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Text("\(group.sessions.count)")
-                    .font(.caption2)
+        let isExpanded = isProjectExpanded(group.path)
+        VStack(alignment: .leading, spacing: 2) {
+            Button {
+                projectExpansion[group.path] = !isExpanded
+            } label: {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 10, height: 14, alignment: .center)
+                    Image(systemName: "folder")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 14, height: 14, alignment: .center)
+                    Text(group.name)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text("\(group.sessions.count)")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, 8)
-            .padding(.top, 10)
-            .padding(.bottom, 2)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
             .help(group.path)
+
+            if isExpanded {
+                ForEach(group.sessions) { session in sessionRow(session) }
+            }
         }
     }
 
@@ -1099,7 +1107,7 @@ struct SessionRowView: View {
             }
             .foregroundStyle(.secondary)
         }
-        .tokenicodeRow(active: selected || checked, radius: 15)
+        .liquidGlassRow(active: selected || checked, radius: 15)
     }
 }
 
@@ -1201,7 +1209,7 @@ struct ChatPanelView: View {
                 }
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-                .tokenicodeControl()
+                .liquidGlassButton()
             }
             if model.selectedHasActiveTurn {
                 ActivityPillView()
@@ -1267,7 +1275,7 @@ struct ChatPanelView: View {
         VStack(spacing: 0) {
             Spacer()
             VStack(spacing: 16) {
-                TokenicodeLogoView()
+                LiquidCodeLogoView()
                     .padding(.horizontal, 28)
                     .padding(.vertical, 18)
                     .background(Color.primary.opacity(0.04))
@@ -1317,7 +1325,7 @@ struct ChatPanelView: View {
 
     private var readyState: some View {
         VStack(spacing: 12) {
-            TokenicodeLogoView(compact: true)
+            LiquidCodeLogoView(compact: true)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 12)
                 .background(.thinMaterial)

@@ -430,7 +430,7 @@ struct ChangelogEntry: Identifiable, Codable, Hashable, Sendable {
 
 let bundledChangelog: [ChangelogEntry] = [
     .init(version: "0.1.0", date: "2026-07-02", items: [
-        "Native SwiftUI/AppKit shell matching TOKENICODE's sidebar-chat-secondary layout.",
+        "Native SwiftUI/AppKit shell with a sidebar-chat-secondary layout.",
         "Claude Code stream-json process bridge with stdio permission control.",
         "Keychain-backed provider secrets, MCP/Skills panels, file explorer, session export and Liquid Glass panels."
     ])

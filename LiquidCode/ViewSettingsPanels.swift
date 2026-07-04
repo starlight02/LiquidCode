@@ -374,7 +374,7 @@ struct PermissionInlineCardView: View {
             HStack {
                 Button("Deny", role: .destructive) { model.respondPermission(permission, allow: false) }
                     .buttonStyle(.plain)
-                    .tokenicodeControl(radius: 11)
+                    .liquidGlassButton(radius: 11)
                 Spacer()
                 Button {
                     model.respondPermission(permission, allow: true, editedInput: editedInput.isEmpty ? permission.inputJSON : editedInput)
@@ -382,7 +382,7 @@ struct PermissionInlineCardView: View {
                     Label("Allow Once", systemImage: "checkmark")
                 }
                 .buttonStyle(.plain)
-                .tokenicodeControl(active: true, radius: 11)
+                .liquidGlassButton(active: true, radius: 11)
             }
         }
         .padding(14)
@@ -436,14 +436,14 @@ struct PlanReviewInlineCardView: View {
             HStack {
                 Button("Reject", role: .destructive) { model.respondPermission(permission, allow: false) }
                     .buttonStyle(.plain)
-                    .tokenicodeControl(radius: 11)
+                    .liquidGlassButton(radius: 11)
                 Button("Restart Plan") {
                     model.settings.sessionMode = .plan; model.persistSettings(); model.updateComposerText("Please revise the plan before execution:\n\n"); model.respondPermission(
                         permission,
                         allow: false
                     ); model.toastInfo("Plan", "Describe the revision in the composer") }
                     .buttonStyle(.plain)
-                    .tokenicodeControl(radius: 11)
+                    .liquidGlassButton(radius: 11)
                 Spacer()
                 Button {
                     model.settings.sessionMode = .code; model.persistSettings(); model.respondPermission(permission, allow: true, editedInput: permission.inputJSON)
@@ -451,7 +451,7 @@ struct PlanReviewInlineCardView: View {
                     Label("Approve Plan", systemImage: "checkmark.circle.fill")
                 }
                 .buttonStyle(.plain)
-                .tokenicodeControl(active: true, radius: 11)
+                .liquidGlassButton(active: true, radius: 11)
             }
         }
         .padding(14)
@@ -491,7 +491,7 @@ struct QuestionInlineCardView: View {
             HStack {
                 Button("Skip") { model.respondPermission(permission, allow: true, editedInput: questionSkipResponseJSON(permission.inputJSON)) }
                     .buttonStyle(.plain)
-                    .tokenicodeControl(radius: 11)
+                    .liquidGlassButton(radius: 11)
                 Spacer()
                 Button {
                     model.respondPermission(permission, allow: true, editedInput: questionResponseJSON(permission.inputJSON, answer: answer))
@@ -499,7 +499,7 @@ struct QuestionInlineCardView: View {
                     Label("Send Answer", systemImage: "arrow.right")
                 }
                 .buttonStyle(.plain)
-                .tokenicodeControl(active: true, radius: 11)
+                .liquidGlassButton(active: true, radius: 11)
                 .disabled(answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
@@ -1172,7 +1172,7 @@ struct SearchFileResultRowView: View {
         }
         .buttonStyle(.plain)
         .contextMenu { contextMenu }
-        .tokenicodeRow(active: model.selectedFilePath == node.path, radius: 10)
+        .liquidGlassRow(active: model.selectedFilePath == node.path, radius: 10)
     }
 
     @ViewBuilder private var contextMenu: some View {
@@ -1250,7 +1250,7 @@ struct FileNodeLabelView: View {
                     .clipShape(Capsule())
             }
         }
-        .tokenicodeRow(active: model.selectedFilePath == node.path, radius: 10)
+        .liquidGlassRow(active: model.selectedFilePath == node.path, radius: 10)
     }
 }
 
@@ -1767,7 +1767,7 @@ struct SettingsPanelView: View {
                         Spacer()
                     }
                     .font(.system(size: 15, weight: model.settingsTab == tab ? .semibold : .medium))
-                    .tokenicodeRow(active: model.settingsTab == tab, radius: 12)
+                    .liquidGlassRow(active: model.settingsTab == tab, radius: 12)
                 }
                 .buttonStyle(.plain)
             }
@@ -1778,7 +1778,7 @@ struct SettingsPanelView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("LiquidCode v0.1.0")
                         .font(.caption.weight(.semibold))
-                    Text("TOKENICODE parity")
+                    Text("Interaction parity")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -1803,8 +1803,8 @@ struct SettingsPanelView: View {
                     .foregroundStyle(.red)
             }
             Spacer()
-            Button("Changelog") { model.showChangelog() }.buttonStyle(.plain).tokenicodeControl(radius: 10)
-            Button("Check CLI") { model.refreshCLIStatus() }.buttonStyle(.plain).tokenicodeControl(radius: 10)
+            Button("Changelog") { model.showChangelog() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
+            Button("Check CLI") { model.refreshCLIStatus() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
         }
         .font(.caption)
         .padding(.horizontal, 24)
@@ -1813,7 +1813,7 @@ struct SettingsPanelView: View {
 
     private var generalContent: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsSectionCard(title: "General", subtitle: "LiquidCode visual identity with TOKENICODE interaction parity", icon: "sun.max") {
+            SettingsSectionCard(title: "General", subtitle: "LiquidCode visual identity with native interaction parity", icon: "sun.max") {
                 OnboardingPlanCardView()
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Theme")
@@ -1831,7 +1831,7 @@ struct SettingsPanelView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .buttonStyle(.plain)
-                            .tokenicodeControl(active: model.settings.theme == theme, radius: 16)
+                            .liquidGlassButton(active: model.settings.theme == theme, radius: 16)
                         }
                     }
                     Text("Accent")
@@ -1843,7 +1843,7 @@ struct SettingsPanelView: View {
                                 HStack { Circle().fill(accent.color).frame(width: 16, height: 16); Text(accent.rawValue.capitalized); Spacer() }
                             }
                             .buttonStyle(.plain)
-                            .tokenicodeControl(active: model.settings.accent == accent, radius: 14)
+                            .liquidGlassButton(active: model.settings.accent == accent, radius: 14)
                         }
                     }
                 }
@@ -1878,7 +1878,7 @@ struct SettingsPanelView: View {
                     Spacer()
                     Button("Use System") { model.activeProviderID = nil; model.saveProviders() }
                         .buttonStyle(.plain)
-                        .tokenicodeControl(active: model.activeProviderID == nil, radius: 10)
+                        .liquidGlassButton(active: model.activeProviderID == nil, radius: 10)
                 }
                 .padding(12)
                 .background(model.activeProviderID == nil ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.035))
@@ -1951,7 +1951,7 @@ struct SettingsPanelView: View {
                     model.addMCPServer(name: mcpName, command: mcpCommand); mcpName = ""; mcpCommand = ""
                 } }
                 .buttonStyle(.plain)
-                .tokenicodeControl(active: true, radius: 10)
+                .liquidGlassButton(active: true, radius: 10)
                 .disabled(mcpName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || mcpCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             VStack(spacing: 10) {
@@ -1985,7 +1985,7 @@ struct SettingsPanelView: View {
                         Spacer()
                         Button("Test") { model.testMCPServer(server) }
                             .buttonStyle(.plain)
-                            .tokenicodeControl(radius: 10)
+                            .liquidGlassButton(radius: 10)
                         if server.source == "LiquidCode" {
                             Button("Edit") {
                                 if let result = promptForMCPServer(title: "Edit MCP server", defaultName: server.name, defaultCommand: mcpCommandLine(server)) {
@@ -1993,11 +1993,11 @@ struct SettingsPanelView: View {
                                 }
                             }
                             .buttonStyle(.plain)
-                            .tokenicodeControl(radius: 10)
+                            .liquidGlassButton(radius: 10)
                             Button("Delete", role: .destructive) { model.deleteMCPServer(server) }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.red)
-                                .tokenicodeControl(radius: 10)
+                                .liquidGlassButton(radius: 10)
                         } else {
                             Text("Read-only")
                                 .font(.caption2.weight(.semibold))

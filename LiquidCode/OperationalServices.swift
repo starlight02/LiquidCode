@@ -330,7 +330,7 @@ final class CLIService: @unchecked Sendable {
     }
 
     private func pinPath() -> URL {
-        home.appendingPathComponent(".tokenicode/cli-pin.json")
+        home.appendingPathComponent(".liquidcode/cli-pin.json")
     }
 
     private func legacyPinPath() -> URL {

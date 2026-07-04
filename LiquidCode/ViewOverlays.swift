@@ -30,7 +30,7 @@ struct ProviderRowCard: View {
                 Text(provider.baseURL).font(.caption).foregroundStyle(.secondary).lineLimit(1).textSelection(.enabled)
             }
             Spacer()
-            Button("Test") { test() }.buttonStyle(.plain).tokenicodeControl(radius: 10)
+            Button("Test") { test() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
             Button { delete() } label: { Image(systemName: "trash") }.buttonStyle(.plain).foregroundStyle(.red)
         }
         .padding(12)
@@ -48,21 +48,21 @@ struct OnboardingPlanCardView: View {
     var body: some View {
         if plan.state != .ready {
             VStack(alignment: .leading, spacing: 8) {
-                Label("TOKENICODE setup", systemImage: "arrow.triangle.2.circlepath")
+                Label("Provider setup", systemImage: "arrow.triangle.2.circlepath")
                     .font(.headline)
                 Text(plan.message).font(.caption).foregroundStyle(.secondary)
-                if plan.tokenicodeProviderCount > 0 {
-                    Text("\(plan.tokenicodeProviderCount) provider(s) detected").font(.caption2).foregroundStyle(.tertiary)
+                if plan.legacyProviderCount > 0 {
+                    Text("\(plan.legacyProviderCount) provider(s) detected").font(.caption2).foregroundStyle(.tertiary)
                 }
                 HStack {
                     if plan.canMigrate {
-                        Button("Migrate") { model.executeTokenicodeProviderMigration() }.buttonStyle(.borderedProminent)
+                        Button("Migrate") { model.executeLegacyProviderMigration() }.buttonStyle(.borderedProminent)
                     }
-                    if plan.shouldPrompt || plan.state == .tokenicodeMigrationAvailable {
-                        Button("Skip") { model.skipTokenicodeProviderMigration() }
+                    if plan.shouldPrompt || plan.state == .legacyMigrationAvailable {
+                        Button("Skip") { model.skipLegacyProviderMigration() }
                     }
                     if plan.canRollback {
-                        Button("Rollback") { model.rollbackTokenicodeProviderMigration() }
+                        Button("Rollback") { model.rollbackLegacyProviderMigration() }
                     }
                 }
             }

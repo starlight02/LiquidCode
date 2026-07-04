@@ -51,7 +51,7 @@ final class FeatureModelRegressionTests: XCTestCase {
         model.skills = [
             SkillInfo(
                 name: "liquid-glass-review",
-                description: "Review LiquidCode screens for TOKENICODE layout parity.",
+                description: "Review LiquidCode screens for layout parity.",
                 path: "/tmp/liquid-glass-review/SKILL.md",
                 scope: "project",
                 disabled: false
@@ -187,7 +187,7 @@ final class FeatureModelRegressionTests: XCTestCase {
         let messages = [
             ChatMessage(id: "task-tool-1", role: .assistant, content: """
             [tool_use: Task]
-            {"description":"Compare TOKENICODE screenshots","subagent_type":"visual-reviewer"}
+            {"description":"Compare reference screenshots","subagent_type":"visual-reviewer"}
             """),
             ChatMessage(id: "task-result-1", role: .tool, content: "Visual parity review finished", toolName: "Task", parentID: "task-tool-1")
         ]
@@ -196,7 +196,7 @@ final class FeatureModelRegressionTests: XCTestCase {
 
         XCTAssertEqual(calls.map(\.name), ["visual-reviewer", "visual-reviewer"])
         XCTAssertEqual(calls.map(\.status), [.succeeded, .succeeded])
-        XCTAssertTrue(calls[0].inputPreview.contains("Compare TOKENICODE screenshots"))
+        XCTAssertTrue(calls[0].inputPreview.contains("Compare reference screenshots"))
         XCTAssertTrue(calls[0].inputPreview.contains("visual-reviewer"))
         XCTAssertEqual(calls[1].resultPreview, "Visual parity review finished")
         XCTAssertEqual(calls[1].parentID, "task-tool-1")
@@ -207,7 +207,7 @@ final class FeatureModelRegressionTests: XCTestCase {
             ChatMessage(id: "assistant-tool", role: .assistant, content: """
             [tool_use: Task]
             {
-              "description": "Review TOKENICODE visual parity"
+              "description": "Review visual parity"
             }
             """),
             ChatMessage(id: "tool-result", role: .tool, content: "Finished visual review", toolName: "Task", parentID: "assistant-tool")
@@ -217,7 +217,7 @@ final class FeatureModelRegressionTests: XCTestCase {
 
         XCTAssertEqual(calls.map(\.name), ["Task", "Task"])
         XCTAssertEqual(calls.map(\.status), [.succeeded, .succeeded])
-        XCTAssertEqual(calls[0].inputPreview.contains("Review TOKENICODE visual parity"), true)
+        XCTAssertEqual(calls[0].inputPreview.contains("Review visual parity"), true)
         XCTAssertEqual(calls[1].resultPreview, "Finished visual review")
         XCTAssertEqual(calls[1].parentID, "assistant-tool")
     }
@@ -237,7 +237,7 @@ final class FeatureModelRegressionTests: XCTestCase {
         let blocks = parseMarkdown("""
         # Plan
 
-        - [x] inspect TOKENICODE
+        - [x] inspect reference app
         - [ ] ship LiquidCode
 
         | Area | Status |
@@ -254,7 +254,7 @@ final class FeatureModelRegressionTests: XCTestCase {
 
         XCTAssertEqual(blocks, [
             .heading(1, "Plan"),
-            .task(checked: true, "inspect TOKENICODE"),
+            .task(checked: true, "inspect reference app"),
             .task(checked: false, "ship LiquidCode"),
             .table(headers: ["Area", "Status"], rows: [["UI", "PASS"], ["Runtime", "PARTIAL"]]),
             .horizontalRule,
@@ -693,7 +693,7 @@ final class FeatureModelRegressionTests: XCTestCase {
         let beta = SessionRecord(id: "beta", path: nil, project: "Beta", projectDir: root.path, modifiedAt: Date(), preview: "Beta preview", isDraft: true)
         let model = AppModel()
         model.sessions = [alpha, beta]
-        model.messagesBySession["alpha"] = [ChatMessage(role: .user, content: "Build a native TOKENICODE parity interface with working controls.")]
+        model.messagesBySession["alpha"] = [ChatMessage(role: .user, content: "Build a native LiquidCode parity interface with working controls.")]
 
         model.toggleSessionSelection(alpha)
         model.toggleSessionSelection(beta)
@@ -703,7 +703,7 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertTrue(model.selectedSessionIDs.isEmpty)
 
         model.generateSessionTitle(alpha)
-        XCTAssertEqual(model.sessions.first { $0.id == "alpha" }?.customTitle, "Build a native TOKENICODE parity interface")
+        XCTAssertEqual(model.sessions.first { $0.id == "alpha" }?.customTitle, "Build a native LiquidCode parity interface")
 
         let archivedAlpha = try XCTUnwrap(model.sessions.first { $0.id == "alpha" })
         model.selectSession("alpha")
@@ -714,7 +714,7 @@ final class FeatureModelRegressionTests: XCTestCase {
         model.undoLastSessionDelete()
         XCTAssertEqual(model.selectedSessionID, "alpha")
         XCTAssertNotNil(model.sessions.first { $0.id == "alpha" })
-        XCTAssertEqual(model.messagesBySession["alpha"]?.first?.content, "Build a native TOKENICODE parity interface with working controls.")
+        XCTAssertEqual(model.messagesBySession["alpha"]?.first?.content, "Build a native LiquidCode parity interface with working controls.")
     }
 
     func testTranscriptDisplayBuilderAppendsPendingPermissionInteractionsWithInlineMetadata() throws {
@@ -760,7 +760,7 @@ final class FeatureModelRegressionTests: XCTestCase {
             role: .assistant,
             content: """
             [tool_use: Task]
-            {"description":"Compare TOKENICODE screenshots","subagent_type":"visual-reviewer"}
+            {"description":"Compare reference screenshots","subagent_type":"visual-reviewer"}
             [tool_result]
             Compared main-interface and settings.
             """

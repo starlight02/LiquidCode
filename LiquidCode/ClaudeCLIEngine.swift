@@ -411,7 +411,7 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
             return nil
         }
 
-        let dir = home.appendingPathComponent(".tokenicode", isDirectory: true)
+        let dir = home.appendingPathComponent(".liquidcode", isDirectory: true)
         guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil else {
             return nil
         }
@@ -429,7 +429,7 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
     }
 
     static func cleanupMCPScratchConfig(sessionID: String, home: URL = FileManager.default.homeDirectoryForCurrentUser) {
-        cleanupMCPScratchConfig(at: home.appendingPathComponent(".tokenicode/mcp-session-\(safeSessionIDForPath(sessionID)).json"))
+        cleanupMCPScratchConfig(at: home.appendingPathComponent(".liquidcode/mcp-session-\(safeSessionIDForPath(sessionID)).json"))
     }
 
     static func cleanupMCPScratchConfig(at url: URL?) {
@@ -759,7 +759,7 @@ enum ClaudeChildEnvironmentBuilder {
         "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
         "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "CLAUDE_CODE_ENTRYPOINT"
     ]
-    private static let partialOverrideKey = "TOKENICODE_INCLUDE_PARTIAL_MESSAGES"
+    private static let partialOverrideKey = "LIQUIDCODE_INCLUDE_PARTIAL_MESSAGES"
 
     static func buildNative(base: [String: String], enrichedPath: String) -> ClaudeEnvironmentPlan {
         build(base: base, provider: nil, apiKey: nil, thinkingLevel: .high, enrichedPath: enrichedPath)
