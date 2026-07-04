@@ -10,7 +10,7 @@ final class StreamEventParserTests: XCTestCase {
                 "role": "assistant",
                 "content": [
                     ["type": "text", "text": "I will inspect the file."],
-                    ["type": "tool_use", "id": "tool-1", "name": "Read", "input": ["file_path": "Package.swift"]]
+                    ["type": "tool_use", "id": "tool-1", "name": "Read", "input": ["file_path": "README.md"]]
                 ]
             ]
         ]
@@ -20,7 +20,7 @@ final class StreamEventParserTests: XCTestCase {
         XCTAssertEqual(message.role, .assistant)
         XCTAssertTrue(message.content.contains("I will inspect the file."))
         XCTAssertTrue(message.content.contains("[tool_use: Read]"))
-        XCTAssertTrue(message.content.contains("Package.swift"))
+        XCTAssertTrue(message.content.contains("README.md"))
     }
 
     func testEmptyAssistantMessageWithoutToolUseIsIgnored() throws {

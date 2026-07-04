@@ -52,7 +52,8 @@ Claude Code 是 agent 能力来源。
 
 ### 2.2 使用 Claude Agent SDK sidecar
 
-Swift App 不直接链接 Claude Agent SDK。Claude Agent SDK 目前提供 TypeScript/Python SDK，本项目使用 TypeScript sidecar 封装它。
+Swift App 不直接链接 Claude Agent SDK。Claude Agent SDK 目前提供
+TypeScript/Python SDK，本项目使用 TypeScript sidecar 封装它。
 
 主 App 通过 JSON-RPC 与 sidecar 通信。
 
@@ -567,7 +568,13 @@ type SessionRuntime = {
   sessionId: string;
   runtimeId: string;
   projectPath: string;
-  status: "starting" | "running" | "waiting_for_user" | "completed" | "failed" | "interrupted";
+  status:
+    | "starting"
+    | "running"
+    | "waiting_for_user"
+    | "completed"
+    | "failed"
+    | "interrupted";
   inputQueue: AsyncMessageQueue;
   abortController: AbortController;
   pendingPermissions: Map<string, PendingPermission>;
@@ -674,7 +681,7 @@ async function request(req: ToolPermissionRequest) {
 Sidecar 把 SDK message 转成 App 事件。
 
 | SDK message | App event |
-|---|---|
+| --- | --- |
 | system init | `session.started` |
 | text delta | `assistant.text.delta` |
 | assistant complete | `assistant.message.completed` |
@@ -762,13 +769,25 @@ UI 只依赖这个协议。
 protocol ClaudeEngine {
     func initialize() async throws -> EngineCapabilities
     func startSession(_ request: StartSessionRequest) async throws -> ClaudeSessionID
-    func sendMessage(_ sessionID: ClaudeSessionID, _ message: UserMessage) async throws
+    func sendMessage(
+        _ sessionID: ClaudeSessionID,
+        _ message: UserMessage
+    ) async throws
     func events(for sessionID: ClaudeSessionID) -> AsyncStream<ClaudeEvent>
     func interrupt(_ sessionID: ClaudeSessionID) async throws
-    func setPermissionMode(_ sessionID: ClaudeSessionID, _ mode: PermissionMode) async throws
-    func respondToPermission(_ requestID: PermissionRequestID, _ decision: PermissionDecision) async throws
+    func setPermissionMode(
+        _ sessionID: ClaudeSessionID,
+        _ mode: PermissionMode
+    ) async throws
+    func respondToPermission(
+        _ requestID: PermissionRequestID,
+        _ decision: PermissionDecision
+    ) async throws
     func listSessions(projectPath: String) async throws -> [ClaudeSessionSummary]
-    func loadTranscript(_ sessionID: ClaudeSessionID, projectPath: String) async throws -> [TranscriptItem]
+    func loadTranscript(
+        _ sessionID: ClaudeSessionID,
+        projectPath: String
+    ) async throws -> [TranscriptItem]
 }
 ```
 
@@ -1523,7 +1542,10 @@ LiquidCode.app
 └── Contents/Resources/zh-Hans.lproj/InfoPlist.strings
 ```
 
-发布产物必须来自 `LiquidCode.xcodeproj` / `LiquidCode` scheme 的 Xcode archive。`scripts/build-release.sh` 不允许走 `swift build` 后手工拼 `.app`，也不允许手写发布用 `Info.plist`；脚本只能消费 Xcode 产出的 `LiquidCode.app`，再做签名、DMG、notary、updater tarball 和 metadata。
+发布产物必须来自 `LiquidCode.xcodeproj` / `LiquidCode` scheme 的 Xcode
+archive。`scripts/build-release.sh` 不允许走 `swift build` 后手工拼 `.app`，
+也不允许手写发布用 `Info.plist`；脚本只能消费 Xcode 产出的
+`LiquidCode.app`，再做签名、DMG、notary、updater tarball 和 metadata。
 
 ### 21.2 签名
 
@@ -1533,8 +1555,10 @@ LiquidCode.app
 - Hardened Runtime。
 - Notarized DMG（`NOTARY_KEYCHAIN_PROFILE` 设置时）。
 - Sidecar executable 一起签名。
-- 缺少 `CODESIGN_IDENTITY` 时只允许 ad-hoc 本地签名，脚本必须明确这是 dev artifact。
-- `RELEASE_SIGNING_REQUIRED=1` 时，缺少 `CODESIGN_IDENTITY` 或 `NOTARY_KEYCHAIN_PROFILE` 必须在 build 前失败。
+- 缺少 `CODESIGN_IDENTITY` 时只允许 ad-hoc 本地签名，脚本必须明确这是
+  dev artifact。
+- `RELEASE_SIGNING_REQUIRED=1` 时，缺少 `CODESIGN_IDENTITY` 或
+  `NOTARY_KEYCHAIN_PROFILE` 必须在 build 前失败。
 
 ### 21.3 更新
 
@@ -1544,15 +1568,23 @@ v0.1 可以不做自动更新，但要预留：
 - sidecar version check。
 - Claude Code binary version check。
 - 更新失败可回滚。
-- `resources/latest.json` 作为 metadata 模板；本地 release 脚本从 Xcode-built `Info.plist` 解析 version/build/name 并生成 `.build-release/latest.json`。
-- `.build-release/*.app.tar.gz` 和 `.sha256` 是当前最小 updater payload/checksum；正式 auto-updater 签名协议另行设计。
+- `LiquidCode/Resources/latest.json` 作为 metadata 模板；本地 release 脚本
+  从 Xcode-built `Info.plist` 解析 version/build/name，并生成
+  `.build-release/latest.json`。
+- `.build-release/*.app.tar.gz` 和 `.sha256` 是当前最小 updater
+  payload/checksum；正式 auto-updater 签名协议另行设计。
 
 ### 21.4 Productization gate
 
 每次 P0 release 变更必须验证：
 
 ```bash
-xcodebuild -project LiquidCode.xcodeproj -scheme LiquidCode -configuration Release -derivedDataPath .xcode-derived build
+xcodebuild \
+  -project LiquidCode.xcodeproj \
+  -scheme LiquidCode \
+  -configuration Release \
+  -derivedDataPath .xcode-derived \
+  build
 ./scripts/build-release.sh
 codesign --verify --deep --strict --verbose=2 .build-release/LiquidCode.app
 hdiutil verify .build-release/*.dmg
@@ -1823,5 +1855,8 @@ MVP 不包含：
 ## 26. 最终架构句
 
 ```text
-SwiftUI/AppKit 原生 macOS App 负责 Liquid Glass UI、权限审批和产品体验；cc-agentd sidecar 封装 Claude Agent SDK；主 App 通过 JSON-RPC over stdio 与 sidecar 通信；Claude Code 继续负责 agent loop、工具、MCP、skills、hooks 和 transcript。
+SwiftUI/AppKit 原生 macOS App 负责 Liquid Glass UI、权限审批和产品体验；
+cc-agentd sidecar 封装 Claude Agent SDK；主 App 通过 JSON-RPC over stdio
+与 sidecar 通信；Claude Code 继续负责 agent loop、工具、MCP、skills、
+hooks 和 transcript。
 ```

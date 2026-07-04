@@ -4,7 +4,7 @@
 
 - **目标**：保留 LiquidCode 产品身份，做成与 TOKENICODE v0.11.0
   功能完整、布局同构、可实际使用的 macOS 原生 Liquid Glass app。
-- **当前基线**：`swift test` 已通过 38/38，但 docs 仍标记
+- **当前基线**：Xcode 单元测试已通过 38/38，但 docs 仍标记
   9 个 `PARTIAL`；现有 UI 截图还没达到 TOKENICODE 视觉/布局水准。
 - **视觉基准**：TOKENICODE 本地截图与代码；Liquid Glass 采用
   Apple 官方 SwiftUI `glassEffect(_:in:)` + `GlassEffectContainer`，
@@ -34,8 +34,8 @@
 
 ## Test & Acceptance Plan
 
-- **单元/工程**：`swift test`、Xcode test/build、release dry-run、
-  codesign/DMG/lipo checks。
+- **单元/工程**：Xcode test/build、release dry-run、codesign/DMG/lipo
+  checks。
 - **行为验收**：逐项跑新建项目、发送、停止、权限审批、
   Plan approve/reject、文件编辑保存、HTML preview、rewind、
   provider test、CLI setup/update、MCP/Skills CRUD。

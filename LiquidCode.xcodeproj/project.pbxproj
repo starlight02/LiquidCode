@@ -3,88 +3,39 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 90;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		A10000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* Assets.xcassets */; };
-		A10000000000000000000003 /* en.lproj in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* en.lproj */; };
-		A10000000000000000000005 /* zh-Hans.lproj in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* zh-Hans.lproj */; };
-		A10000000000000000000007 /* latest.json in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* latest.json */; };
-		A10000000000000000000009 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000010 /* AppIcon.icns */; };
-		481327A8FF5E06A444021B4F /* LiquidCodeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FC2B588508C35ABE89C78B /* LiquidCodeApp.swift */; };
-		F6B5F45FFF55524ACEAAED39 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 534405F12F47E3F5F8CBF1A1 /* AppModel.swift */; };
-		B5D3071441A17FAEE9299538 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D6FC4FDC5C0755ABEA581A /* Views.swift */; };
-		67DED845EB0AA5BBB0AE3A15 /* Services.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1782DD0F092018F372E6865E /* Services.swift */; };
-		4A6F2B3C1D9E4F5081A2B3C4 /* OnboardingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6F2B3C1D9E4F5081A2B3C3 /* OnboardingService.swift */; };
-		B56B92B498FAD87AE5F9323B /* FeatureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEBC2FDC888C4462CD83E008 /* FeatureModels.swift */; };
-		C28E3B592A560C32484F497E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78FD430803560F137BDECEE8 /* Models.swift */; };
-		255A9E666B82E3DE6F816346 /* OperationalServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = E005A4054D67DCE5BC0B424B /* OperationalServices.swift */; };
-		3AEAC5D857E3702918C33289 /* NativeGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB73F7483A5E9CE40C2D828F /* NativeGlass.swift */; };
-		10C08B657860B017423A3F77 /* ClaudeCLIEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97FB65069BA563012904B9C1 /* ClaudeCLIEngine.swift */; };
-		1AE55374E532E0E4B49DB4BD /* cc-agentd.mjs in Resources */ = {isa = PBXBuildFile; fileRef = 95FCC289E1AF3EA6B3F6026B /* cc-agentd.mjs */; };
-		A20000000000000000000001 /* FeatureModelRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* FeatureModelRegressionTests.swift */; };
-		A20000000000000000000002 /* OnboardingMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* OnboardingMigrationTests.swift */; };
-		A20000000000000000000003 /* ReleaseHelperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* ReleaseHelperTests.swift */; };
-		A20000000000000000000004 /* RuntimeParityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* RuntimeParityTests.swift */; };
-		A20000000000000000000005 /* SkillRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* SkillRegressionTests.swift */; };
-		A20000000000000000000006 /* StreamEventParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB231C409ABA55190E919DE8 /* StreamEventParserTests.swift */; };
-		A20000000000000000000007 /* LiquidCodeTests.xctest in Products */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* LiquidCodeTests.xctest */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
-		A10000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A10000000000000000000004 /* en.lproj */ = {isa = PBXFileReference; lastKnownFileType = folder; path = en.lproj; sourceTree = "<group>"; };
-		A10000000000000000000006 /* zh-Hans.lproj */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "zh-Hans.lproj"; sourceTree = "<group>"; };
-		A10000000000000000000008 /* latest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = latest.json; sourceTree = "<group>"; };
-		A10000000000000000000010 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
-		68FC2B588508C35ABE89C78B /* LiquidCodeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidCodeApp.swift; sourceTree = "<group>"; };
-		534405F12F47E3F5F8CBF1A1 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
-		E2D6FC4FDC5C0755ABEA581A /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
-		1782DD0F092018F372E6865E /* Services.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services.swift; sourceTree = "<group>"; };
-		4A6F2B3C1D9E4F5081A2B3C3 /* OnboardingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingService.swift; sourceTree = "<group>"; };
-		DEBC2FDC888C4462CD83E008 /* FeatureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureModels.swift; sourceTree = "<group>"; };
-		78FD430803560F137BDECEE8 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		E005A4054D67DCE5BC0B424B /* OperationalServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationalServices.swift; sourceTree = "<group>"; };
-		AB73F7483A5E9CE40C2D828F /* NativeGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeGlass.swift; sourceTree = "<group>"; };
-		97FB65069BA563012904B9C1 /* ClaudeCLIEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCLIEngine.swift; sourceTree = "<group>"; };
-		DB231C409ABA55190E919DE8 /* StreamEventParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamEventParserTests.swift; sourceTree = "<group>"; };
+		EC8041DC4691BF74F25B1327 /* LiquidCode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LiquidCode.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000016 /* LiquidCodeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiquidCodeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBABCC81998DC9B30C36E39B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		47C3AAC97E5B7C32E7CC1D61 /* LiquidCode.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LiquidCode.entitlements; sourceTree = "<group>"; };
-		95FCC289E1AF3EA6B3F6026B /* cc-agentd.mjs */ = {isa = PBXFileReference; lastKnownFileType = text.script.node; path = "cc-agentd.mjs"; sourceTree = "<group>"; };
-		EC8041DC4691BF74F25B1327 /* LiquidCode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LiquidCode.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A20000000000000000000011 /* FeatureModelRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureModelRegressionTests.swift; sourceTree = "<group>"; };
-		A20000000000000000000012 /* OnboardingMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingMigrationTests.swift; sourceTree = "<group>"; };
-		A20000000000000000000013 /* ReleaseHelperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseHelperTests.swift; sourceTree = "<group>"; };
-		A20000000000000000000014 /* RuntimeParityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeParityTests.swift; sourceTree = "<group>"; };
-		A20000000000000000000015 /* SkillRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillRegressionTests.swift; sourceTree = "<group>"; };
-		A20000000000000000000016 /* LiquidCodeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LiquidCodeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXContainerItemProxy section */
-		A20000000000000000000017 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 9E88446A3F44B57E975BE17B /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 95E02616FD9FA97DEBC6A20B;
-			remoteInfo = LiquidCode;
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		8A9F255A8A7EBF844ABAA0D2 /* LiquidCode */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LiquidCode;
+			sourceTree = "<group>";
 		};
-/* End PBXContainerItemProxy section */
+		0549085F63153E8E7D9D736D /* LiquidCodeTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LiquidCodeTests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		638E26A450C0634CF4CB1AE4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A20000000000000000000018 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -92,80 +43,20 @@
 		2EB2D8158FC6EF9EB19CB439 = {
 			isa = PBXGroup;
 			children = (
-				2568F4DEBB06535449829F17 /* Sources */,
-				788492B1BB25053FB57A79AB /* Tests */,
-				567F2FDE2E8D3E9A09D6C13B /* resources */,
-				4AD1C60B2E264622FC68D5B0 /* sidecar */,
+				8A9F255A8A7EBF844ABAA0D2 /* LiquidCode */,
+				0549085F63153E8E7D9D736D /* LiquidCodeTests */,
+				4F0000000000000000000001 /* Config */,
 				1E78B559816E575FC0BDB29C /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		2568F4DEBB06535449829F17 /* Sources */ = {
+		4F0000000000000000000001 /* Config */ = {
 			isa = PBXGroup;
 			children = (
-				8A9F255A8A7EBF844ABAA0D2 /* LiquidCode */,
-			);
-			path = Sources;
-			sourceTree = "<group>";
-		};
-		8A9F255A8A7EBF844ABAA0D2 /* LiquidCode */ = {
-			isa = PBXGroup;
-			children = (
-				68FC2B588508C35ABE89C78B /* LiquidCodeApp.swift */,
-				534405F12F47E3F5F8CBF1A1 /* AppModel.swift */,
-				E2D6FC4FDC5C0755ABEA581A /* Views.swift */,
-				1782DD0F092018F372E6865E /* Services.swift */,
-				4A6F2B3C1D9E4F5081A2B3C3 /* OnboardingService.swift */,
-				DEBC2FDC888C4462CD83E008 /* FeatureModels.swift */,
-				78FD430803560F137BDECEE8 /* Models.swift */,
-				E005A4054D67DCE5BC0B424B /* OperationalServices.swift */,
-				AB73F7483A5E9CE40C2D828F /* NativeGlass.swift */,
-				97FB65069BA563012904B9C1 /* ClaudeCLIEngine.swift */,
-			);
-			path = LiquidCode;
-			sourceTree = "<group>";
-		};
-		788492B1BB25053FB57A79AB /* Tests */ = {
-			isa = PBXGroup;
-			children = (
-				0549085F63153E8E7D9D736D /* LiquidCodeTests */,
-			);
-			path = Tests;
-			sourceTree = "<group>";
-		};
-		0549085F63153E8E7D9D736D /* LiquidCodeTests */ = {
-			isa = PBXGroup;
-			children = (
-				A20000000000000000000011 /* FeatureModelRegressionTests.swift */,
-				A20000000000000000000012 /* OnboardingMigrationTests.swift */,
-				A20000000000000000000013 /* ReleaseHelperTests.swift */,
-				A20000000000000000000014 /* RuntimeParityTests.swift */,
-				A20000000000000000000015 /* SkillRegressionTests.swift */,
-				DB231C409ABA55190E919DE8 /* StreamEventParserTests.swift */,
-			);
-			path = LiquidCodeTests;
-			sourceTree = "<group>";
-		};
-		567F2FDE2E8D3E9A09D6C13B /* resources */ = {
-			isa = PBXGroup;
-			children = (
-				A10000000000000000000002 /* Assets.xcassets */,
-				A10000000000000000000004 /* en.lproj */,
-				A10000000000000000000006 /* zh-Hans.lproj */,
-				A10000000000000000000008 /* latest.json */,
-				A10000000000000000000010 /* AppIcon.icns */,
 				EBABCC81998DC9B30C36E39B /* Info.plist */,
 				47C3AAC97E5B7C32E7CC1D61 /* LiquidCode.entitlements */,
 			);
-			path = resources;
-			sourceTree = "<group>";
-		};
-		4AD1C60B2E264622FC68D5B0 /* sidecar */ = {
-			isa = PBXGroup;
-			children = (
-				95FCC289E1AF3EA6B3F6026B /* cc-agentd.mjs */,
-			);
-			path = sidecar;
+			path = Config;
 			sourceTree = "<group>";
 		};
 		1E78B559816E575FC0BDB29C /* Products */ = {
@@ -192,6 +83,9 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				8A9F255A8A7EBF844ABAA0D2 /* LiquidCode */,
+			);
 			name = LiquidCode;
 			productName = LiquidCode;
 			productReference = EC8041DC4691BF74F25B1327 /* LiquidCode.app */;
@@ -209,6 +103,9 @@
 			);
 			dependencies = (
 				A20000000000000000000023 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0549085F63153E8E7D9D736D /* LiquidCodeTests */,
 			);
 			name = LiquidCodeTests;
 			productName = LiquidCodeTests;
@@ -229,18 +126,23 @@
 						CreatedOnToolsVersion = 27.0;
 						ProvisioningStyle = Manual;
 					};
+					A20000000000000000000019 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 95E02616FD9FA97DEBC6A20B;
+					};
 				};
 			};
 			buildConfigurationList = 314425BAD361EE8153704C56 /* Build configuration list for PBXProject "LiquidCode" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
-				zh-Hans,
+				"zh-Hans",
 			);
 			mainGroup = 2EB2D8158FC6EF9EB19CB439;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 90;
 			productRefGroup = 1E78B559816E575FC0BDB29C /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -254,58 +156,38 @@
 /* Begin PBXResourcesBuildPhase section */
 		BCE9B817235E10533480790E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
-				A10000000000000000000001 /* Assets.xcassets in Resources */,
-				A10000000000000000000003 /* en.lproj in Resources */,
-				A10000000000000000000005 /* zh-Hans.lproj in Resources */,
-				A10000000000000000000007 /* latest.json in Resources */,
-				A10000000000000000000009 /* AppIcon.icns in Resources */,
-				1AE55374E532E0E4B49DB4BD /* cc-agentd.mjs in Resources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A20000000000000000000022 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A18B20B6736D268A64482301 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
-				481327A8FF5E06A444021B4F /* LiquidCodeApp.swift in Sources */,
-				F6B5F45FFF55524ACEAAED39 /* AppModel.swift in Sources */,
-				B5D3071441A17FAEE9299538 /* Views.swift in Sources */,
-				67DED845EB0AA5BBB0AE3A15 /* Services.swift in Sources */,
-				4A6F2B3C1D9E4F5081A2B3C4 /* OnboardingService.swift in Sources */,
-				B56B92B498FAD87AE5F9323B /* FeatureModels.swift in Sources */,
-				C28E3B592A560C32484F497E /* Models.swift in Sources */,
-				255A9E666B82E3DE6F816346 /* OperationalServices.swift in Sources */,
-				3AEAC5D857E3702918C33289 /* NativeGlass.swift in Sources */,
-				10C08B657860B017423A3F77 /* ClaudeCLIEngine.swift in Sources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A20000000000000000000021 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
-				A20000000000000000000001 /* FeatureModelRegressionTests.swift in Sources */,
-				A20000000000000000000002 /* OnboardingMigrationTests.swift in Sources */,
-				A20000000000000000000003 /* ReleaseHelperTests.swift in Sources */,
-				A20000000000000000000004 /* RuntimeParityTests.swift in Sources */,
-				A20000000000000000000005 /* SkillRegressionTests.swift in Sources */,
-				A20000000000000000000006 /* StreamEventParserTests.swift in Sources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		A20000000000000000000017 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9E88446A3F44B57E975BE17B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 95E02616FD9FA97DEBC6A20B;
+			remoteInfo = LiquidCode;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXTargetDependency section */
 		A20000000000000000000023 /* PBXTargetDependency */ = {
@@ -320,17 +202,61 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
@@ -340,15 +266,53 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
@@ -359,19 +323,22 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = resources/LiquidCode.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Config/LiquidCode.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = resources/Info.plist;
+				INFOPLIST_FILE = Config/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCode;
 				PRODUCT_MODULE_NAME = LiquidCode;
 				PRODUCT_NAME = LiquidCode;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -380,19 +347,22 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = resources/LiquidCode.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Config/LiquidCode.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = resources/Info.plist;
+				INFOPLIST_FILE = Config/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCode;
 				PRODUCT_MODULE_NAME = LiquidCode;
 				PRODUCT_NAME = LiquidCode;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -409,6 +379,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCodeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiquidCode.app/Contents/MacOS/LiquidCode";
 			};
@@ -426,6 +398,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = moe.aili.LiquidCodeTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LiquidCode.app/Contents/MacOS/LiquidCode";
 			};

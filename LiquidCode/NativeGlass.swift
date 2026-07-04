@@ -118,33 +118,88 @@ struct GlassPanel<Content: View>: View {
         let shadowY: CGFloat = structural ? 16 : (prominence == .prominent ? 20 : 8)
         Group {
             if #available(macOS 26.0, *) {
+                // Real Liquid Glass samples the live window backdrop for lensing.
+                // No opaque surface fill underneath — that would defeat the effect.
                 content
                     .frame(maxWidth: pane ? .infinity : nil, maxHeight: pane ? .infinity : nil, alignment: .topLeading)
-                    .background(LiquidGlassSurface(role: role, prominence: prominence, cornerRadius: resolvedRadius))
                     .glassEffect(.regular, in: shape)
+                    .clipShape(shape)
+                    .overlay { shape.stroke(Color.white.opacity(structural ? 0.16 : 0.12), lineWidth: 0.75) }
+                    .overlay { shape.stroke(Color.black.opacity(darkStrokeOpacity), lineWidth: 0.5) }
+                    .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
             } else {
                 content
                     .frame(maxWidth: pane ? .infinity : nil, maxHeight: pane ? .infinity : nil, alignment: .topLeading)
                     .background(NativeGlassBackground(role: role, prominence: prominence))
+                    .clipShape(shape)
+                    .overlay {
+                        shape.stroke(
+                            LinearGradient(
+                                colors: [.white.opacity(strokeOpacity), .white.opacity(strokeOpacity * 0.16), .white.opacity(strokeOpacity * 0.52)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                    }
+                    .overlay { shape.stroke(Color.black.opacity(darkStrokeOpacity), lineWidth: 0.5) }
+                    .shadow(color: .white.opacity(structural ? 0.36 : 0.16), radius: 18, x: -10, y: -10)
+                    .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
             }
         }
-        .clipShape(shape)
-        .overlay {
-            shape.stroke(
-                LinearGradient(
-                    colors: [.white.opacity(strokeOpacity), .white.opacity(strokeOpacity * 0.16), .white.opacity(strokeOpacity * 0.52)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 1
-            )
-        }
-        .overlay { shape.stroke(Color.black.opacity(darkStrokeOpacity), lineWidth: 0.5) }
-        .shadow(color: .white.opacity(structural ? 0.36 : 0.16), radius: 18, x: -10, y: -10)
-        .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
     }
 }
 
+/// Applies real Liquid Glass to a *control's content* on macOS 26+, falling back
+/// to a hand-rolled frosted background on macOS 15 / Reduce Transparency.
+///
+/// Critical: `.glassEffect` must wrap the content (content renders on top of the
+/// glass). Using it inside `.background { }` hides the content and turns tint into
+/// an opaque fill — so this is a `ViewModifier`, not a background view.
+struct LiquidGlassControlModifier<S: Shape>: ViewModifier {
+    let shape: S
+    var active = false
+    var disabled = false
+    var interactive = true
+    var fallbackRadius: CGFloat = LiquidGlassToken.controlRadius
+    var fallbackIntensity: GlassProminence = .regular
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *), !reduceTransparency {
+            content
+                .glassEffect(glass, in: shape)
+                .contentShape(shape)
+                .opacity(disabled ? 0.55 : 1)
+        } else {
+            content
+                .background { LiquidGlassControlBackground(active: active, disabled: disabled, radius: fallbackRadius, intensity: fallbackIntensity) }
+                .clipShape(shape)
+                .contentShape(shape)
+        }
+    }
+
+    @available(macOS 26.0, *)
+    private var glass: Glass {
+        let base = interactive ? Glass.regular.interactive() : Glass.regular
+        return active ? base.tint(Color.accentColor) : base
+    }
+}
+
+extension View {
+    func liquidGlassControl<S: Shape>(
+        _ shape: S,
+        active: Bool = false,
+        disabled: Bool = false,
+        interactive: Bool = true,
+        fallbackRadius: CGFloat = LiquidGlassToken.controlRadius,
+        fallbackIntensity: GlassProminence = .regular
+    ) -> some View {
+        modifier(LiquidGlassControlModifier(shape: shape, active: active, disabled: disabled, interactive: interactive, fallbackRadius: fallbackRadius, fallbackIntensity: fallbackIntensity))
+    }
+}
+
+/// Legacy frosted control background for macOS 15 / Reduce Transparency only.
 struct LiquidGlassControlBackground: View {
     var active = false
     var disabled = false
@@ -157,19 +212,19 @@ struct LiquidGlassControlBackground: View {
         shape
             .fill(.ultraThinMaterial)
             .overlay(shape.fill(fill))
-        .overlay {
-            shape.stroke(
-                LinearGradient(
-                    colors: [Color.white.opacity(active ? 0.54 : 0.38), Color.white.opacity(0.10), Color.black.opacity(colorScheme == .dark ? 0.18 : 0.06)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: active ? 1.2 : 0.9
-            )
-        }
-        .shadow(color: .white.opacity(colorScheme == .dark ? 0.04 : 0.30), radius: active ? 10 : 6, x: -3, y: -3)
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.30 : 0.08), radius: active ? 11 : 7, x: 0, y: active ? 6 : 3)
-        .opacity(disabled ? 0.48 : 1)
+            .overlay {
+                shape.stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(active ? 0.54 : 0.38), Color.white.opacity(0.10), Color.black.opacity(colorScheme == .dark ? 0.18 : 0.06)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: active ? 1.2 : 0.9
+                )
+            }
+            .shadow(color: .white.opacity(colorScheme == .dark ? 0.04 : 0.30), radius: active ? 10 : 6, x: -3, y: -3)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.30 : 0.08), radius: active ? 11 : 7, x: 0, y: active ? 6 : 3)
+            .opacity(disabled ? 0.48 : 1)
     }
 
     private var fill: Color {
@@ -276,8 +331,7 @@ extension View {
             .padding(.horizontal, 11)
             .padding(.vertical, 8)
             .foregroundStyle(active ? Color.accentColor : Color.primary.opacity(0.78))
-            .background { LiquidGlassControlBackground(active: active, radius: radius, intensity: active ? .prominent : .regular) }
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .liquidGlassControl(RoundedRectangle(cornerRadius: radius, style: .continuous), active: active, fallbackRadius: radius, fallbackIntensity: active ? .prominent : .regular)
     }
 
     func tokenicodeRow(active: Bool = false, radius: CGFloat = 14) -> some View {

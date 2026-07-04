@@ -37,8 +37,8 @@ jobs:
       - name: Install Tauri signer CLI
         run: cargo install tauri-cli --version 2.10.0 --locked
 
-      - name: Swift package tests
-        run: swift test
+      - name: Xcode unit tests
+        run: xcodebuild test -project LiquidCode.xcodeproj -scheme LiquidCode -configuration Debug -destination 'platform=macOS' -derivedDataPath .xcode-derived
 
       - name: Xcode build parity check
         run: xcodebuild -project LiquidCode.xcodeproj -scheme LiquidCode -configuration Release -derivedDataPath .xcode-derived build

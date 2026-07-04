@@ -471,9 +471,9 @@ final class FeatureModelRegressionTests: XCTestCase {
             sessionID: "session-1",
             requestID: "request-1",
             toolName: "Read",
-            title: "Read Package.swift",
-            summary: "Read Package.swift before answering",
-            inputJSON: #"{"file_path":"Package.swift"}"#,
+            title: "Read README.md",
+            summary: "Read README.md before answering",
+            inputJSON: #"{"file_path":"README.md"}"#,
             toolUseID: "tool-use-1",
             parentToolUseID: "parent-tool-1",
             agentID: "agent-1",
@@ -492,9 +492,9 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(displayedPermission.sessionID, "session-1")
         XCTAssertEqual(displayedPermission.requestID, "request-1")
         XCTAssertEqual(displayedPermission.toolName, "Read")
-        XCTAssertEqual(displayedPermission.title, "Read Package.swift")
-        XCTAssertEqual(displayedPermission.summary, "Read Package.swift before answering")
-        XCTAssertEqual(displayedPermission.inputJSON, #"{"file_path":"Package.swift"}"#)
+        XCTAssertEqual(displayedPermission.title, "Read README.md")
+        XCTAssertEqual(displayedPermission.summary, "Read README.md before answering")
+        XCTAssertEqual(displayedPermission.inputJSON, #"{"file_path":"README.md"}"#)
         XCTAssertEqual(displayedPermission.toolUseID, "tool-use-1")
         XCTAssertEqual(displayedPermission.parentToolUseID, "parent-tool-1")
         XCTAssertEqual(displayedPermission.agentID, "agent-1")
@@ -531,9 +531,9 @@ final class FeatureModelRegressionTests: XCTestCase {
             role: .assistant,
             content: """
             [tool_use: Read]
-            {"file_path":"Package.swift"}
+            {"file_path":"README.md"}
             [tool_use: Bash]
-            {"command":"swift test"}
+            {"command":"xcodebuild test -project LiquidCode.xcodeproj -scheme LiquidCode"}
             [tool_result]
             read ok
             [tool_result]
@@ -558,9 +558,9 @@ final class FeatureModelRegressionTests: XCTestCase {
             role: .assistant,
             content: """
             [tool_use: Read]
-            {"file_path":"Package.swift"}
+            {"file_path":"README.md"}
             [tool_use: Bash]
-            {"command":"swift test"}
+            {"command":"xcodebuild test -project LiquidCode.xcodeproj -scheme LiquidCode"}
             [tool_result]
             read ok
             """

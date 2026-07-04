@@ -102,7 +102,6 @@ private final class ReleaseFixture {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .deletingLastPathComponent()
     }
 }
 

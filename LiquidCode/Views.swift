@@ -247,8 +247,7 @@ private struct StableControlLabel: View {
         .foregroundStyle(active ? Color.accentColor : Color.primary.opacity(0.76))
         .padding(.horizontal, 11)
         .padding(.vertical, 8)
-        .background { LiquidGlassControlBackground(active: active, radius: LiquidGlassToken.controlRadius, intensity: active ? .prominent : .subtle) }
-        .clipShape(RoundedRectangle(cornerRadius: LiquidGlassToken.controlRadius, style: .continuous))
+        .liquidGlassControl(RoundedRectangle(cornerRadius: LiquidGlassToken.controlRadius, style: .continuous), active: active, fallbackRadius: LiquidGlassToken.controlRadius, fallbackIntensity: active ? .prominent : .subtle)
     }
 }
 
@@ -271,9 +270,7 @@ private struct NativeToolbarMenuLabel: View {
         .foregroundStyle(active ? Color.white : Color.primary.opacity(0.78))
         .padding(.horizontal, 12)
         .frame(height: 34)
-        .background { LiquidGlassControlBackground(active: active, radius: 17, intensity: active ? .prominent : .subtle) }
-        .clipShape(Capsule())
-        .contentShape(Capsule())
+        .liquidGlassControl(Capsule(), active: active, fallbackRadius: 17, fallbackIntensity: active ? .prominent : .subtle)
         .fixedSize(horizontal: true, vertical: false)
     }
 }
@@ -399,8 +396,7 @@ private struct GlassSearchField: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background { LiquidGlassControlBackground(radius: 16, intensity: .regular) }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .liquidGlassControl(RoundedRectangle(cornerRadius: 16, style: .continuous), interactive: false, fallbackRadius: 16)
     }
 }
 
@@ -411,19 +407,15 @@ private struct IconChip: View {
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            ZStack {
-                LiquidGlassControlBackground(active: active, radius: 13, intensity: active ? .prominent : .regular)
-                    .frame(height: 38)
-                Label(title, systemImage: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
-                    .labelStyle(.titleAndIcon)
-                    .foregroundStyle(active ? Color.accentColor : Color.primary.opacity(0.78))
-                    .lineLimit(1)
-                    .padding(.horizontal, 11)
-                    .frame(maxWidth: .infinity)
-            }
-            .frame(height: 38)
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(active ? Color.accentColor : Color.primary.opacity(0.78))
+                .lineLimit(1)
+                .padding(.horizontal, 11)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .liquidGlassControl(RoundedRectangle(cornerRadius: 13, style: .continuous), active: active, fallbackRadius: 13, fallbackIntensity: active ? .prominent : .regular)
         }
         .buttonStyle(.plain)
     }
@@ -438,15 +430,11 @@ private struct ToolbarIconButton: View {
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            ZStack {
-                LiquidGlassControlBackground(active: active, disabled: disabled, radius: 21, intensity: active ? .prominent : .subtle)
-                Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(active ? Color.white : Color.primary.opacity(disabled ? 0.30 : 0.82))
-            }
-            .frame(width: 42, height: 42)
-            .clipShape(Circle())
-            .contentShape(Circle())
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(active ? Color.white : Color.primary.opacity(disabled ? 0.30 : 0.82))
+                .frame(width: 42, height: 42)
+                .liquidGlassControl(Circle(), active: active, disabled: disabled, fallbackRadius: 21, fallbackIntensity: active ? .prominent : .subtle)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -462,15 +450,11 @@ private struct FloatingShellToggleButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                LiquidGlassControlBackground(radius: 18, intensity: .regular)
-                Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.78))
-            }
-            .frame(width: 36, height: 36)
-            .clipShape(Circle())
-            .contentShape(Circle())
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.primary.opacity(0.78))
+                .frame(width: 36, height: 36)
+                .liquidGlassControl(Circle(), fallbackRadius: 18)
         }
         .buttonStyle(.plain)
         .help(help)
