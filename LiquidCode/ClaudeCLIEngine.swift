@@ -4,6 +4,7 @@ protocol ClaudeEngine: Sendable {
     func startSession(_ request: ClaudeSessionStartRequest, eventSink: @escaping @Sendable (ClaudeEvent) -> Void) throws
     func sendMessage(sessionID: String, text: String) throws
     func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String?
+    func updateRuntimeConfiguration(sessionID: String, model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) throws
     func isSessionRunning(sessionID: String) -> Bool
     func respondPermission(_ permission: PermissionRequest, allow: Bool, updatedInputJSON: String?, message: String?) throws
     func interrupt(sessionID: String) throws
@@ -180,6 +181,21 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
         try sendControl(sessionID: sessionID, subtype: "interrupt", payload: [:])
     }
 
+    func updateRuntimeConfiguration(sessionID: String, model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) throws {
+        if let mode {
+            try sendControl(sessionID: sessionID, subtype: "set_permission_mode", payload: ["mode": mode.permissionMode])
+        }
+        if let model, !model.isEmpty {
+            try sendControl(sessionID: sessionID, subtype: "set_model", payload: ["model": cliModelName(model)])
+        }
+        if let thinkingLevel {
+            try sendControl(sessionID: sessionID, subtype: "set_max_thinking_tokens", payload: [
+                "max_thinking_tokens": thinkingLevel.maxThinkingTokens,
+                "thinking_display": thinkingLevel == .off ? "hidden" : "visible"
+            ])
+        }
+    }
+
     func kill(sessionID: String) {
         let runtime = queue.sync { runtimes.removeValue(forKey: sessionID) }
         guard let runtime else {
@@ -213,6 +229,14 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
         if process.isRunning {
             process.interrupt()
         }
+    }
+
+    private func cliModelName(_ model: String) -> String {
+        [
+            "claude-fable-5-1m": "claude-fable-5[1m]",
+            "claude-opus-4-8-1m": "claude-opus-4-8[1m]",
+            "claude-opus-4-6-1m": "claude-opus-4-6[1m]"
+        ][model] ?? model
     }
 
     private func sendControl(sessionID: String, subtype: String, payload: [String: Any]) throws {
@@ -810,7 +834,11 @@ enum ClaudeChildEnvironmentBuilder {
         if capabilities.isNativeAnthropic {
             env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] ?? "64000"
             env["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] = "1"
-            env["CLAUDE_CODE_EFFORT_LEVEL"] = thinkingLevel.rawValue
+            if thinkingLevel == .off {
+                env.removeValue(forKey: "CLAUDE_CODE_EFFORT_LEVEL")
+            } else {
+                env["CLAUDE_CODE_EFFORT_LEVEL"] = thinkingLevel.rawValue
+            }
         } else {
             env.removeValue(forKey: "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING")
             env.removeValue(forKey: "CLAUDE_CODE_MAX_OUTPUT_TOKENS")

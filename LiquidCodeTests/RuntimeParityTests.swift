@@ -554,6 +554,56 @@ final class RuntimeParityTests: XCTestCase {
         XCTAssertEqual(exported?.count, 3)
     }
 
+    func testClaudeRecentProjectPrefersHistoryAndSessionCreatedAtComesFromJSONL() throws {
+        let home = try temporaryDirectory(prefix: "lc-home")
+        let olderProject = home.appendingPathComponent("older", isDirectory: true)
+        let newerProject = home.appendingPathComponent("newer", isDirectory: true)
+        try FileManager.default.createDirectory(at: olderProject, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newerProject, withIntermediateDirectories: true)
+        let projectsRoot = home.appendingPathComponent(".claude/projects", isDirectory: true)
+        let newerStore = projectsRoot.appendingPathComponent(encodeClaudeProjectPath(newerProject.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: newerStore, withIntermediateDirectories: true)
+        let newerFile = newerStore.appendingPathComponent("333e4567-e89b-12d3-a456-426614174000").appendingPathExtension("jsonl")
+        let jsonl = [
+            #"{"type":"system","timestamp":"2026-01-02T03:04:05.000Z","cwd":"\#(newerProject.path)"}"#,
+            #"{"type":"human","message":{"role":"user","content":[{"type":"text","text":"newer project task"}]}}"#
+        ].joined(separator: "\n") + "\n"
+        try jsonl.write(to: newerFile, atomically: true, encoding: .utf8)
+        let history = home.appendingPathComponent(".claude/history.jsonl")
+        try FileManager.default.createDirectory(at: history.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let historyText = [
+            #"{"display":"old","timestamp":1780000000000,"project":"\#(olderProject.path)","sessionId":"old"}"#,
+            #"{"display":"new","timestamp":1780000001000,"project":"\#(newerProject.path)","sessionId":"new"}"#
+        ].joined(separator: "\n")
+        try (historyText + "\n").write(to: history, atomically: true, encoding: .utf8)
+
+        let index = SessionIndexService(home: home)
+        XCTAssertEqual(index.mostRecentProjectDirectory(), newerProject.path)
+        let session = try XCTUnwrap(index.discoverAllSessions().first)
+        XCTAssertEqual(session.createdAt, ISO8601DateFormatter().date(from: "2026-01-02T03:04:05Z"))
+        XCTAssertEqual(session.preview, "newer project task")
+    }
+
+    func testDeleteSessionRecordRemovesClaudeCodeJsonlAndUntracksIt() throws {
+        let home = try temporaryDirectory(prefix: "lc-home")
+        let project = home.appendingPathComponent("work/project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let encoded = encodeClaudeProjectPath(project.path)
+        let projectStore = home.appendingPathComponent(".claude/projects").appendingPathComponent(encoded, isDirectory: true)
+        try FileManager.default.createDirectory(at: projectStore, withIntermediateDirectories: true)
+        let id = "444e4567-e89b-12d3-a456-426614174000"
+        let sessionFile = projectStore.appendingPathComponent(id).appendingPathExtension("jsonl")
+        try #"{"type":"system","cwd":"\#(project.path)"}"#.write(to: sessionFile, atomically: true, encoding: .utf8)
+        let index = SessionIndexService(home: home)
+        index.trackSession(id, projectDir: project.path, path: sessionFile.path)
+        let session = try XCTUnwrap(index.listSessions().first)
+
+        try index.deleteSessionRecord(session)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sessionFile.path))
+        XCTAssertTrue(index.listSessions().isEmpty)
+    }
+
     func testCLIServiceDiagnoseNativeUpdateRepairOfflineFixture() throws {
         let home = try temporaryDirectory(prefix: "lc-home")
         let fixture = try temporaryDirectory(prefix: "lc-cli-release")

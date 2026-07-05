@@ -440,6 +440,7 @@ final class CLIService: @unchecked Sendable {
     }
 }
 
+// periphery:ignore
 struct ProviderConnectionProbeResult: Equatable, Sendable {
     var statusCode: Int
     var latencyMilliseconds: Int
@@ -472,6 +473,7 @@ enum ProviderConnectionProbe {
         return request
     }
 
+    // periphery:ignore
     static func probe(provider: ProviderRecord, apiKey: String, model: String) async throws -> ProviderConnectionProbeResult {
         let request = try makeRequest(provider: provider, apiKey: apiKey, model: model)
         let start = Date()
@@ -518,6 +520,7 @@ enum ProviderConnectionProbe {
         return url
     }
 
+    // periphery:ignore
     private static func responsePreview(from data: Data) -> String {
         let raw = String(data: data, encoding: .utf8) ?? "<\(data.count) bytes>"
         let collapsed = raw.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)

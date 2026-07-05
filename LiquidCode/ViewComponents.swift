@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import SwiftUI
 import WebKit
@@ -47,21 +48,32 @@ struct NativeToolbarMenuLabel: View {
     var minWidth: CGFloat = 0
 
     var body: some View {
+        let shape = Capsule()
         HStack(spacing: 7) {
             Image(systemName: systemImage)
                 .font(.system(size: 12.5, weight: .semibold))
-            Text(title)
-                .font(.system(size: 12.5, weight: .semibold))
-                .lineLimit(1)
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
             Image(systemName: "chevron.down")
                 .font(.system(size: 8.5, weight: .bold))
-                .foregroundStyle(active ? Color.white.opacity(0.80) : Color.secondary.opacity(0.78))
+                .foregroundStyle(Color.secondary.opacity(active ? 0.88 : 0.78))
         }
-        .foregroundStyle(active ? Color.white : Color.primary.opacity(0.78))
+        .foregroundStyle(Color.primary.opacity(active ? 0.88 : 0.78))
         .padding(.horizontal, 11)
         .frame(minWidth: minWidth)
         .frame(height: GlassControlMetric.menuHeight)
-        .liquidGlassControl(Capsule(), active: active, fallbackRadius: GlassControlMetric.menuHeight / 2, fallbackIntensity: active ? .prominent : .subtle)
+        .liquidGlassControl(shape, active: false, fallbackRadius: GlassControlMetric.menuHeight / 2, fallbackIntensity: active ? .regular : .subtle)
+        .overlay {
+            if active {
+                shape
+                    .fill(Color.primary.opacity(0.055))
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }
 
@@ -84,6 +96,7 @@ struct StandardContentCardBackground: View {
     }
 }
 
+// periphery:ignore
 struct LiquidComposerWell: View {
     let cornerRadius: CGFloat
     var active = false
@@ -123,47 +136,168 @@ struct LiquidComposerWell: View {
     }
 }
 
-struct LiquidDarkCTA: View {
+struct LiquidComposerDock: View {
     let cornerRadius: CGFloat
+    var active = false
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        shape
-            .fill(
-                LinearGradient(
-                    colors: [Color.black.opacity(0.88), Color.black.opacity(0.76), Color.black.opacity(0.92)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay {
-                shape.fill(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.16), Color.white.opacity(0.03), Color.clear],
-                        startPoint: .topLeading,
-                        endPoint: .center
-                    )
-                )
+        Group {
+            if #available(macOS 26.0, *) {
+                shape
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.055) : Color.white.opacity(0.24))
+                    .glassEffect(.regular, in: shape)
+                    .overlay { tintOverlay(shape: shape) }
+                    .overlay { strokeOverlay(shape: shape) }
+                    .shadow(color: .white.opacity(colorScheme == .dark ? 0.06 : 0.38), radius: 24, x: -12, y: -10)
+            } else {
+                shape
+                    .fill(.ultraThinMaterial)
+                    .overlay { tintOverlay(shape: shape) }
+                    .overlay { strokeOverlay(shape: shape) }
+                    .shadow(color: .white.opacity(colorScheme == .dark ? 0.06 : 0.30), radius: 20, x: -10, y: -8)
             }
-            .overlay { shape.stroke(Color.white.opacity(0.18), lineWidth: 1) }
+        }
+    }
+
+    private func tintOverlay(shape: RoundedRectangle) -> some View {
+        shape.fill(
+            LinearGradient(
+                colors: colorScheme == .dark ? [
+                    Color.white.opacity(active ? 0.12 : 0.075),
+                    Color.blue.opacity(active ? 0.10 : 0.055),
+                    Color.white.opacity(0.035)
+                ] : [
+                    Color.white.opacity(0.46),
+                    Color.cyan.opacity(0.055),
+                    Color.accentColor.opacity(active ? 0.13 : 0.075)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+    }
+
+    private func strokeOverlay(shape: RoundedRectangle) -> some View {
+        shape.stroke(
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(colorScheme == .dark ? 0.22 : 0.72),
+                    Color.white.opacity(0.18),
+                    Color.black.opacity(colorScheme == .dark ? 0.20 : 0.055)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            lineWidth: 1
+        )
+    }
+}
+
+struct LiquidDarkCTA: View {
+    let cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        Group {
+            if #available(macOS 26.0, *), !reduceTransparency {
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.82), Color.black.opacity(0.64), Color.black.opacity(0.88)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .glassEffect(.regular.interactive().tint(Color.black.opacity(0.72)), in: shape)
+                    .overlay { shine(shape) }
+                    .overlay { stroke(shape) }
+            } else {
+                shape
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.black.opacity(0.88), Color.black.opacity(0.76), Color.black.opacity(0.92)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay { shine(shape) }
+                    .overlay { stroke(shape) }
+            }
+        }
+    }
+
+    private func shine(_ shape: RoundedRectangle) -> some View {
+        shape.fill(
+            LinearGradient(
+                colors: [Color.white.opacity(0.20), Color.white.opacity(0.045), Color.clear],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+        )
+    }
+
+    private func stroke(_ shape: RoundedRectangle) -> some View {
+        shape.stroke(
+            LinearGradient(
+                colors: [Color.white.opacity(0.28), Color.white.opacity(0.08), Color.black.opacity(0.30)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            lineWidth: 0.9
+        )
     }
 }
 
 struct LiquidCodeLogoView: View {
     var compact = false
+    var fontSize: CGFloat?
+
+    private var resolvedSize: CGFloat {
+        fontSize ?? (compact ? 13 : 20)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             Text("LIQUID")
-                .font(.system(size: compact ? 13 : 20, weight: .semibold, design: .rounded))
+                .font(.system(size: resolvedSize, weight: .semibold, design: .rounded))
                 .tracking(-1.1)
             Text("/")
-                .font(.system(size: compact ? 13 : 20, weight: .bold, design: .rounded))
+                .font(.system(size: resolvedSize, weight: .bold, design: .rounded))
                 .foregroundStyle(Color.accentColor)
                 .tracking(-0.8)
             Text("CODE")
-                .font(.system(size: compact ? 13 : 20, weight: .semibold, design: .rounded))
+                .font(.system(size: resolvedSize, weight: .semibold, design: .rounded))
                 .tracking(-0.8)
         }
         .accessibilityLabel("LiquidCode")
+    }
+}
+
+struct Greeting: Equatable {
+    let heading: String
+    let subtitle: String
+}
+
+enum GreetingProvider {
+    static let greetings: [Greeting] = [
+        Greeting(heading: "What shall we build?", subtitle: "Describe your idea and let's get started"),
+        Greeting(heading: "Ready when you are", subtitle: "Start a conversation or pick up where you left off"),
+        Greeting(heading: "Let's get to work", subtitle: "Type a task, ask a question, or open a project"),
+        Greeting(heading: "What's on your mind?", subtitle: "From quick questions to full features — just ask"),
+        Greeting(heading: "Your next idea starts here", subtitle: "Tell me what you'd like to create or explore"),
+        Greeting(heading: "Good to see you", subtitle: "Jump into a project or start something new"),
+        Greeting(heading: "What are we working on?", subtitle: "Attach files, describe a task, or just chat"),
+        Greeting(heading: "Let's build something great", subtitle: "Every line of code starts with a conversation")
+    ]
+
+    static func random() -> Greeting {
+        greetings.randomElement() ?? Greeting(
+            heading: "What shall we build?",
+            subtitle: "Describe your idea and let's get started"
+        )
     }
 }
 
@@ -182,6 +316,7 @@ struct GlassSearchField: View {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
+                    .help("Clear search")
             }
         }
         .padding(.horizontal, 12)
@@ -190,6 +325,7 @@ struct GlassSearchField: View {
     }
 }
 
+// periphery:ignore
 struct IconChip: View {
     let title: String
     let systemImage: String
@@ -200,7 +336,7 @@ struct IconChip: View {
             Label(title, systemImage: systemImage)
                 .font(.system(size: 13, weight: .semibold))
                 .labelStyle(.titleAndIcon)
-                .foregroundStyle(active ? Color.white : Color.primary.opacity(0.78))
+                .foregroundStyle(Color.primary.opacity(active ? 0.90 : 0.78))
                 .lineLimit(1)
                 .padding(.horizontal, 11)
                 .frame(maxWidth: .infinity)
@@ -221,7 +357,7 @@ struct ToolbarIconButton: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: GlassControlMetric.iconSymbolSize, weight: .semibold))
-                .foregroundStyle(active ? Color.white : Color.primary.opacity(disabled ? 0.62 : 0.82))
+                .foregroundStyle(Color.primary.opacity(disabled ? 0.62 : active ? 0.90 : 0.82))
                 .frame(width: GlassControlMetric.iconButtonSize, height: GlassControlMetric.iconButtonSize)
                 .liquidGlassControl(
                     Circle(),
@@ -250,7 +386,7 @@ struct ToolbarMenuIconButton<MenuContent: View>: View {
         } label: {
             Image(systemName: systemImage)
                 .font(.system(size: GlassControlMetric.iconSymbolSize, weight: .semibold))
-                .foregroundStyle(active ? Color.white : Color.primary.opacity(disabled ? 0.62 : 0.82))
+                .foregroundStyle(Color.primary.opacity(disabled ? 0.62 : active ? 0.90 : 0.82))
                 .frame(width: GlassControlMetric.iconButtonSize, height: GlassControlMetric.iconButtonSize)
                 .liquidGlassControl(
                     Circle(),
@@ -318,6 +454,29 @@ func lineCount(_ text: String) -> Int {
         return 0
     }
     return text.split(separator: "\n", omittingEmptySubsequences: false).count
+}
+
+func softWrappedTranscriptText(_ text: String) -> String {
+    let softBreak = "\u{200B}"
+    let preferredBreakCharacters = Set("/\\._-:=?&%#[](){}".map { $0 })
+    var output = ""
+    var runLength = 0
+
+    for character in text {
+        output.append(character)
+        if character.isWhitespace || character.isNewline {
+            runLength = 0
+            continue
+        }
+
+        runLength += 1
+        if preferredBreakCharacters.contains(character) || runLength >= 24 {
+            output.append(softBreak)
+            runLength = 0
+        }
+    }
+
+    return output
 }
 
 func fileIconName(for fileName: String, isDirectory: Bool = false) -> String {
@@ -750,9 +909,6 @@ struct SidebarView: View {
             VStack(spacing: 0) {
                 sidebarHeader
                 primaryAction
-                if !model.workingDirectory.isEmpty {
-                    projectCard
-                }
                 searchAndFilters
                 undoBanner
                 Divider().opacity(0.5)
@@ -803,49 +959,26 @@ struct SidebarView: View {
     }
 
     private var primaryAction: some View {
-        Button(action: model.newChat) {
+        Button(action: model.returnToStartScreen) {
             HStack(spacing: 10) {
                 Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 15.5, weight: .bold))
                 Text("New Chat")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                 Spacer()
             }
-            .padding(.horizontal, 18)
-            .frame(height: 62)
+            .padding(.horizontal, 16)
+            .frame(height: 52)
             .frame(maxWidth: .infinity)
             .foregroundStyle(.white)
-            .background { LiquidDarkCTA(cornerRadius: 28) }
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .shadow(color: .black.opacity(0.22), radius: 22, y: 12)
+            .background { LiquidDarkCTA(cornerRadius: 24) }
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
-        .help("Open a project folder and start a new Claude Code session")
-    }
-
-    private var projectCard: some View {
-        HStack(spacing: 10) {
-            StatusDot(color: model.selectedHasActiveTurn ? .green : .mint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(URL(fileURLWithPath: model.workingDirectory).lastPathComponent)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-                Text((model.workingDirectory as NSString).abbreviatingWithTildeInPath)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Text(model.selectedHasActiveTurn ? "Running" : "Ready")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
-        }
-        .padding(12)
-        .liquidGlassCard(role: .floatingCard, prominence: .subtle, radius: 16)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+        .help("Return to the start screen")
     }
 
     private var searchAndFilters: some View {
@@ -960,13 +1093,11 @@ struct SidebarView: View {
     }
 
     private func projectGroups(from sessions: [SessionRecord]) -> [ProjectSessionGroup] {
-        let current = model.workingDirectory
-        return Dictionary(grouping: sessions, by: { $0.projectDir })
+        Dictionary(grouping: sessions, by: { $0.projectDir })
             .map { ProjectSessionGroup(path: $0.key, sessions: $0.value.sorted { $0.modifiedAt > $1.modifiedAt }) }
             .sorted { lhs, rhs in
-                // Current project pinned to the top; the rest by most-recent activity.
-                if (lhs.path == current) != (rhs.path == current) {
-                    return lhs.path == current
+                if lhs.firstConversationAt != rhs.firstConversationAt {
+                    return lhs.firstConversationAt > rhs.firstConversationAt
                 }
                 return lhs.latest > rhs.latest
             }
@@ -1018,6 +1149,9 @@ struct SidebarView: View {
         var id: String { path }
         var name: String { path.isEmpty ? "Unknown Project" : URL(fileURLWithPath: path).lastPathComponent }
         var latest: Date { sessions.first?.modifiedAt ?? .distantPast }
+        var firstConversationAt: Date {
+            sessions.map { $0.createdAt ?? $0.modifiedAt }.min() ?? .distantPast
+        }
     }
 
     @ViewBuilder private func sessionSection(_ title: String, _ sessions: [SessionRecord], trailing: String? = nil) -> some View {
@@ -1057,6 +1191,8 @@ struct SidebarView: View {
 struct SessionRowView: View {
     @EnvironmentObject var model: AppModel
     let session: SessionRecord
+    @State private var isHovered = false
+    @State private var pendingDelete = false
     var selected: Bool {
         model.selectedSessionID == session.id
     }
@@ -1073,41 +1209,127 @@ struct SessionRowView: View {
         HStack(alignment: .center, spacing: 10) {
             if model.sessionSelectionMode {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(checked ? Color.accentColor : .secondary)
+                    .foregroundStyle(checked ? Color.primary.opacity(0.78) : .secondary)
             } else {
                 StatusDot(color: running ? .green : (session.isDraft ? .orange : .mint.opacity(0.8)))
             }
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(session.title)
-                        .lineLimit(1)
-                        .font(.system(size: 14, weight: selected ? .semibold : .regular))
-                    if session.isDraft {
-                        Text("Draft").font(.caption2.weight(.medium)).foregroundStyle(.orange)
+            Text(session.title)
+                .lineLimit(1)
+                .font(.system(size: 14, weight: selected ? .semibold : .regular, design: .rounded))
+                .foregroundStyle(selected ? Color.primary : Color.primary.opacity(0.86))
+            if session.isDraft {
+                Text("Draft")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.orange)
+            }
+            Spacer(minLength: 8)
+            if model.sessionSelectionMode {
+                if session.archived {
+                    Image(systemName: "archivebox.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else if isHovered || selected || pendingDelete || session.pinned || session.archived {
+                sessionActions
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 36)
+        .background { rowBackground }
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .pointingHandCursor()
+        .contentShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.14)) {
+                isHovered = hovering
+                if !hovering {
+                    pendingDelete = false
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: selected)
+        .animation(.easeOut(duration: 0.14), value: isHovered)
+        .animation(.easeOut(duration: 0.14), value: pendingDelete)
+    }
+
+    @ViewBuilder private var rowBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: 15, style: .continuous)
+        if selected || checked {
+            shape
+                .fill(Color.white.opacity(0.10))
+                .liquidGlassControl(shape, active: false, interactive: false, fallbackRadius: 15, fallbackIntensity: .regular)
+                .overlay {
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.34),
+                                Color.primary.opacity(0.050),
+                                Color.black.opacity(0.035)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                }
+                .overlay {
+                    shape.stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.62), Color.white.opacity(0.18), Color.black.opacity(0.075)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.9
+                    )
+                }
+        } else if isHovered {
+            shape
+                .fill(Color.white.opacity(0.055))
+                .liquidGlassControl(shape, active: false, interactive: false, fallbackRadius: 15, fallbackIntensity: .subtle)
+        } else {
+            Color.clear
+        }
+    }
+
+    private var sessionActions: some View {
+        HStack(spacing: 5) {
+            Button {
+                model.togglePin(session)
+            } label: {
+                Image(systemName: session.pinned ? "pin.fill" : "pin")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 23, height: 23)
+                    .foregroundStyle(session.pinned ? Color.primary.opacity(0.86) : Color.secondary)
+                    .background(Color.primary.opacity(session.pinned ? 0.105 : 0.035), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help(session.pinned ? "Unpin conversation" : "Pin conversation")
+
+            if session.archived {
+                Image(systemName: "archivebox.fill")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .frame(width: 23, height: 23)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                if pendingDelete {
+                    model.deleteSession(session)
+                } else {
+                    withAnimation(.easeOut(duration: 0.14)) {
+                        pendingDelete = true
                     }
                 }
-                HStack(spacing: 6) {
-                    Text(URL(fileURLWithPath: session.projectDir).lastPathComponent)
-                        .font(.caption2)
-                        .foregroundStyle(selected ? Color.primary.opacity(0.68) : .secondary)
-                        .lineLimit(1)
-                    Text(session.modifiedAt, style: .relative)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+            } label: {
+                Image(systemName: pendingDelete ? "trash.fill" : "trash")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: pendingDelete ? 28 : 23, height: 23)
+                    .foregroundStyle(pendingDelete ? Color.white : Color.secondary)
+                    .background(pendingDelete ? Color.red : Color.primary.opacity(0.035), in: Capsule())
             }
-            Spacer()
-            HStack(spacing: 5) {
-                if session.pinned {
-                    Image(systemName: "pin.fill").font(.caption2)
-                }
-                if session.archived {
-                    Image(systemName: "archivebox.fill").font(.caption2)
-                }
-            }
-            .foregroundStyle(.secondary)
+            .buttonStyle(.plain)
+            .help(pendingDelete ? "Click again to delete from Claude Code" : "Delete conversation")
         }
-        .liquidGlassRow(active: selected || checked, radius: 15)
     }
 }
 
@@ -1120,6 +1342,10 @@ struct ChatPanelView: View {
     let onToggleSecondary: () -> Void
     @State private var findOpen = false
     @State private var agentPopoverOpen = false
+    @State private var logoOpacity: Double = 0
+    @State private var headingOpacity: Double = 0
+    @State private var subtitleOpacity: Double = 0
+    @State private var chipsOpacity: Double = 0
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -1130,15 +1356,28 @@ struct ChatPanelView: View {
             ZStack {
                 if model.selectedSessionID == nil {
                     welcomeState
-                } else if model.selectedMessages.isEmpty && model.selectedStreamingText.isEmpty && model.pendingPermissionsForSelectedSession.isEmpty {
-                    readyState
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.96)),
+                            removal: .opacity.combined(with: .scale(scale: 0.92)).combined(with: .offset(y: -60))
+                        ))
                 } else {
-                    transcript
+                    ZStack(alignment: .bottom) {
+                        if model.selectedMessages.isEmpty && model.selectedStreamingText.isEmpty && model.pendingPermissionsForSelectedSession.isEmpty {
+                            readyState
+                                .transition(.opacity.combined(with: .offset(y: 8)))
+                        } else {
+                            transcript
+                                .transition(.opacity.combined(with: .offset(y: 10)))
+                        }
+                        InputBarView(presentation: .chat)
+                            .padding(.bottom, 8)
+                            .zIndex(10)
+                    }
+                    .transition(.opacity)
                 }
             }
-            if !model.workingDirectory.isEmpty {
-                InputBarView()
-            }
+            .animation(.spring(response: 0.55, dampingFraction: 0.82), value: model.selectedSessionID)
+            .animation(.easeInOut(duration: 0.3), value: model.selectedMessages.isEmpty)
         }
         .background(LiquidContentSurface(cornerRadius: LiquidGlassToken.panelRadius))
         .clipShape(RoundedRectangle(cornerRadius: LiquidGlassToken.panelRadius, style: .continuous))
@@ -1148,7 +1387,7 @@ struct ChatPanelView: View {
         }
         .shadow(color: .black.opacity(0.10), radius: 24, y: 14)
         .background(FindKeyboardBridge(
-            isEnabled: !model.workingDirectory.isEmpty,
+            isEnabled: model.selectedSessionID != nil,
             isActive: findOpen,
             onOpen: { findOpen = true },
             onClose: { findOpen = false },
@@ -1158,15 +1397,17 @@ struct ChatPanelView: View {
 
     private var toolbar: some View {
         HStack(spacing: 14) {
-            ToolbarIconButton(
-                systemImage: "sidebar.leading",
-                help: sidebarOpen ? "Hide sidebar" : "Show sidebar",
-                active: false,
-                action: onToggleSidebar
-            )
+            if !sidebarOpen {
+                ToolbarIconButton(
+                    systemImage: "sidebar.leading",
+                    help: "Show sidebar",
+                    active: false,
+                    action: onToggleSidebar
+                )
+            }
 
-            if !model.workingDirectory.isEmpty {
-                Text(shortModelName(model.settings.selectedModel))
+            if model.selectedSessionID != nil && !model.workingDirectory.isEmpty {
+                Text(model.modelDisplayName(model.settings.selectedModel))
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                 Text(URL(fileURLWithPath: model.workingDirectory).lastPathComponent)
@@ -1199,31 +1440,12 @@ struct ChatPanelView: View {
                     AgentPopoverView()
                         .environmentObject(model)
                 }
-                Label(model.cliStatus.installed ? "CLI" : "CLI missing", systemImage: "circle.fill")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(model.cliStatus.installed ? Color.mint.opacity(0.8) : Color.orange)
-            } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "slider.horizontal.3")
-                    Text("Choose a project to start")
-                }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .liquidGlassButton()
             }
             if model.selectedHasActiveTurn {
                 ActivityPillView()
             }
             Spacer()
             HStack(spacing: 10) {
-                if !isFilePreviewMode {
-                    ToolbarIconButton(
-                        systemImage: "sidebar.trailing",
-                        help: secondaryOpen ? "Hide inspector" : "Show inspector",
-                        active: false,
-                        action: onToggleSecondary
-                    )
-                }
                 if !model.workingDirectory.isEmpty {
                     ToolbarIconButton(systemImage: "square.and.arrow.down", help: "Export current session") {
                         if let selected = model.selectedSession {
@@ -1236,7 +1458,14 @@ struct ChatPanelView: View {
                         active: secondaryOpen && model.secondaryTab == .plan,
                         action: togglePlanInspector
                     )
-                    ToolbarIconButton(systemImage: "stop.fill", help: "Interrupt current turn", disabled: !model.selectedHasActiveTurn) { model.interrupt() }
+                }
+                if !isFilePreviewMode {
+                    ToolbarIconButton(
+                        systemImage: "sidebar.trailing",
+                        help: secondaryOpen ? "Hide inspector" : "Show inspector",
+                        active: false,
+                        action: onToggleSecondary
+                    )
                 }
             }
         }
@@ -1272,55 +1501,70 @@ struct ChatPanelView: View {
     }
 
     private var welcomeState: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            VStack(spacing: 16) {
-                LiquidCodeLogoView()
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 18)
-                    .background(Color.primary.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(LiquidGlassToken.hairline))
-                Text("Welcome to LiquidCode")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                Text("Select a project folder to get started")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 360)
-                IconChip(title: "Select Folder", systemImage: "folder", active: true) { model.newChat() }
-                    .frame(width: 190)
-
-                if !model.recentProjects.isEmpty {
-                    VStack(spacing: 10) {
-                        Text("Recent Projects")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                            .textCase(.uppercase)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(Array(model.recentProjects.prefix(6))) { project in
-                                    Button { model.loadProject(project.path) } label: {
-                                        Label(project.name, systemImage: "folder")
-                                            .font(.caption)
-                                            .lineLimit(1)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .help(project.path)
-                                }
-                            }
-                            .padding(.horizontal, 2)
-                        }
-                        .frame(maxWidth: 420)
-                    }
-                    .padding(.top, 14)
+        welcomeHero
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 24)
+            .onAppear {
+                let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                if reduceMotion {
+                    logoOpacity = 1; headingOpacity = 1; subtitleOpacity = 1; chipsOpacity = 1
+                } else {
+                    withAnimation(.easeOut(duration: 0.45).delay(0.08)) { logoOpacity = 1 }
+                    withAnimation(.easeOut(duration: 0.45).delay(0.22)) { headingOpacity = 1 }
+                    withAnimation(.easeOut(duration: 0.4).delay(0.36)) { subtitleOpacity = 1 }
+                    withAnimation(.easeOut(duration: 0.35).delay(0.50)) { chipsOpacity = 1 }
                 }
             }
-            Spacer()
+    }
+
+    private var welcomeHero: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 14) {
+                let logoShape = RoundedRectangle(cornerRadius: 27, style: .continuous)
+                LiquidCodeLogoView(fontSize: 26)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 17)
+                    .liquidGlassControl(
+                        logoShape,
+                        interactive: false,
+                        fallbackRadius: 27,
+                        fallbackIntensity: .regular
+                    )
+                    .overlay {
+                        logoShape.stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.62),
+                                    Color.white.opacity(0.16),
+                                    Color.black.opacity(0.055)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.9
+                        )
+                    }
+                    .shadow(color: .black.opacity(0.055), radius: 14, y: 7)
+                    .opacity(logoOpacity)
+
+                Text(model.currentGreeting.heading)
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.center)
+                    .opacity(headingOpacity)
+
+                Text(model.currentGreeting.subtitle)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 400)
+                    .opacity(subtitleOpacity)
+            }
+
+            InputBarView(presentation: .welcome)
+                .opacity(chipsOpacity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 
     private var readyState: some View {
@@ -1381,6 +1625,7 @@ struct ChatPanelView: View {
                 .frame(maxWidth: LiquidGlassToken.chatMaxWidth, alignment: .leading)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 18)
+                .padding(.bottom, 154)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
             .onChange(of: model.selectedMessages.count) { _, _ in if let last = model.selectedMessages.last {
@@ -1471,6 +1716,7 @@ struct FindBarView: View {
             Button { model.chatFindText = ""; onClose() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
+                .help("Close find bar")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -1722,10 +1968,11 @@ struct MessageBubbleView: View {
         HStack(alignment: .top, spacing: 10) {
             Spacer(minLength: 120)
             VStack(alignment: .leading, spacing: 8) {
-                Text(message.content.isEmpty ? " " : message.content)
+                Text(softWrappedTranscriptText(message.content.isEmpty ? " " : message.content))
                     .font(.system(size: 14))
                     .lineSpacing(3)
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !message.attachments.isEmpty {
                     MessageAttachmentStripView(attachments: message.attachments, inverse: true)
                 }
@@ -1987,7 +2234,11 @@ struct ImageLightboxOverlayView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.58).ignoresSafeArea().onTapGesture(perform: onClose)
+            Color.black
+                .opacity(0.58)
+                .ignoresSafeArea()
+                .pointingHandCursor()
+                .onTapGesture(perform: onClose)
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -1997,7 +2248,10 @@ struct ImageLightboxOverlayView: View {
                         }
                     }
                     Spacer()
-                    Button(action: onClose) { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).keyboardShortcut(.cancelAction)
+                    Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.cancelAction)
+                        .help("Close image preview")
                 }
                 if let image = NSImage(data: content.imageData) {
                     Image(nsImage: image)

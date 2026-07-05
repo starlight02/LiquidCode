@@ -33,6 +33,10 @@ final class HybridClaudeEngine: ClaudeEngine, @unchecked Sendable {
         try backend(for: sessionID).rewindFiles(sessionID: sessionID, cliSessionID: cliSessionID, checkpointUUID: checkpointUUID, cwd: cwd)
     }
 
+    func updateRuntimeConfiguration(sessionID: String, model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) throws {
+        try backend(for: sessionID).updateRuntimeConfiguration(sessionID: sessionID, model: model, mode: mode, thinkingLevel: thinkingLevel)
+    }
+
     func isSessionRunning(sessionID: String) -> Bool {
         primary.isSessionRunning(sessionID: sessionID) || fallback.isSessionRunning(sessionID: sessionID)
     }
@@ -208,6 +212,26 @@ final class SidecarClaudeEngine: ClaudeEngine, @unchecked Sendable {
         return try directFallback.rewindFiles(sessionID: sessionID, cliSessionID: cliSessionID, checkpointUUID: checkpointUUID, cwd: cwd)
     }
 
+    func updateRuntimeConfiguration(sessionID: String, model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) throws {
+        if !isSessionRunning(sessionID: sessionID) {
+            try directFallback.updateRuntimeConfiguration(sessionID: sessionID, model: model, mode: mode, thinkingLevel: thinkingLevel)
+            return
+        }
+        if let mode {
+            _ = try rpc(method: "session.setPermissionMode", params: ["sessionId": sessionID, "mode": mode.permissionMode])
+        }
+        if let model, !model.isEmpty {
+            _ = try rpc(method: "session.setModel", params: ["sessionId": sessionID, "model": cliModelName(model)])
+        }
+        if let thinkingLevel {
+            _ = try rpc(method: "session.setThinkingLevel", params: [
+                "sessionId": sessionID,
+                "thinkingLevel": thinkingLevel.rawValue,
+                "maxThinkingTokens": thinkingLevel.maxThinkingTokens
+            ])
+        }
+    }
+
     func isSessionRunning(sessionID: String) -> Bool {
         queue.sync { runtimes[sessionID] != nil }
     }
@@ -229,6 +253,14 @@ final class SidecarClaudeEngine: ClaudeEngine, @unchecked Sendable {
 
     func interrupt(sessionID: String) throws {
         _ = try rpc(method: "session.interrupt", params: ["sessionId": sessionID])
+    }
+
+    private func cliModelName(_ model: String) -> String {
+        [
+            "claude-fable-5-1m": "claude-fable-5[1m]",
+            "claude-opus-4-8-1m": "claude-opus-4-8[1m]",
+            "claude-opus-4-6-1m": "claude-opus-4-6[1m]"
+        ][model] ?? model
     }
 
     func kill(sessionID: String) {

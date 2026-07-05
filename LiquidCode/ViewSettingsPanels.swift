@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import SwiftUI
 import WebKit
@@ -213,20 +214,31 @@ func toolPayloadKeyValues(_ payload: String) -> [(String, String)] {
         guard let raw = dict[key] else {
             return nil
         }
-        let value: String
-        if let string = raw as? String {
-            value = string
-        } else if
-            let data = try? JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys]), let json = String(
-                data: data,
-                encoding: .utf8
-            ) {
-            value = json
-        } else {
-            value = String(describing: raw)
-        }
+        let value = toolPayloadDisplayValue(raw)
         return (key.replacingOccurrences(of: "_", with: " "), value)
     }
+}
+
+func toolPayloadDisplayValue(_ raw: Any) -> String {
+    if let string = raw as? String {
+        return string
+    }
+    if raw is NSNull {
+        return "null"
+    }
+    if let bool = raw as? Bool {
+        return bool ? "true" : "false"
+    }
+    if let number = raw as? NSNumber {
+        return number.stringValue
+    }
+    if
+        JSONSerialization.isValidJSONObject(raw),
+        let data = try? JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys]),
+        let json = String(data: data, encoding: .utf8) {
+        return json
+    }
+    return String(describing: raw)
 }
 
 func toolIconName(_ name: String) -> String {
@@ -563,11 +575,100 @@ func questionSkipResponseJSON(_ input: String) -> String {
     return String(data: data, encoding: .utf8) ?? input
 }
 
+enum InputBarPresentation {
+    case chat
+    case welcome
+}
+
+struct ComposerTextView: NSViewRepresentable {
+    @Binding var text: String
+    let fontSize: CGFloat
+    let verticalInset: CGFloat
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
+        scrollView.contentView.drawsBackground = false
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
+
+        let textView = NSTextView()
+        textView.delegate = context.coordinator
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.textContainerInset = NSSize(width: 0, height: verticalInset)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+        textView.font = NSFont.systemFont(ofSize: fontSize)
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .controlAccentColor
+        textView.backgroundColor = .clear
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.string = text
+
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.text = $text
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
+        scrollView.contentView.drawsBackground = false
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return
+        }
+        if textView.string != text {
+            textView.string = text
+        }
+        textView.font = NSFont.systemFont(ofSize: fontSize)
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .controlAccentColor
+        textView.textContainerInset = NSSize(width: 0, height: verticalInset)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else {
+                return
+            }
+            text.wrappedValue = textView.string
+        }
+    }
+}
+
 struct InputBarView: View {
+    let presentation: InputBarPresentation
     @EnvironmentObject var model: AppModel
     @State private var slashVisible = false
     @State private var slashQuery = ""
     @State private var slashSelectedIndex = 0
+
+    init(presentation: InputBarPresentation = .chat) {
+        self.presentation = presentation
+    }
+
     private var slashCommands: [PaletteCommand] {
         model.filteredPaletteCommands(slashQuery).filter { $0.title.hasPrefix("/") || $0.subtitle.localizedCaseInsensitiveContains("slash") } }
 
@@ -580,134 +681,189 @@ struct InputBarView: View {
     }
 
     private var editorHeight: CGFloat {
-        let rows = max(1, lineCount(model.composerText))
-        return min(92, max(34, CGFloat(rows) * 22 + 12))
+        let rows = max(2, lineCount(model.composerText))
+        return min(92, max(56, CGFloat(rows) * 22 + 12))
+    }
+
+    private var usesDock: Bool {
+        presentation == .chat
+    }
+
+    private var inputTextInset: CGFloat {
+        9
+    }
+
+    private var barMaxWidth: CGFloat {
+        usesDock ? LiquidGlassToken.chatMaxWidth : LiquidGlassToken.composerMaxWidth
+    }
+
+    private var projectSelectionTitle: String {
+        guard !model.workingDirectory.isEmpty else {
+            return "Project"
+        }
+        return URL(fileURLWithPath: model.workingDirectory).lastPathComponent
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: usesDock ? 10 : 8) {
             if let activeInteraction = model.pendingPermissionsForSelectedSession.first {
                 ActiveInteractionSlotView(permission: activeInteraction)
-                    .frame(maxWidth: LiquidGlassToken.composerMaxWidth)
+                    .frame(maxWidth: barMaxWidth)
             }
             if slashVisible {
                 SlashCommandPopoverView(commands: slashCommands, query: slashQuery, selectedIndex: slashSelectedIndex, onSelect: selectSlashCommand)
-                    .frame(maxWidth: LiquidGlassToken.composerMaxWidth, alignment: .leading)
+                    .frame(maxWidth: barMaxWidth, alignment: .leading)
             }
             if !model.attachments.isEmpty {
                 FileUploadChipsNativeView()
-                    .frame(maxWidth: LiquidGlassToken.composerMaxWidth)
+                    .frame(maxWidth: barMaxWidth)
             }
 
-            VStack(spacing: 10) {
-                HStack(alignment: .bottom, spacing: 10) {
+            VStack(spacing: usesDock ? 12 : 10) {
+                HStack(alignment: .center, spacing: 10) {
                     ZStack(alignment: .topLeading) {
                         if model.composerText.isEmpty {
-                            Text(isBusy ? "Add a follow-up while Claude works..." : "Add message...")
+                            Text(isBusy ? "Add a follow-up while Claude works..." :
+                                model.workingDirectory.isEmpty ? "Type a message to start..." :
+                                "Add message...")
                                 .foregroundStyle(.tertiary)
-                                .font(.system(size: 17))
-                                .padding(.horizontal, 6)
-                                .padding(.top, 7)
+                                .font(.system(size: max(15, model.settings.fontSize)))
+                                .padding(.top, inputTextInset)
                         }
-                        TextEditor(text: Binding(get: { model.composerText }, set: { model.updateComposerText($0) }))
-                            .font(.system(size: max(15, model.settings.fontSize)))
-                            .scrollContentBackground(.hidden)
-                            .frame(height: editorHeight)
-                            .onChange(of: model.composerText) { _, value in updateSlashState(value) }
-                            .background(SlashKeyboardBridge(
-                                isActive: slashVisible,
-                                commandCount: min(12, slashCommands.count),
-                                onMove: { delta in moveSlashSelection(delta) },
-                                onSelect: { selectCurrentSlashCommand() },
-                                onClose: { slashVisible = false }
-                            ))
+                        ComposerTextView(
+                            text: Binding(get: { model.composerText }, set: { model.updateComposerText($0) }),
+                            fontSize: max(15, model.settings.fontSize),
+                            verticalInset: inputTextInset
+                        )
+                        .frame(height: editorHeight)
+                        .onChange(of: model.composerText) { _, value in updateSlashState(value) }
+                        .background(SlashKeyboardBridge(
+                            isActive: slashVisible,
+                            commandCount: min(12, slashCommands.count),
+                            onMove: { delta in moveSlashSelection(delta) },
+                            onSelect: { selectCurrentSlashCommand() },
+                            onClose: { slashVisible = false }
+                        ))
                     }
                     if isBusy {
-                        Button { model.interrupt() } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 16, weight: .bold))
-                                .frame(width: 44, height: 44)
-                                .background(Color.red.opacity(0.14))
-                                .foregroundStyle(.red)
-                                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        Button {
+                            model.interrupt()
+                        } label: {
+                            composerActionIcon(systemImage: "stop.fill", fill: Color.red.opacity(0.18), foreground: .red)
                         }
                         .buttonStyle(.plain)
                         .help("Stop current turn")
+                    } else {
+                        Button {
+                            model.sendComposer()
+                        } label: {
+                            composerActionIcon(
+                                systemImage: "arrow.right",
+                                fill: canSend ? Color.primary.opacity(0.88) : Color.primary.opacity(0.14),
+                                foreground: canSend ? .white : .secondary
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.return, modifiers: [])
+                        .disabled(!canSend)
+                        .help(model.pendingPermissionsForSelectedSession.isEmpty ? "Send (Return)" : "Respond to inline card first")
                     }
-                    Button { model.sendComposer() } label: {
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 18, weight: .bold))
-                            .frame(width: 44, height: 44)
-                            .background(canSend ? Color.primary.opacity(0.88) : Color.primary.opacity(0.14))
-                            .foregroundStyle(canSend ? .white : .secondary)
-                            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.return, modifiers: [])
-                    .disabled(!canSend)
-                    .help(model.pendingPermissionsForSelectedSession.isEmpty ? "Send (Return)" : "Respond to inline card first")
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background { LiquidComposerWell(cornerRadius: 30, active: isBusy) }
-                .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .shadow(color: .black.opacity(0.08), radius: 16, y: 6)
+                .liquidGlassControl(
+                    RoundedRectangle(cornerRadius: 30, style: .continuous),
+                    active: isBusy,
+                    interactive: false,
+                    fallbackRadius: 30,
+                    fallbackIntensity: .subtle
+                )
+                .shadow(color: .black.opacity(usesDock ? 0.08 : 0), radius: usesDock ? 16 : 0, y: usesDock ? 6 : 0)
 
-                bottomToolbar
+                GeometryReader { proxy in
+                    let compact = proxy.size.width < 720
+                    let needsScroll = proxy.size.width < 520
+
+                    if needsScroll {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            bottomToolbar(compact: true)
+                                .frame(minWidth: proxy.size.width, alignment: .leading)
+                        }
+                    } else {
+                        bottomToolbar(compact: compact)
+                            .frame(width: proxy.size.width, alignment: .leading)
+                    }
+                }
+                .frame(height: GlassControlMetric.iconButtonSize)
             }
-            .frame(maxWidth: LiquidGlassToken.composerMaxWidth)
+            .padding(.horizontal, usesDock ? 16 : 22)
+            .padding(.top, usesDock ? 14 : 0)
+            .padding(.bottom, usesDock ? 12 : 0)
+            .frame(maxWidth: barMaxWidth)
+            .background {
+                if usesDock {
+                    LiquidComposerDock(cornerRadius: 38, active: isBusy)
+                }
+            }
+            .shadow(color: .black.opacity(usesDock ? 0.10 : 0), radius: usesDock ? 28 : 0, y: usesDock ? 14 : 0)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 14)
+        .padding(.horizontal, usesDock ? 24 : 12)
+        .padding(.top, usesDock ? 10 : 8)
+        .padding(.bottom, usesDock ? 14 : 0)
         .frame(maxWidth: .infinity)
-        .background(alignment: .bottom) {
-            LinearGradient(
-                colors: [Color.clear, Color.white.opacity(0.22), Color.accentColor.opacity(0.055)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 150)
-            .allowsHitTesting(false)
-        }
     }
 
-    private var bottomToolbar: some View {
-        HStack(spacing: 12) {
+    private func composerActionIcon(systemImage: String, fill: Color, foreground: Color) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 18, weight: .bold))
+            .frame(width: 44, height: 44)
+            .background(fill)
+            .foregroundStyle(foreground)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private func bottomToolbar(compact: Bool) -> some View {
+        HStack(spacing: compact ? 8 : 12) {
+            projectPickerButton(compact: compact)
             ToolbarIconButton(systemImage: "paperclip", help: "Attach files") { model.attachFiles() }
 
             let modeActive = model.settings.sessionMode == .plan || model.settings.sessionMode == .bypass
-            HStack(spacing: 10) {
+            HStack(spacing: compact ? 8 : 10) {
                 Menu {
                     ForEach(SessionMode.allCases) { mode in
-                        Button { model.settings.sessionMode = mode; model.persistSettings() } label: {
+                        Button { model.setComposerMode(mode) } label: {
                             Label(mode.label, systemImage: model.settings.sessionMode == mode ? "checkmark" : modeIcon(mode))
                         }
                     }
                 } label: {
-                    NativeToolbarMenuLabel(title: model.settings.sessionMode.label, systemImage: modeIcon(model.settings.sessionMode), active: modeActive, minWidth: 74)
+                    NativeToolbarMenuLabel(
+                        title: compact ? "" : model.settings.sessionMode.label,
+                        systemImage: modeIcon(model.settings.sessionMode),
+                        active: modeActive,
+                        minWidth: compact ? 38 : 74
+                    )
                 }
                 .buttonStyle(.plain)
 
                 let thinkingActive = model.settings.thinkingLevel != .off
                 Menu {
                     ForEach(ThinkingLevel.allCases) { level in
-                        Button { model.settings.thinkingLevel = level; model.persistSettings() } label: {
-                            Label(level.rawValue.capitalized, systemImage: model.settings.thinkingLevel == level ? "checkmark" : thinkingIcon(level))
+                        Button { model.setComposerThinkingLevel(level) } label: {
+                            Label(level.label, systemImage: model.settings.thinkingLevel == level ? "checkmark" : thinkingIcon(level))
                         }
                     }
                 } label: {
                     NativeToolbarMenuLabel(
-                        title: model.settings.thinkingLevel == .off ? "No think" : model.settings.thinkingLevel.rawValue.capitalized,
+                        title: compact ? "" : model.settings.thinkingLevel.label,
                         systemImage: thinkingIcon(model.settings.thinkingLevel),
                         active: thinkingActive,
-                        minWidth: 76
+                        minWidth: compact ? 38 : 76
                     )
                 }
                 .buttonStyle(.plain)
             }
 
-            HStack(spacing: 10) {
+            HStack(spacing: compact ? 8 : 10) {
                 Menu {
                     ForEach(RewindAction.allCases) { action in
                         Button {
@@ -718,7 +874,7 @@ struct InputBarView: View {
                         .disabled(model.selectedLastUserMessage == nil)
                     }
                 } label: {
-                    NativeToolbarMenuLabel(title: "Rewind", systemImage: "arrow.counterclockwise", minWidth: 84)
+                    NativeToolbarMenuLabel(title: compact ? "" : "Rewind", systemImage: "arrow.counterclockwise", minWidth: compact ? 38 : 84)
                 }
                 .buttonStyle(.plain)
                 .disabled(model.selectedLastUserMessage == nil)
@@ -735,25 +891,61 @@ struct InputBarView: View {
                         Button("No skills loaded") {}.disabled(true)
                     }
                 } label: {
-                    NativeToolbarMenuLabel(title: "Skills", systemImage: "sparkles", minWidth: 78)
+                    NativeToolbarMenuLabel(title: compact ? "" : "Skills", systemImage: "sparkles", minWidth: compact ? 38 : 78)
                 }
                 .buttonStyle(.plain)
                 .help("Insert skill slash command")
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: compact ? 6 : 12)
 
             Menu {
                 ForEach(defaultModels, id: \.self) { option in
-                    Button { model.settings.selectedModel = option; model.persistSettings() } label: {
-                        Label(shortModelName(option), systemImage: model.settings.selectedModel == option ? "checkmark" : "circle")
+                    Button { model.setComposerModel(option) } label: {
+                        Label(model.modelMenuDisplayName(option), systemImage: model.isComposerModelSelected(option) ? "checkmark" : "circle")
                     }
                 }
             } label: {
-                NativeToolbarMenuLabel(title: shortModelName(model.settings.selectedModel), systemImage: "clock", minWidth: 112)
+                NativeToolbarMenuLabel(
+                    title: model.modelToolbarDisplayName(model.settings.selectedModel, compact: compact),
+                    systemImage: "clock",
+                    minWidth: compact ? 74 : 142
+                )
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private func projectPickerButton(compact: Bool) -> some View {
+        Menu {
+            Button {
+                model.chooseWorkingDirectory()
+            } label: {
+                Label("Choose Folder…", systemImage: "folder.badge.plus")
+            }
+            Button {
+                model.selectMostRecentClaudeProject()
+            } label: {
+                Label("Use Claude Recent Project", systemImage: "clock.arrow.circlepath")
+            }
+            if !model.workingDirectory.isEmpty {
+                Divider()
+                Button(role: .destructive) {
+                    model.clearWorkingDirectory()
+                } label: {
+                    Label("Clear Project", systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            NativeToolbarMenuLabel(
+                title: compact ? "" : projectSelectionTitle,
+                systemImage: model.workingDirectory.isEmpty ? "folder.badge.plus" : "folder.fill",
+                active: !model.workingDirectory.isEmpty,
+                minWidth: compact ? 38 : (model.workingDirectory.isEmpty ? 88 : 118)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(model.workingDirectory.isEmpty ? "Choose a project folder or start with Claude Code's default directory" : model.workingDirectory)
     }
 
     private func updateSlashState(_ text: String) {
@@ -1474,6 +1666,7 @@ struct SkillsPanelView: View {
             fallbackIntensity: model.selectedSkill?.path == skill.path ? .prominent : .subtle
         )
         .contentShape(Rectangle())
+        .pointingHandCursor()
         .onTapGesture {
             if model.requestOpenFile(skill.path) {
                 model.selectedSkill = skill
@@ -1645,7 +1838,11 @@ struct AgentPopoverView: View {
 struct AgentFloatingOverlayView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
-        Color.black.opacity(0.12).ignoresSafeArea().onTapGesture { model.agentPanelOpen = false }
+        Color.black
+            .opacity(0.12)
+            .ignoresSafeArea()
+            .pointingHandCursor()
+            .onTapGesture { model.agentPanelOpen = false }
         HStack {
             Spacer()
             GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 24) {
@@ -1703,13 +1900,16 @@ struct PermissionSheetView: View {
 
 struct SettingsPanelView: View {
     @EnvironmentObject var model: AppModel
-    @State private var newProviderKey = ""
     @State private var mcpName = ""
     @State private var mcpCommand = ""
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.26).ignoresSafeArea().onTapGesture { model.settingsOpen = false }
+            Color.black
+                .opacity(0.26)
+                .ignoresSafeArea()
+                .pointingHandCursor()
+                .onTapGesture { model.settingsOpen = false }
             GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 30) {
                 VStack(spacing: 0) {
                     settingsHeader
@@ -1721,7 +1921,6 @@ struct SettingsPanelView: View {
                             Group {
                                 switch model.settingsTab {
                                 case .general: generalContent
-                                case .provider: providerContent
                                 case .mcp: mcpContent
                                 case .cli: cliContent
                                 case .feedback: feedbackContent
@@ -1760,7 +1959,7 @@ struct SettingsPanelView: View {
                     HStack(spacing: 12) {
                         Image(systemName: settingsTabIcon(tab))
                             .frame(width: 18)
-                        Text(tab.rawValue == "Provider" ? "API Providers" : tab.rawValue)
+                        Text(tab.rawValue)
                         if tab == .cli && model.cliStatus.updateAvailable {
                             Circle().fill(Color.red).frame(width: 7, height: 7)
                         }
@@ -1814,7 +2013,6 @@ struct SettingsPanelView: View {
     private var generalContent: some View {
         VStack(alignment: .leading, spacing: 18) {
             SettingsSectionCard(title: "General", subtitle: "LiquidCode visual identity with native interaction parity", icon: "sun.max") {
-                OnboardingPlanCardView()
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Theme")
                         .font(.caption.weight(.semibold))
@@ -1858,85 +2056,9 @@ struct SettingsPanelView: View {
                             .onChange(of: model.settings.fontSize) { _, _ in model.persistSettings() }
                     }
                     Picker("Mode", selection: $model.settings.sessionMode) { ForEach(SessionMode.allCases) { Text($0.label).tag($0) } }
-                        .onChange(of: model.settings.sessionMode) { _, _ in model.persistSettings() }
-                    Picker("Thinking", selection: $model.settings.thinkingLevel) { ForEach(ThinkingLevel.allCases) { Text($0.rawValue.capitalized).tag($0) } }
-                        .onChange(of: model.settings.thinkingLevel) { _, _ in model.persistSettings() }
-                }
-            }
-        }
-    }
-
-    private var providerContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionCard(title: "API Providers", subtitle: "Presets, keychain secrets, model mapping, import/export", icon: "lock.rectangle") {
-                HStack(spacing: 10) {
-                    Label("Inherit system configuration", systemImage: model.activeProviderID == nil ? "largecircle.fill.circle" : "circle")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Use external tools such as CC-Switch or environment variables")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Use System") { model.activeProviderID = nil; model.saveProviders() }
-                        .buttonStyle(.plain)
-                        .liquidGlassButton(active: model.activeProviderID == nil, radius: 10)
-                }
-                .padding(12)
-                .background(model.activeProviderID == nil ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.035))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                HStack {
-                    Menu("+ Add") {
-                        Button("Custom Provider") { model.addProvider() }
-                        Divider()
-                        ForEach(providerPresets) { preset in Button(preset.name) { model.addProvider(from: preset) } }
-                    }
-                    .menuStyle(.button)
-                    Button("Import JSON") { model.importProviders() }
-                    Button("Export") { model.exportProviders() }
-                    Spacer()
-                    Button("Delete", role: .destructive) { model.deleteActiveProvider() }
-                        .disabled(model.activeProviderID == nil)
-                }
-                .buttonStyle(.plain)
-
-                VStack(spacing: 10) {
-                    ForEach(model.providers) { provider in
-                        ProviderRowCard(provider: provider, active: model.activeProviderID == provider.id) {
-                            model.activeProviderID = provider.id
-                            model.saveProviders()
-                        } test: {
-                            model.activeProviderID = provider.id
-                            model.testActiveProvider()
-                        } delete: {
-                            model.activeProviderID = provider.id
-                            model.deleteActiveProvider()
-                        }
-                    }
-                    if model.providers.isEmpty {
-                        ContentUnavailableView("No custom providers", systemImage: "lock.rectangle", description: Text("Use system Anthropic config or add a preset."))
-                            .frame(height: 120)
-                    }
-                }
-            }
-
-            if let index = activeProviderIndex {
-                SettingsSectionCard(title: "Provider details", subtitle: "Edit active provider and save API key into Keychain", icon: "slider.horizontal.3") {
-                    VStack(spacing: 12) {
-                        TextField("Name", text: providerNameBinding(index)).textFieldStyle(.roundedBorder)
-                        TextField("Base URL", text: providerBaseURLBinding(index)).textFieldStyle(.roundedBorder)
-                        Picker("API Format", selection: providerAPIFormatBinding(index)) { ForEach(ProviderRecord.APIFormat.allCases) { Text($0.rawValue).tag($0) } }
-                            .pickerStyle(.segmented)
-                        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                            GridRow { Text("Opus").foregroundStyle(.secondary); TextField("opus model", text: providerMappingBinding(index, tier: "opus")) }
-                            GridRow { Text("Sonnet").foregroundStyle(.secondary); TextField("sonnet model", text: providerMappingBinding(index, tier: "sonnet")) }
-                            GridRow { Text("Haiku").foregroundStyle(.secondary); TextField("haiku model", text: providerMappingBinding(index, tier: "haiku")) }
-                        }
-                        SecureField("API Key", text: $newProviderKey).textFieldStyle(.roundedBorder)
-                        HStack {
-                            Button("Save Key") { model.setProviderKey(providerID: model.providers[index].id, key: newProviderKey); newProviderKey = ""
-                            }; Button("Test Connection") {
-                                model.testActiveProvider() }; Button("Save Provider") { model.saveProviders() } }
-                    }
+                        .onChange(of: model.settings.sessionMode) { _, value in model.setComposerMode(value) }
+                    Picker("Thinking", selection: $model.settings.thinkingLevel) { ForEach(ThinkingLevel.allCases) { Text($0.label).tag($0) } }
+                        .onChange(of: model.settings.thinkingLevel) { _, value in model.setComposerThinkingLevel(value) }
                 }
             }
         }
@@ -2091,33 +2213,6 @@ struct SettingsPanelView: View {
         }
     }
 
-    private var activeProviderIndex: Int? {
-        model.providers.firstIndex { $0.id == model.activeProviderID }
-    }
-
-    private func providerNameBinding(_ index: Int) -> Binding<String> {
-        Binding(
-            get: { model.providers[index].name },
-            set: { model.providers[index].name = $0; model.providers[index].updatedAt = Date(); model.saveProviders() }
-        ) }
-
-    private func providerBaseURLBinding(_ index: Int) -> Binding<String> {
-        Binding(
-            get: { model.providers[index].baseURL },
-            set: { model.providers[index].baseURL = $0; model.providers[index].updatedAt = Date(); model.saveProviders() }
-        ) }
-
-    private func providerAPIFormatBinding(_ index: Int) -> Binding<ProviderRecord.APIFormat> {
-        Binding(
-            get: { model.providers[index].apiFormat },
-            set: { model.providers[index].apiFormat = $0; model.providers[index].updatedAt = Date(); model.saveProviders() }
-        ) }
-
-    private func providerMappingBinding(_ index: Int, tier: String) -> Binding<String> {
-        Binding(
-            get: { model.providers[index].modelMappings[tier] ?? "" },
-            set: { model.providers[index].modelMappings[tier] = $0; model.providers[index].updatedAt = Date(); model.saveProviders() }
-        ) }
 }
 
 struct SettingsSectionCard<Content: View>: View {

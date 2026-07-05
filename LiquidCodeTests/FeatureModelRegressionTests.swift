@@ -38,6 +38,14 @@ final class FeatureModelRegressionTests: XCTestCase {
         ])
     }
 
+    func testSoftWrappedTranscriptTextAddsBreaksWithoutChangingVisibleContent() {
+        let text = "[Image: source: /var/folders/1p/m5hsh06x3zxcvd3m57k43ykr0000gn/T/codex-clipboard-aacf5cbf-e56b-437f-ae37-acba7cf48700.png]"
+        let wrapped = softWrappedTranscriptText(text)
+
+        XCTAssertTrue(wrapped.contains("\u{200B}"))
+        XCTAssertEqual(wrapped.replacingOccurrences(of: "\u{200B}", with: ""), text)
+    }
+
     func testSlashCommandParserClosesAfterCommandTokenIsAccepted() {
         XCTAssertEqual(SlashCommandParser.query(from: "/"), "")
         XCTAssertEqual(SlashCommandParser.query(from: "/liquid-glass-review"), "liquid-glass-review")
@@ -322,6 +330,121 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(model.composerTextBySession["alpha"], "")
         XCTAssertEqual(model.attachments, [])
         XCTAssertEqual(model.attachmentsBySession["alpha"], [])
+    }
+
+    func testComposerDefaultsLoadFromClaudeUserSettingsOnBootstrap() throws {
+        let home = try temporaryDirectory(prefix: "lc-cc-settings-bootstrap")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settingsURL = home.appendingPathComponent(".claude/settings.json")
+        try FileManager.default.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        {
+          "model": "opus",
+          "permissions": { "defaultMode": "bypassPermissions" },
+          "env": {
+            "ANTHROPIC_DEFAULT_FABLE_MODEL": "claude-opus-4-8[1M]",
+            "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME": "claude-opus-4-8",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8[1M]",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME": "claude-opus-4-8",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-6",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": "glm-5.2",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME": "claude-haiku-4-5",
+            "CLAUDE_CODE_EFFORT_LEVEL": "xhigh",
+            "KEEP_ME": "1"
+          },
+          "skipDangerousModePermissionPrompt": true
+        }
+        """.write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let model = AppModel(
+            engine: RecordingEngine(),
+            claudeUserSettings: ClaudeUserSettingsService(home: home)
+        )
+
+        try withPreservedFile(AppPaths.shared.settingsFile) {
+            try withPreservedRecentProjects {
+                model.bootstrap()
+            }
+        }
+
+        XCTAssertEqual(model.settings.selectedModel, "opus")
+        XCTAssertEqual(model.settings.sessionMode, .bypass)
+        XCTAssertEqual(model.settings.thinkingLevel, .xhigh)
+        XCTAssertEqual(defaultModels, ["fable", "opus", "sonnet", "haiku"])
+        XCTAssertEqual(defaultModels.map { model.modelMenuDisplayName($0) }, [
+            "Fable · claude-opus-4-8",
+            "Opus · claude-opus-4-8",
+            "Sonnet · glm-5.2",
+            "Haiku · claude-haiku-4-5"
+        ])
+        XCTAssertEqual(model.modelDisplayName("opus"), "claude-opus-4-8")
+        XCTAssertEqual(model.modelDisplayName("claude-opus-4-8[1m]"), "claude-opus-4-8")
+        XCTAssertEqual(model.modelDisplayName("sonnet"), "glm-5.2")
+        XCTAssertEqual(model.modelDisplayName("haiku"), "claude-haiku-4-5")
+        XCTAssertEqual(model.modelToolbarDisplayName("opus", compact: true), "Opus")
+        XCTAssertEqual(model.modelToolbarDisplayName("opus", compact: false), "Opus · claude-opus-4-8")
+        XCTAssertTrue(model.isComposerModelSelected("opus"))
+        XCTAssertFalse(model.isComposerModelSelected("fable"))
+    }
+
+    func testComposerControlChangesWriteClaudeDefaultsOnlyOnStartScreenAndRuntimeOnlyInChat() throws {
+        let home = try temporaryDirectory(prefix: "lc-cc-settings-write")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let service = ClaudeUserSettingsService(home: home)
+        let settingsURL = service.settingsURL
+        try FileManager.default.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        {
+          "model": "opus",
+          "permissions": { "defaultMode": "bypassPermissions" },
+          "env": { "CLAUDE_CODE_EFFORT_LEVEL": "max", "KEEP_ME": "1" },
+          "skipDangerousModePermissionPrompt": true
+        }
+        """.write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let engine = RecordingEngine()
+        let model = AppModel(engine: engine, claudeUserSettings: service)
+        model.settings.selectedModel = "opus"
+        model.settings.sessionMode = .bypass
+        model.settings.thinkingLevel = .max
+
+        try withPreservedFile(AppPaths.shared.settingsFile) {
+            model.setComposerMode(.plan)
+            model.setComposerThinkingLevel(.xhigh)
+            model.setComposerModel("sonnet")
+
+            let startRaw = try decodedJSONObject(from: settingsURL)
+            XCTAssertEqual(startRaw["model"] as? String, "sonnet")
+            XCTAssertEqual((startRaw["permissions"] as? [String: Any])?["defaultMode"] as? String, "plan")
+            XCTAssertEqual(startRaw["alwaysThinkingEnabled"] as? Bool, true)
+            XCTAssertEqual((startRaw["env"] as? [String: Any])?["CLAUDE_CODE_EFFORT_LEVEL"] as? String, "xhigh")
+            XCTAssertEqual((startRaw["env"] as? [String: Any])?["KEEP_ME"] as? String, "1")
+            XCTAssertEqual(startRaw["skipDangerousModePermissionPrompt"] as? Bool, true)
+
+            let defaultsAfterStartScreen = try Data(contentsOf: settingsURL)
+            model.selectedSessionID = "chat-1"
+            engine.runningSessionIDs.insert("chat-1")
+
+            model.setComposerMode(.ask)
+            model.setComposerThinkingLevel(.high)
+            model.setComposerModel("haiku")
+
+            XCTAssertEqual(try Data(contentsOf: settingsURL), defaultsAfterStartScreen)
+            XCTAssertEqual(engine.runtimeUpdates.count, 3)
+            XCTAssertEqual(engine.runtimeUpdates[0].sessionID, "chat-1")
+            XCTAssertEqual(engine.runtimeUpdates[0].mode, .ask)
+            XCTAssertNil(engine.runtimeUpdates[0].model)
+            XCTAssertNil(engine.runtimeUpdates[0].thinkingLevel)
+            XCTAssertEqual(engine.runtimeUpdates[1].sessionID, "chat-1")
+            XCTAssertEqual(engine.runtimeUpdates[1].thinkingLevel, .high)
+            XCTAssertNil(engine.runtimeUpdates[1].model)
+            XCTAssertNil(engine.runtimeUpdates[1].mode)
+            XCTAssertEqual(engine.runtimeUpdates[2].sessionID, "chat-1")
+            XCTAssertEqual(engine.runtimeUpdates[2].model, "haiku")
+            XCTAssertNil(engine.runtimeUpdates[2].mode)
+            XCTAssertNil(engine.runtimeUpdates[2].thinkingLevel)
+        }
     }
 
     func testComposerControlsFeedNextStartSessionRequest() throws {
@@ -828,9 +951,38 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertFalse(TranscriptToolRunCompletion.isComplete(runItems))
     }
 
+    func testToolPayloadKeyValuesRenderScalarJSONValuesWithoutCrashing() {
+        let values = toolPayloadKeyValues("""
+        {
+          "description": "Run tests",
+          "count": 3,
+          "success": true,
+          "ratio": 0.75,
+          "missing": null,
+          "args": ["swift", "test"],
+          "meta": {"retries": 1}
+        }
+        """)
+
+        let dict = Dictionary(uniqueKeysWithValues: values)
+        XCTAssertEqual(dict["description"], "Run tests")
+        XCTAssertEqual(dict["count"], "3")
+        XCTAssertEqual(dict["success"], "true")
+        XCTAssertEqual(dict["ratio"], "0.75")
+        XCTAssertEqual(dict["missing"], "null")
+        XCTAssertEqual(dict["args"], #"["swift","test"]"#)
+        XCTAssertEqual(dict["meta"], #"{"retries":1}"#)
+    }
+
     private func decodedJSONBody(from request: URLRequest) throws -> [String: Any] {
         let bodyData = try XCTUnwrap(request.httpBody)
         let object = try JSONSerialization.jsonObject(with: bodyData)
+        return try XCTUnwrap(object as? [String: Any])
+    }
+
+    private func decodedJSONObject(from url: URL) throws -> [String: Any] {
+        let data = try Data(contentsOf: url)
+        let object = try JSONSerialization.jsonObject(with: data)
         return try XCTUnwrap(object as? [String: Any])
     }
 
@@ -905,10 +1057,18 @@ final class FeatureModelRegressionTests: XCTestCase {
         let cwd: String
     }
 
+    private struct RuntimeUpdate {
+        let sessionID: String
+        let model: String?
+        let mode: SessionMode?
+        let thinkingLevel: ThinkingLevel?
+    }
+
     private final class RecordingEngine: ClaudeEngine, @unchecked Sendable {
         var startRequests: [ClaudeSessionStartRequest] = []
         var sentMessages: [(sessionID: String, text: String)] = []
         var rewindCalls: [RewindCall] = []
+        var runtimeUpdates: [RuntimeUpdate] = []
         var rewindOutput: String?
         var runningSessionIDs: Set<String> = []
 
@@ -924,6 +1084,10 @@ final class FeatureModelRegressionTests: XCTestCase {
         func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String? {
             rewindCalls.append(RewindCall(sessionID: sessionID, cliSessionID: cliSessionID, checkpointUUID: checkpointUUID, cwd: cwd))
             return rewindOutput
+        }
+
+        func updateRuntimeConfiguration(sessionID: String, model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) throws {
+            runtimeUpdates.append(RuntimeUpdate(sessionID: sessionID, model: model, mode: mode, thinkingLevel: thinkingLevel))
         }
 
         func isSessionRunning(sessionID: String) -> Bool {

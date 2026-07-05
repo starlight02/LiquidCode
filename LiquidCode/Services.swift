@@ -48,6 +48,124 @@ struct JSONFile {
     }
 }
 
+struct ClaudeUserComposerDefaults: Sendable {
+    var model: String?
+    var mode: SessionMode?
+    var thinkingLevel: ThinkingLevel?
+    var modelDisplayNames: [String: String] = [:]
+}
+
+final class ClaudeUserSettingsService: @unchecked Sendable {
+    private let home: URL
+    private let fileManager: FileManager
+
+    init(home: URL = FileManager.default.homeDirectoryForCurrentUser, fileManager: FileManager = .default) {
+        self.home = home
+        self.fileManager = fileManager
+    }
+
+    var settingsURL: URL {
+        home.appendingPathComponent(".claude/settings.json")
+    }
+
+    func loadComposerDefaults() -> ClaudeUserComposerDefaults {
+        let raw = loadRawSettings()
+        let model = raw["model"] as? String
+        let permissions = raw["permissions"] as? [String: Any]
+        let mode = modeFromPermissionMode(permissions?["defaultMode"] as? String)
+        let env = raw["env"] as? [String: Any]
+        let effort = (env?["CLAUDE_CODE_EFFORT_LEVEL"] as? String)
+            ?? (raw["effort"] as? String)
+            ?? (raw["thinkingLevel"] as? String)
+        let thinking: ThinkingLevel?
+        if raw["alwaysThinkingEnabled"] as? Bool == false {
+            thinking = .off
+        } else if let effort, let parsed = ThinkingLevel(rawValue: effort) {
+            thinking = parsed
+        } else {
+            thinking = nil
+        }
+        return ClaudeUserComposerDefaults(
+            model: model,
+            mode: mode,
+            thinkingLevel: thinking,
+            modelDisplayNames: modelDisplayNames(from: env)
+        )
+    }
+
+    func saveComposerDefaults(model: String, mode: SessionMode, thinkingLevel: ThinkingLevel) throws {
+        var raw = loadRawSettings()
+        raw["model"] = model
+
+        var permissions = raw["permissions"] as? [String: Any] ?? [:]
+        permissions["defaultMode"] = mode.permissionMode
+        raw["permissions"] = permissions
+
+        raw["alwaysThinkingEnabled"] = thinkingLevel != .off
+        var env = raw["env"] as? [String: Any] ?? [:]
+        if thinkingLevel == .off {
+            env.removeValue(forKey: "CLAUDE_CODE_EFFORT_LEVEL")
+        } else {
+            env["CLAUDE_CODE_EFFORT_LEVEL"] = thinkingLevel.rawValue
+        }
+        if env.isEmpty {
+            raw.removeValue(forKey: "env")
+        } else {
+            raw["env"] = env
+        }
+
+        let data = try JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys])
+        try fileManager.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: settingsURL, options: .atomic)
+    }
+
+    private func loadRawSettings() -> [String: Any] {
+        guard
+            let data = try? Data(contentsOf: settingsURL),
+            let object = try? JSONSerialization.jsonObject(with: data),
+            let raw = object as? [String: Any] else {
+            return [:]
+        }
+        return raw
+    }
+
+    private func modeFromPermissionMode(_ raw: String?) -> SessionMode? {
+        switch raw {
+        case "acceptEdits", "auto": return .code
+        case "plan": return .plan
+        case "bypassPermissions", "dontAsk": return .bypass
+        case "default", "manual", nil: return .ask
+        default: return nil
+        }
+    }
+
+    private func modelDisplayNames(from env: [String: Any]?) -> [String: String] {
+        guard let env else {
+            return [:]
+        }
+        var result: [String: String] = [:]
+        for tier in ["FABLE", "OPUS", "SONNET", "HAIKU"] {
+            guard let displayName = cleanString(env["ANTHROPIC_DEFAULT_\(tier)_MODEL_NAME"]) else {
+                continue
+            }
+            let alias = tier.lowercased()
+            result[alias] = displayName
+            if let model = cleanString(env["ANTHROPIC_DEFAULT_\(tier)_MODEL"]) {
+                result[model.lowercased()] = displayName
+            }
+        }
+        return result
+    }
+
+    private func cleanString(_ value: Any?) -> String? {
+        guard let raw = value as? String else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 extension JSONEncoder {
     static var liquid: JSONEncoder {
         let encoder = JSONEncoder()
@@ -132,14 +250,17 @@ final class KeychainStore {
 
 final class ProviderVault {
     private let keychain = KeychainStore()
+    // periphery:ignore
     private let file = AppPaths.shared.providersFile
 
     struct ProviderFile: Codable { var activeProviderID: String?; var providers: [ProviderRecord] }
 
+    // periphery:ignore
     func load() -> ProviderFile {
         JSONFile.load(ProviderFile.self, from: file) ?? ProviderFile(activeProviderID: nil, providers: [])
     }
 
+    // periphery:ignore
     func save(_ data: ProviderFile) throws {
         try JSONFile.save(data, to: file)
     }
@@ -856,10 +977,15 @@ enum SessionJSONLCodec {
         return (role, text)
     }
 
-    private struct HeaderInfo {
-        var mtime: TimeInterval
+    struct SessionInfo {
         var preview: String
         var cwd: String
+        var createdAt: Date?
+    }
+
+    private struct HeaderInfo {
+        var mtime: TimeInterval
+        var info: SessionInfo
     }
 
     /// Thread-safe cache of parsed session-header info keyed by file path + mtime.
@@ -870,26 +996,26 @@ enum SessionJSONLCodec {
         private var storage: [String: HeaderInfo] = [:]
         private let lock = NSLock()
 
-        func lookup(path: String, mtime: TimeInterval) -> (preview: String, cwd: String)? {
+        func lookup(path: String, mtime: TimeInterval) -> SessionInfo? {
             lock.lock()
             defer { lock.unlock() }
             guard let entry = storage[path], entry.mtime == mtime else {
                 return nil
             }
-            return (entry.preview, entry.cwd)
+            return entry.info
         }
 
-        func store(path: String, mtime: TimeInterval, preview: String, cwd: String) {
+        func store(path: String, mtime: TimeInterval, info: SessionInfo) {
             lock.lock()
             defer { lock.unlock() }
-            storage[path] = HeaderInfo(mtime: mtime, preview: preview, cwd: cwd)
+            storage[path] = HeaderInfo(mtime: mtime, info: info)
         }
     }
 
     private static let headerCache = HeaderInfoCache()
     private static let headerReadLimit = 128 * 1024
 
-    static func extractSessionInfo(_ url: URL) -> (preview: String, cwd: String) {
+    static func extractSessionInfo(_ url: URL) -> SessionInfo {
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
             .timeIntervalSince1970 ?? 0
         if let cached = headerCache.lookup(path: url.path, mtime: mtime) {
@@ -900,11 +1026,15 @@ enum SessionJSONLCodec {
         let content = readHead(url, maxBytes: headerReadLimit)
         var preview = ""
         var cwd = ""
+        var createdAt: Date?
         for line in content.split(separator: "\n").prefix(100) {
             guard
                 let data = line.data(using: .utf8),
                 let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 continue
+            }
+            if createdAt == nil {
+                createdAt = parseTimestamp(obj["timestamp"])
             }
             if cwd.isEmpty, let value = obj["cwd"] as? String, !value.isEmpty {
                 cwd = value
@@ -912,12 +1042,13 @@ enum SessionJSONLCodec {
             if preview.isEmpty, let match = searchableText(from: obj), match.role == .user {
                 preview = String(match.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
             }
-            if !cwd.isEmpty && !preview.isEmpty {
+            if createdAt != nil && !cwd.isEmpty && !preview.isEmpty {
                 break
             }
         }
-        headerCache.store(path: url.path, mtime: mtime, preview: preview, cwd: cwd)
-        return (preview, cwd)
+        let info = SessionInfo(preview: preview, cwd: cwd, createdAt: createdAt)
+        headerCache.store(path: url.path, mtime: mtime, info: info)
+        return info
     }
 
     private static func readHead(_ url: URL, maxBytes: Int) -> String {
@@ -929,6 +1060,35 @@ enum SessionJSONLCodec {
         // A trailing byte sequence may be split across the read boundary; UTF-8
         // decoding substitutes U+FFFD and the partial last line simply fails to parse.
         return String(bytes: data, encoding: .utf8) ?? ""
+    }
+
+    static func parseTimestamp(_ value: Any?) -> Date? {
+        if let date = value as? Date {
+            return date
+        }
+        if let string = value as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                return nil
+            }
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = iso.date(from: trimmed) {
+                return date
+            }
+            iso.formatOptions = [.withInternetDateTime]
+            if let date = iso.date(from: trimmed) {
+                return date
+            }
+            if let numeric = Double(trimmed) {
+                return Date(timeIntervalSince1970: numeric > 10_000_000_000 ? numeric / 1000 : numeric)
+            }
+        }
+        if let number = value as? NSNumber {
+            let seconds = number.doubleValue > 10_000_000_000 ? number.doubleValue / 1000 : number.doubleValue
+            return Date(timeIntervalSince1970: seconds)
+        }
+        return nil
     }
 
     static func exportMarkdown(path: String, outputPath: String, conversationOnly: Bool = false) throws {
@@ -1104,6 +1264,16 @@ final class SessionIndexService: @unchecked Sendable {
     private let home: URL
     private let fileManager: FileManager
 
+    private struct HistoryProjectCandidate {
+        let path: String
+        let timestamp: Date
+        let order: Int
+
+        func isNewer(than other: HistoryProjectCandidate) -> Bool {
+            timestamp > other.timestamp || (timestamp == other.timestamp && order > other.order)
+        }
+    }
+
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser, fileManager: FileManager = .default) {
         self.home = home
         self.fileManager = fileManager
@@ -1170,7 +1340,7 @@ final class SessionIndexService: @unchecked Sendable {
             guard let file = sessionPath(for: id, index: index) else {
                 return nil
             }
-            let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey])
+            let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey, .creationDateKey])
             let info = SessionJSONLCodec.extractSessionInfo(file)
             let encodedProject = file.deletingLastPathComponent().lastPathComponent == "sessions"
                 ? file.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
@@ -1183,6 +1353,7 @@ final class SessionIndexService: @unchecked Sendable {
                 path: file.path,
                 project: projectDirPath,
                 projectDir: projectDirPath,
+                createdAt: info.createdAt ?? attrs?.creationDate ?? attrs?.contentModificationDate,
                 modifiedAt: attrs?.contentModificationDate ?? .distantPast,
                 preview: preview,
                 cliResumeID: id
@@ -1224,7 +1395,7 @@ final class SessionIndexService: @unchecked Sendable {
                 decodeCache[encoded] = decodedProject
             }
             for file in jsonlFiles(in: projectDir) {
-                let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey])
+                let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey, .creationDateKey])
                 let info = SessionJSONLCodec.extractSessionInfo(file)
                 let projectDirPath = info.cwd.isEmpty ? decodedProject : info.cwd
                 let id = file.deletingPathExtension().lastPathComponent
@@ -1233,6 +1404,7 @@ final class SessionIndexService: @unchecked Sendable {
                     path: file.path,
                     project: projectDirPath,
                     projectDir: projectDirPath,
+                    createdAt: info.createdAt ?? attrs?.creationDate ?? attrs?.contentModificationDate,
                     modifiedAt: attrs?.contentModificationDate ?? .distantPast,
                     preview: info.preview.isEmpty ? "Claude session" : info.preview,
                     cliResumeID: id
@@ -1240,6 +1412,45 @@ final class SessionIndexService: @unchecked Sendable {
             }
         }
         return records
+    }
+
+    func mostRecentProjectDirectory() -> String? {
+        if let fromHistory = mostRecentProjectFromHistory() {
+            return fromHistory
+        }
+        return discoverAllSessions()
+            .sorted { lhs, rhs in
+                if lhs.modifiedAt != rhs.modifiedAt {
+                    return lhs.modifiedAt > rhs.modifiedAt
+                }
+                return (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
+            }
+            .first { !$0.projectDir.isEmpty && directoryExists($0.projectDir) }?
+            .projectDir
+    }
+
+    func deleteSessionRecord(_ session: SessionRecord) throws {
+        let cliID = session.cliResumeID ?? (session.id.hasPrefix("desk_") ? nil : session.id)
+        defer {
+            if let cliID {
+                untrackSession(cliID)
+            }
+        }
+        guard let path = session.path, !path.isEmpty else {
+            return
+        }
+        let file = URL(fileURLWithPath: path)
+        guard isUnderClaudeProjects(file) else {
+            return
+        }
+        if fileManager.fileExists(atPath: file.path) {
+            try trashOrRemove(file)
+        }
+        let subagentDirectory = file.deletingPathExtension()
+        var isDirectory: ObjCBool = false
+        if fileManager.fileExists(atPath: subagentDirectory.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            try? trashOrRemove(subagentDirectory)
+        }
     }
 
     private func jsonlFiles(in projectDir: URL) -> [URL] {
@@ -1252,6 +1463,69 @@ final class SessionIndexService: @unchecked Sendable {
             files += nested.filter { $0.pathExtension == "jsonl" }
         }
         return files
+    }
+
+    private func mostRecentProjectFromHistory() -> String? {
+        let history = home.appendingPathComponent(".claude/history.jsonl")
+        guard let text = readTail(history, maxBytes: 512 * 1024), !text.isEmpty else {
+            return nil
+        }
+        var best: HistoryProjectCandidate?
+        for (offset, line) in text.split(separator: "\n").enumerated() {
+            guard
+                let data = line.data(using: .utf8),
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let rawProject = obj["project"] as? String,
+                !rawProject.isEmpty else {
+                continue
+            }
+            let project = PathAccessManager.canonicalPath(rawProject)
+            guard directoryExists(project) else {
+                continue
+            }
+            let timestamp = SessionJSONLCodec.parseTimestamp(obj["timestamp"]) ?? Date(timeIntervalSince1970: TimeInterval(offset))
+            let candidate = HistoryProjectCandidate(path: project, timestamp: timestamp, order: offset)
+            if best.map({ candidate.isNewer(than: $0) }) ?? true {
+                best = candidate
+            }
+        }
+        return best?.path
+    }
+
+    private func readTail(_ url: URL, maxBytes: Int) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return nil
+        }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
+        try? handle.seek(toOffset: start)
+        let data = (try? handle.readToEnd()) ?? Data()
+        var text = String(data: data, encoding: .utf8) ?? ""
+        if start > 0, let firstNewline = text.firstIndex(of: "\n") {
+            text.removeSubrange(text.startIndex ... firstNewline)
+        }
+        return text
+    }
+
+    private func directoryExists(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    private func isUnderClaudeProjects(_ url: URL) -> Bool {
+        let root = home.appendingPathComponent(".claude/projects", isDirectory: true).standardizedFileURL.resolvingSymlinksInPath().path
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        return path == root || path.hasPrefix(root + "/")
+    }
+
+    private func trashOrRemove(_ url: URL) throws {
+        do {
+            var resultingURL: NSURL?
+            try fileManager.trashItem(at: url, resultingItemURL: &resultingURL)
+        } catch {
+            try fileManager.removeItem(at: url)
+        }
     }
 
     func loadMessages(path: String) -> [ChatMessage] {

@@ -16,7 +16,7 @@ enum GlassControlMetric {
 struct AppShellView: View {
     @EnvironmentObject var model: AppModel
     @State private var sidebarOpen = true
-    @State private var secondaryOpen = true
+    @State private var secondaryOpen = false
     @State private var previewWidth: Double = 640
     @State private var sidebarDragStart: Double?
     @State private var rightDragStart: Double?
@@ -27,6 +27,7 @@ struct AppShellView: View {
     var body: some View {
         GeometryReader { geometry in
             let previewPaneWidth = resolvedPreviewWidth(containerWidth: geometry.size.width)
+            let secondaryPaneWidth = resolvedSecondaryWidth(containerWidth: geometry.size.width)
 
             ZStack {
                 HStack(spacing: LiquidGlassToken.panelSpacing) {
@@ -63,7 +64,7 @@ struct AppShellView: View {
                             }
                     } else if secondaryOpen {
                         SecondaryPanelView(onClose: { secondaryOpen = false })
-                            .frame(width: model.settings.secondaryWidth)
+                            .frame(width: secondaryPaneWidth)
                             .frame(maxHeight: .infinity)
                             .overlay(alignment: .leading) {
                                 PaneResizeHandle(title: "Resize secondary panel")
@@ -102,9 +103,18 @@ struct AppShellView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                ClickableCursorBridge()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .alert(item: $model.currentError) { err in Alert(title: Text(err.title), message: Text(err.message), dismissButton: .default(Text("OK"))) }
         .onAppear { model.bootstrap() }
+        .onChange(of: model.selectedSessionID) { _, newValue in
+            if newValue == nil {
+                secondaryOpen = false
+            }
+        }
         .onChange(of: isFilePreviewMode) { _, active in
             if active {
                 let screenWidth = NSScreen.main?.visibleFrame.width ?? 1280
@@ -116,6 +126,14 @@ struct AppShellView: View {
 
     private var previewMinimumWidth: CGFloat {
         360
+    }
+
+    private var secondaryMinimumWidth: CGFloat {
+        LiquidGlassToken.inspectorMinWidth
+    }
+
+    private var secondaryMaximumWidth: CGFloat {
+        LiquidGlassToken.inspectorMaxWidth
     }
 
     private var previewMaximumWidth: CGFloat {
@@ -133,6 +151,18 @@ struct AppShellView: View {
         let layoutMaximum = contentWidth - sidebarReserved - previewChatReservedWidth - spacingCount * LiquidGlassToken.panelSpacing
         let maximum = min(previewMaximumWidth, max(previewMinimumWidth, layoutMaximum))
         return min(max(previewMinimumWidth, CGFloat(previewWidth)), maximum)
+    }
+
+    private func resolvedSecondaryWidth(containerWidth: CGFloat) -> CGFloat {
+        guard secondaryOpen, !isFilePreviewMode else {
+            return CGFloat(model.settings.secondaryWidth)
+        }
+        let contentWidth = max(0, containerWidth - 20)
+        let sidebarReserved = sidebarOpen ? CGFloat(model.settings.sidebarWidth) : 0
+        let spacingCount: CGFloat = sidebarOpen ? 2 : 1
+        let layoutMaximum = contentWidth - sidebarReserved - LiquidGlassToken.chatMinWidth - spacingCount * LiquidGlassToken.panelSpacing
+        let maximum = min(secondaryMaximumWidth, max(secondaryMinimumWidth, layoutMaximum))
+        return min(max(secondaryMinimumWidth, CGFloat(model.settings.secondaryWidth)), maximum)
     }
 
     private var sidebarResizeGesture: some Gesture {
@@ -161,7 +191,7 @@ struct AppShellView: View {
                 if next < 260 {
                     secondaryOpen = false; rightDragStart = nil
                 } else {
-                    model.settings.secondaryWidth = min(620, max(Double(LiquidGlassToken.inspectorWidth), next))
+                    model.settings.secondaryWidth = min(Double(secondaryMaximumWidth), max(Double(secondaryMinimumWidth), next))
                 }
             }
             .onEnded { _ in rightDragStart = nil; model.persistSettings() }

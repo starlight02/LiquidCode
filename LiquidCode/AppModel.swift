@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AppKit
 import Foundation
 import SwiftUI
@@ -23,6 +24,7 @@ final class AppModel: ObservableObject {
     @Published var mcpServers: [MCPServer] = []
     @Published var providers: [ProviderRecord] = []
     @Published var activeProviderID: String?
+    @Published var modelDisplayNames: [String: String] = [:]
     @Published var secondaryTab: SecondaryTab = .files
     @Published var settingsOpen = false
     @Published var settingsTab: SettingsTab = .general
@@ -53,10 +55,12 @@ final class AppModel: ObservableObject {
     @Published var onboardingPlan = OnboardingPlan.ready
     @Published var chatFindText = ""
     @Published var chatFindIndex = 0
+    @Published var currentGreeting = GreetingProvider.random()
 
     private let engine: ClaudeEngine
     private let providerVault = ProviderVault()
     private let fileSystem = FileSystemService()
+    private let claudeUserSettings: ClaudeUserSettingsService
     private let directoryWatcher = DirectoryWatchManager()
     private let mcpService = MCPService()
     private let skillService = SkillService()
@@ -64,11 +68,16 @@ final class AppModel: ObservableObject {
     private var reloadSessionsGeneration = 0
     private let cliService = CLIService()
     private let shareService = ShareService()
+    // periphery:ignore
     private let onboardingService = OnboardingService()
     private var filePreviewCleanContent = ""
 
-    init(engine: ClaudeEngine = ClaudeEngineFactory.makeDefault()) {
+    init(
+        engine: ClaudeEngine = ClaudeEngineFactory.makeDefault(),
+        claudeUserSettings: ClaudeUserSettingsService = ClaudeUserSettingsService()
+    ) {
         self.engine = engine
+        self.claudeUserSettings = claudeUserSettings
     }
 
     deinit { directoryWatcher.unwatchAll(); engine.killAll() }
@@ -93,7 +102,7 @@ extension AppModel {
     }
 
     var activeProvider: ProviderRecord? {
-        providers.first { $0.id == activeProviderID }
+        nil
     }
 
     var hasActiveTurn: Bool {
@@ -293,10 +302,15 @@ extension AppModel {
     }
 
     private func modelTier(for model: String) -> String? {
+        let model = normalizedModelDisplayKey(model)
         let map = [
-            "claude-fable-5": "opus",
-            "claude-fable-5-1m": "opus",
-            "claude-fable-5[1m]": "opus",
+            "fable": "fable",
+            "opus": "opus",
+            "sonnet": "sonnet",
+            "haiku": "haiku",
+            "claude-fable-5": "fable",
+            "claude-fable-5-1m": "fable",
+            "claude-fable-5[1m]": "fable",
             "claude-opus-4-8": "opus",
             "claude-opus-4-8-1m": "opus",
             "claude-opus-4-8[1m]": "opus",
@@ -304,6 +318,7 @@ extension AppModel {
             "claude-opus-4-6-1m": "opus",
             "claude-opus-4-6[1m]": "opus",
             "claude-sonnet-4-6": "sonnet",
+            "claude-haiku-4-5": "haiku",
             "claude-haiku-4-5-20251001": "haiku"
         ]
         return map[model]
@@ -319,33 +334,74 @@ extension AppModel {
 
     private func resolvedModelForActiveProvider() throws -> String {
         let selected = settings.selectedModel
-        guard let provider = activeProvider else {
-            return cliModelName(selected)
-        }
-        if let direct = provider.modelMappings[selected]?.trimmingCharacters(in: .whitespacesAndNewlines), !direct.isEmpty {
-            return direct
-        }
-        if let tier = modelTier(for: selected), let mapped = provider.modelMappings[tier]?.trimmingCharacters(in: .whitespacesAndNewlines), !mapped.isEmpty {
-            return mapped
-        }
-        if let tier = modelTier(for: selected), !provider.modelMappings.isEmpty {
-            throw AppError(
-                title: "Provider model mapping missing",
-                message: "\(provider.name) has no \(tier) mapping for \(selected). Add a mapping in Settings → Providers before sending."
-            )
-        }
         return cliModelName(selected)
+    }
+
+    func modelDisplayName(_ model: String) -> String {
+        let key = normalizedModelDisplayKey(model)
+        if let display = modelDisplayNames[key], !display.isEmpty {
+            return display
+        }
+        if let tier = modelTier(for: model), let display = modelDisplayNames[tier], !display.isEmpty {
+            return display
+        }
+        return shortModelName(model)
+    }
+
+    func modelMenuDisplayName(_ model: String) -> String {
+        if let tier = modelTier(for: model) {
+            return "\(modelTierLabel(tier)) · \(modelDisplayName(model))"
+        }
+        return modelDisplayName(model)
+    }
+
+    func modelToolbarDisplayName(_ model: String, compact: Bool = false) -> String {
+        guard compact, let tier = modelTier(for: model) else {
+            return modelMenuDisplayName(model)
+        }
+        return modelTierLabel(tier)
+    }
+
+    func isComposerModelSelected(_ option: String) -> Bool {
+        if normalizedModelDisplayKey(settings.selectedModel) == normalizedModelDisplayKey(option) {
+            return true
+        }
+        return modelTier(for: settings.selectedModel) == modelTier(for: option)
+    }
+
+    private func modelTierLabel(_ tier: String) -> String {
+        switch tier {
+        case "fable": "Fable"
+        case "opus": "Opus"
+        case "sonnet": "Sonnet"
+        case "haiku": "Haiku"
+        default: tier.capitalized
+        }
+    }
+
+    private func normalizedModelDisplayKey(_ model: String) -> String {
+        model
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
     }
 
     func bootstrap() {
         settings = JSONFile.load(AppSettings.self, from: AppPaths.shared.settingsFile) ?? AppSettings()
         settings.sidebarWidth = min(450, max(Double(LiquidGlassToken.sidebarWidth), settings.sidebarWidth))
-        settings.secondaryWidth = min(620, max(Double(LiquidGlassToken.inspectorWidth), settings.secondaryWidth))
+        settings.secondaryWidth = min(Double(LiquidGlassToken.inspectorMaxWidth), max(Double(LiquidGlassToken.inspectorMinWidth), settings.secondaryWidth))
+        syncComposerDefaultsFromClaudeUserSettings()
         recentProjects = JSONFile.load([RecentProject].self, from: AppPaths.shared.recentProjectsFile) ?? []
-        let providerFile = providerVault.load()
-        providers = providerFile.providers
-        activeProviderID = providerFile.activeProviderID ?? settings.selectedProviderID
-        onboardingPlan = onboardingService.plan()
+        // Filter out temp/system directories from recent projects
+        let tempRoot = NSTemporaryDirectory()
+        recentProjects = recentProjects.filter { project in
+            let projectPath = project.path
+            return !projectPath.hasPrefix(tempRoot) && !projectPath.hasPrefix("/var/folders/") && !projectPath.hasPrefix("/tmp/")
+        }
+        autoSelectClaudeRecentProjectIfNeeded()
+        providers = []
+        activeProviderID = nil
+        settings.selectedProviderID = nil
+        onboardingPlan = .ready
         loadSessionGroups()
         refreshCLIStatus()
         reloadSessions()
@@ -355,6 +411,64 @@ extension AppModel {
     func persistSettings() {
         settings.selectedProviderID = activeProviderID
         try? JSONFile.save(settings, to: AppPaths.shared.settingsFile)
+    }
+
+    func setComposerMode(_ mode: SessionMode) {
+        settings.sessionMode = mode
+        applyComposerConfigurationChange(model: nil, mode: mode, thinkingLevel: nil)
+    }
+
+    func setComposerThinkingLevel(_ level: ThinkingLevel) {
+        settings.thinkingLevel = level
+        applyComposerConfigurationChange(model: nil, mode: nil, thinkingLevel: level)
+    }
+
+    func setComposerModel(_ model: String) {
+        settings.selectedModel = model
+        applyComposerConfigurationChange(model: model, mode: nil, thinkingLevel: nil)
+    }
+
+    private func syncComposerDefaultsFromClaudeUserSettings() {
+        let defaults = claudeUserSettings.loadComposerDefaults()
+        modelDisplayNames = defaults.modelDisplayNames
+        if let model = defaults.model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            settings.selectedModel = model
+        }
+        if let mode = defaults.mode {
+            settings.sessionMode = mode
+        }
+        if let thinkingLevel = defaults.thinkingLevel {
+            settings.thinkingLevel = thinkingLevel
+        }
+        persistSettings()
+    }
+
+    private func applyComposerConfigurationChange(model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) {
+        if selectedSessionID == nil {
+            do {
+                try claudeUserSettings.saveComposerDefaults(
+                    model: settings.selectedModel,
+                    mode: settings.sessionMode,
+                    thinkingLevel: settings.thinkingLevel
+                )
+                persistSettings()
+            } catch {
+                showError("Claude settings update failed", error.localizedDescription)
+            }
+            return
+        }
+        persistSettings()
+        guard let selectedSessionID else {
+            return
+        }
+        guard engine.isSessionRunning(sessionID: selectedSessionID) else {
+            return
+        }
+        do {
+            try engine.updateRuntimeConfiguration(sessionID: selectedSessionID, model: model, mode: mode, thinkingLevel: thinkingLevel)
+        } catch {
+            showError("Claude runtime update failed", error.localizedDescription)
+        }
     }
 
     func reloadSessions() {
@@ -411,6 +525,10 @@ extension AppModel {
         guard let id, let session = sessions.first(where: { $0.id == id }) else {
             workingDirectory = ""
             fileTree = []
+            selectedFilePath = nil
+            filePreview = ""
+            filePreviewCleanContent = ""
+            fileEditDirty = false
             resetWorkspaceChangeState()
             directoryWatcher.unwatchAll()
             restoreComposerState(for: nil)
@@ -510,14 +628,132 @@ extension AppModel {
         reloadMCPAndSkills()
     }
 
-    func sendComposer() {
-        guard let id = selectedSessionID else {
-            newChat(); return
+    func chooseWorkingDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose Project"
+        if !workingDirectory.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
+        } else if let recent = sessionIndex.mostRecentProjectDirectory() {
+            panel.directoryURL = URL(fileURLWithPath: recent, isDirectory: true)
         }
-        let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
+        guard panel.runModal() == .OK, let url = panel.url else {
             return
         }
+        setStartWorkingDirectory(url.path, remember: true, showToast: true)
+    }
+
+    @discardableResult
+    func selectMostRecentClaudeProject(showToast: Bool = true) -> Bool {
+        guard let path = sessionIndex.mostRecentProjectDirectory() else {
+            if showToast {
+                toastWarning("No Claude Code project found", "Choose a project folder manually.")
+            }
+            return false
+        }
+        return setStartWorkingDirectory(path, remember: false, showToast: showToast)
+    }
+
+    func clearWorkingDirectory() {
+        let preservedText = composerText
+        let preservedAttachments = attachments
+        snapshotComposerState(for: selectedSessionID)
+        selectedSessionID = nil
+        restoreComposerState(for: nil)
+        composerText = preservedText
+        attachments = preservedAttachments
+        workingDirectory = ""
+        fileTree = []
+        selectedFilePath = nil
+        filePreview = ""
+        filePreviewCleanContent = ""
+        fileEditDirty = false
+        resetWorkspaceChangeState()
+        directoryWatcher.unwatchAll()
+        reloadMCPAndSkills()
+    }
+
+    func returnToStartScreen() {
+        selectSession(nil)
+        syncComposerDefaultsFromClaudeUserSettings()
+        autoSelectClaudeRecentProjectIfNeeded()
+    }
+
+    private func autoSelectClaudeRecentProjectIfNeeded() {
+        guard selectedSessionID == nil, workingDirectory.isEmpty else {
+            return
+        }
+        if !selectMostRecentClaudeProject(showToast: false), let lastProject = recentProjects.first {
+            setStartWorkingDirectory(lastProject.path, remember: false, showToast: false)
+        }
+    }
+
+    @discardableResult
+    private func setStartWorkingDirectory(_ path: String, remember: Bool, showToast: Bool) -> Bool {
+        guard let projectDir = existingDirectoryPath(path) else {
+            forgetRecentProject(path)
+            if showToast {
+                toastWarning("Project unavailable", "\(path) no longer exists.")
+            }
+            return false
+        }
+        let preservedText = composerText
+        let preservedAttachments = attachments
+        snapshotComposerState(for: selectedSessionID)
+        selectedSessionID = nil
+        restoreComposerState(for: nil)
+        composerText = preservedText
+        attachments = preservedAttachments
+        workingDirectory = projectDir
+        selectedFilePath = nil
+        filePreview = ""
+        filePreviewCleanContent = ""
+        fileEditDirty = false
+        resetWorkspaceChangeState()
+        fileSystem.registerWorkspace(projectDir)
+        if remember {
+            rememberProject(projectDir)
+        }
+        startWatchingWorkspace()
+        reloadFileTree()
+        reloadMCPAndSkills()
+        if showToast {
+            toastSuccess("Project selected", URL(fileURLWithPath: projectDir).lastPathComponent)
+        }
+        return true
+    }
+
+    func sendComposer() {
+        let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        // Auto-create session if none selected
+        if selectedSessionID == nil {
+            let hasExplicitWorkingDirectory = !workingDirectory.isEmpty
+            let projectDir = hasExplicitWorkingDirectory
+                ? workingDirectory
+                : FileManager.default.homeDirectoryForCurrentUser.path
+            let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
+            let session = SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: "New chat", cliResumeID: nil, isDraft: true)
+            sessions.insert(session, at: 0)
+            messagesBySession[id] = []
+            selectedSessionID = id
+            composerTextBySession[id] = ""
+            attachmentsBySession[id] = []
+            workingDirectory = projectDir
+            resetWorkspaceChangeState()
+            fileSystem.registerWorkspace(projectDir)
+            if hasExplicitWorkingDirectory {
+                rememberProject(projectDir)
+            }
+            startWatchingWorkspace()
+            reloadFileTree()
+            reloadMCPAndSkills()
+        }
+
+        guard let id = selectedSessionID else { return }
         let currentAttachments = attachments
         setComposerText("", for: id)
         setAttachments([], for: id)
@@ -824,11 +1060,10 @@ extension AppModel {
             originalPath: session.path,
             deletedAt: Date()
         )
-        if let cliID = session.cliResumeID ?? (session.id.hasPrefix("desk_") ? nil : session.id) {
-            sessionIndex.untrackSession(cliID)
-        }
-        if let path = session.path {
-            try? fileSystem.delete(path, sessionID: session.id)
+        do {
+            try sessionIndex.deleteSessionRecord(session)
+        } catch {
+            toastWarning("Claude session delete failed", error.localizedDescription)
         }
         sessions.removeAll { $0.id == session.id }
         messagesBySession.removeValue(forKey: session.id)
@@ -1595,6 +1830,7 @@ extension AppModel {
         return words
     }
 
+    // periphery:ignore
     func saveProviders() {
         do { try providerVault.save(.init(activeProviderID: activeProviderID, providers: providers)); persistSettings() } catch { showError(
             "Save providers failed",
@@ -1602,10 +1838,12 @@ extension AppModel {
         ) }
     }
 
+    // periphery:ignore
     func setProviderKey(providerID: String, key: String) {
         do { try providerVault.setAPIKey(key, providerID: providerID) } catch { showError("Save API key failed", error.localizedDescription) }
     }
 
+    // periphery:ignore
     func testActiveProvider() {
         guard let activeProvider else {
             showError("No provider", "Select or add a provider first.")
@@ -1635,6 +1873,7 @@ extension AppModel {
         }
     }
 
+    // periphery:ignore
     func addProvider() {
         let provider = ProviderRecord(
             id: UUID().uuidString,
@@ -1647,6 +1886,7 @@ extension AppModel {
         providers.append(provider); activeProviderID = provider.id; saveProviders()
     }
 
+    // periphery:ignore
     func addProvider(from preset: ProviderPreset) {
         let existingCount = providers.filter { $0.preset == preset.id }.count
         let suffix = existingCount > 0 ? " (\(existingCount + 1))" : ""
@@ -1667,6 +1907,7 @@ extension AppModel {
         }
     }
 
+    // periphery:ignore
     func deleteActiveProvider() {
         guard let activeProviderID else {
             return
@@ -1676,6 +1917,7 @@ extension AppModel {
         saveProviders()
     }
 
+    // periphery:ignore
     func exportProviders() {
         let panel = NSSavePanel(); panel.nameFieldStringValue = "liquidcode-providers.json"
         if
@@ -1685,6 +1927,7 @@ extension AppModel {
         }
     }
 
+    // periphery:ignore
     func importProviders() {
         let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.allowedContentTypes = [.json]
         if panel.runModal() == .OK, let url = panel.url, let imported = JSONFile.load(ProviderVault.ProviderFile.self, from: url) {
@@ -1692,10 +1935,12 @@ extension AppModel {
         }
     }
 
+    // periphery:ignore
     func refreshOnboardingPlan() {
         onboardingPlan = onboardingService.plan()
     }
 
+    // periphery:ignore
     func executeLegacyProviderMigration() {
         do {
             let result = try onboardingService.executeLegacyProviderMigration()
@@ -1710,6 +1955,7 @@ extension AppModel {
         }
     }
 
+    // periphery:ignore
     func skipLegacyProviderMigration() {
         do {
             try onboardingService.skipLegacyProviderMigration()
@@ -1720,6 +1966,7 @@ extension AppModel {
         }
     }
 
+    // periphery:ignore
     func rollbackLegacyProviderMigration() {
         do {
             try onboardingService.rollbackLegacyProviderMigration()
@@ -1891,8 +2138,8 @@ extension AppModel {
         case .mcpSettings: settingsTab = .mcp; settingsOpen = true
         case .agentsOverlay: agentPanelOpen = true
         case .panel(let tab): secondaryTab = tab
-        case .mode(let mode): settings.sessionMode = mode; persistSettings()
-        case .model(let model): settings.selectedModel = model; persistSettings()
+        case .mode(let mode): setComposerMode(mode)
+        case .model(let model): setComposerModel(model)
         case .sendSlash(let slash): setComposerText(slash + " ")
         case .installCLI: installOrUpdateCLI()
         case .loginCLI: openClaudeLogin()
@@ -1907,7 +2154,7 @@ extension AppModel {
     var paletteCommands: [PaletteCommand] {
         var commands: [PaletteCommand] = [
             .init(title: "New Chat", subtitle: "Open a project and start a draft", kind: .newChat),
-            .init(title: "Settings", subtitle: "Providers, CLI, MCP, appearance", kind: .settings),
+            .init(title: "Settings", subtitle: "CLI, MCP, appearance", kind: .settings),
             .init(title: "Files Panel", subtitle: "Show project files", kind: .panel(.files)),
             .init(title: "Plan Panel", subtitle: "Review plan drafts and approvals", kind: .panel(.plan)),
             .init(title: "Skills Panel", subtitle: "Show Claude skills", kind: .panel(.skills)),
@@ -1920,7 +2167,7 @@ extension AppModel {
             .init(title: "What's New", subtitle: "Open changelog", kind: .changelog)
         ]
         commands += SessionMode.allCases.map { .init(title: "Mode: \($0.label)", subtitle: $0.permissionMode, kind: .mode($0)) }
-        commands += defaultModels.map { .init(title: "Model: \($0)", subtitle: "Switch Claude model", kind: .model($0)) }
+        commands += defaultModels.map { .init(title: "Model: \(modelMenuDisplayName($0))", subtitle: "Switch Claude model", kind: .model($0)) }
         commands += ["/compact", "/cost", "/doctor", "/help", "/init", "/memory", "/mcp", "/permissions", "/pr_comments", "/review"].map { .init(
             title: $0,
             subtitle: "Insert slash command",

@@ -76,9 +76,32 @@ enum ThinkingLevel: String, Codable, CaseIterable, Identifiable, Sendable {
     case low
     case medium
     case high
+    case xhigh
     case max
     var id: String {
         rawValue
+    }
+
+    var label: String {
+        switch self {
+        case .off: "No think"
+        case .low: "Low"
+        case .medium: "Medium"
+        case .high: "High"
+        case .xhigh: "X High"
+        case .max: "Max"
+        }
+    }
+
+    var maxThinkingTokens: Int {
+        switch self {
+        case .off: 0
+        case .low: 4_000
+        case .medium: 8_000
+        case .high: 16_000
+        case .xhigh: 24_000
+        case .max: 32_000
+        }
     }
 }
 
@@ -130,7 +153,6 @@ enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
 
 enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     case general = "General"
-    case provider = "Provider"
     case mcp = "MCP"
     case cli = "CLI"
     case feedback = "Feedback"
@@ -158,6 +180,7 @@ struct SessionRecord: Identifiable, Codable, Hashable, Sendable {
     var path: String?
     var project: String
     var projectDir: String
+    var createdAt: Date?
     var modifiedAt: Date
     var preview: String
     var cliResumeID: String?
@@ -420,8 +443,8 @@ enum ClaudeEvent: Sendable {
 }
 
 let defaultModels = [
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "claude-opus-4-6[1m]"
+    "fable",
+    "opus",
+    "sonnet",
+    "haiku"
 ]

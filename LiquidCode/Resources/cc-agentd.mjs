@@ -402,6 +402,35 @@ async function setPermissionMode(id, params = {}) {
   result(id, { ok: true, mode: params.mode || 'default' });
 }
 
+async function setModel(id, params = {}) {
+  const runtime = sessions.get(params.sessionId);
+  if (!runtime) throw new Error(`session not found: ${params.sessionId}`);
+  const model = params.model || '';
+  if (runtime.mode === 'sdk' && runtime.query?.setModel) await runtime.query.setModel(model);
+  else if (runtime.mode === 'cli') writeJSON(runtime.child, { type: 'control_request', request_id: randomUUID(), request: { subtype: 'set_model', model } });
+  runtime.model = model;
+  result(id, { ok: true, model });
+}
+
+async function setThinkingLevel(id, params = {}) {
+  const runtime = sessions.get(params.sessionId);
+  if (!runtime) throw new Error(`session not found: ${params.sessionId}`);
+  const level = params.thinkingLevel || 'off';
+  const maxThinkingTokens = Number.isFinite(params.maxThinkingTokens) ? params.maxThinkingTokens : 0;
+  const thinkingDisplay = level === 'off' ? 'hidden' : 'visible';
+  if (runtime.mode === 'sdk' && runtime.query?.setMaxThinkingTokens) {
+    await runtime.query.setMaxThinkingTokens(maxThinkingTokens, thinkingDisplay);
+  } else if (runtime.mode === 'cli') {
+    writeJSON(runtime.child, {
+      type: 'control_request',
+      request_id: randomUUID(),
+      request: { subtype: 'set_max_thinking_tokens', max_thinking_tokens: maxThinkingTokens, thinking_display: thinkingDisplay }
+    });
+  }
+  runtime.thinkingLevel = level;
+  result(id, { ok: true, thinkingLevel: level, maxThinkingTokens });
+}
+
 function normalizePermissionDecision(params, pending) {
   const decision = asObject(params.decision || params.response);
   const behavior = decision.behavior === 'allow' ? 'allow' : 'deny';
@@ -542,6 +571,8 @@ rl.on('line', line => {
       if (req.method === 'session.send') return sessionSend(req.id, req.params || {});
       if (req.method === 'session.interrupt') return await sessionInterrupt(req.id, req.params || {});
       if (req.method === 'session.setPermissionMode') return await setPermissionMode(req.id, req.params || {});
+      if (req.method === 'session.setModel') return await setModel(req.id, req.params || {});
+      if (req.method === 'session.setThinkingLevel') return await setThinkingLevel(req.id, req.params || {});
       if (req.method === 'permission.respond') return permissionRespond(req.id, req.params || {});
       if (req.method === 'session.control') return await sessionControl(req.id, req.params || {});
       if (req.method === 'session.kill') return await sessionKill(req.id, req.params || {});
