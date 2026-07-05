@@ -16,7 +16,7 @@ struct ToolDisplayItemView: View {
         if !payload.isEmpty {
             return payload
         }
-        return item.kind == .use ? "No input payload." : "Completed with no textual output."
+        return item.kind == .use ? L("No input payload.") : L("Completed with no textual output.")
     }
 
     private var parsedJSON: [(String, String)] {
@@ -48,7 +48,7 @@ struct ToolDisplayItemView: View {
                             .foregroundStyle(tint)
                         Text(item.summaryName)
                             .font(.caption.weight(.semibold))
-                        Text(item.kind == .use ? "tool use" : "tool result")
+                        Text(item.kind == .use ? L("tool use") : L("tool result"))
                             .font(.caption2.weight(.medium))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -68,7 +68,7 @@ struct ToolDisplayItemView: View {
 
                 if expanded {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(item.kind == .use ? "Input payload" : "Result payload")
+                        Text(item.kind == .use ? L("Input payload") : L("Result payload"))
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.tertiary)
                         ScrollView(.vertical) {
@@ -99,7 +99,7 @@ struct ToolDisplayItemView: View {
     @ViewBuilder private var toolSummary: some View {
         if item.kind == .use {
             if parsedJSON.isEmpty {
-                Text(payload.isEmpty ? "No input payload." : payload)
+                Text(payload.isEmpty ? L("No input payload.") : payload)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(compact ? 2 : 4)
@@ -162,9 +162,9 @@ struct ToolMessageGroupView: View {
                 Button { withAnimation(.snappy(duration: 0.18)) { expanded.toggle() } } label: {
                     HStack(spacing: 7) {
                         Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.caption.weight(.bold))
-                        Text("Tool run").font(.caption.weight(.semibold))
+                        Text(L("Tool run")).font(.caption.weight(.semibold))
                         Text(summary).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                        Text("\(items.filter { $0.kind == .use }.count) use / \(items.filter { $0.kind == .result }.count) result")
+                        Text(LF("%d use / %d result", items.filter { $0.kind == .use }.count, items.filter { $0.kind == .result }.count))
                             .font(.caption2.weight(.medium))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -347,7 +347,7 @@ struct ActiveInteractionSlotView: View {
     let permission: PermissionRequest
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("Action required", systemImage: "hand.tap")
+            Label(L("Action required"), systemImage: "hand.tap")
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
             InlineInteractionCardView(permission: permission)
@@ -365,7 +365,7 @@ struct PermissionInlineCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Button { expanded.toggle() } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: icon).foregroundStyle(color); Text("Permission request").font(.headline); Text(permission.toolName)
+                    Image(systemName: icon).foregroundStyle(color); Text(L("Permission request")).font(.headline); Text(permission.toolName)
                         .font(.caption.monospaced())
                         .padding(
                             .horizontal,
@@ -384,14 +384,14 @@ struct PermissionInlineCardView: View {
                         editedInput = permission.inputJSON
                     } } }
             HStack {
-                Button("Deny", role: .destructive) { model.respondPermission(permission, allow: false) }
+                Button(L("Deny"), role: .destructive) { model.respondPermission(permission, allow: false) }
                     .buttonStyle(.plain)
                     .liquidGlassButton(radius: 11)
                 Spacer()
                 Button {
                     model.respondPermission(permission, allow: true, editedInput: editedInput.isEmpty ? permission.inputJSON : editedInput)
                 } label: {
-                    Label("Allow Once", systemImage: "checkmark")
+                    Label(L("Allow Once"), systemImage: "checkmark")
                 }
                 .buttonStyle(.plain)
                 .liquidGlassButton(active: true, radius: 11)
@@ -430,9 +430,9 @@ struct PlanReviewInlineCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Button { expanded.toggle() } label: {
                 HStack {
-                    Image(systemName: "list.bullet.rectangle").foregroundStyle(Color.accentColor); Text("Plan review")
+                    Image(systemName: "list.bullet.rectangle").foregroundStyle(Color.accentColor); Text(L("Plan review"))
                         .font(.headline); if stepCount > 0 {
-                        Text("\(stepCount) steps")
+                        Text(LF("%d steps", stepCount))
                             .font(.caption)
                             .padding(
                                 .horizontal,
@@ -446,21 +446,26 @@ struct PlanReviewInlineCardView: View {
                 MarkdownRendererView(content: planText).font(.callout)
             }
             HStack {
-                Button("Reject", role: .destructive) { model.respondPermission(permission, allow: false) }
+                Button(L("Reject"), role: .destructive) { model.respondPermission(permission, allow: false) }
                     .buttonStyle(.plain)
                     .liquidGlassButton(radius: 11)
-                Button("Restart Plan") {
-                    model.settings.sessionMode = .plan; model.persistSettings(); model.updateComposerText("Please revise the plan before execution:\n\n"); model.respondPermission(
+                Button(L("Restart Plan")) {
+                    model.settings.sessionMode = .plan
+                    model.persistSettings()
+                    model.updateComposerText(L("Please revise the plan before execution:") + "\n\n")
+                    model.respondPermission(
                         permission,
                         allow: false
-                    ); model.toastInfo("Plan", "Describe the revision in the composer") }
-                    .buttonStyle(.plain)
-                    .liquidGlassButton(radius: 11)
+                    )
+                    model.toastInfo(L("Plan"), L("Describe the revision in the composer"))
+                }
+                .buttonStyle(.plain)
+                .liquidGlassButton(radius: 11)
                 Spacer()
                 Button {
                     model.settings.sessionMode = .code; model.persistSettings(); model.respondPermission(permission, allow: true, editedInput: permission.inputJSON)
                 } label: {
-                    Label("Approve Plan", systemImage: "checkmark.circle.fill")
+                    Label(L("Approve Plan"), systemImage: "checkmark.circle.fill")
                 }
                 .buttonStyle(.plain)
                 .liquidGlassButton(active: true, radius: 11)
@@ -488,27 +493,27 @@ struct QuestionInlineCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack { Image(systemName: "questionmark.bubble.fill").foregroundStyle(Color.accentColor); Text("Claude asks a question").font(.headline); Spacer() }
+            HStack { Image(systemName: "questionmark.bubble.fill").foregroundStyle(Color.accentColor); Text(L("Claude asks a question")).font(.headline); Spacer() }
             Text(prompt).font(.callout)
             if
                 !options
                     .isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 8)], alignment: .leading, spacing: 8) { ForEach(options, id: \.self) { option in
                     Button(option) { answer = option }.buttonStyle(.bordered) } } }
-            TextField("Type an answer", text: $answer)
+            TextField(L("Type an answer"), text: $answer)
                 .textFieldStyle(.plain)
                 .padding(10)
                 .background(Color.primary.opacity(0.045))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             HStack {
-                Button("Skip") { model.respondPermission(permission, allow: true, editedInput: questionSkipResponseJSON(permission.inputJSON)) }
+                Button(L("Skip")) { model.respondPermission(permission, allow: true, editedInput: questionSkipResponseJSON(permission.inputJSON)) }
                     .buttonStyle(.plain)
                     .liquidGlassButton(radius: 11)
                 Spacer()
                 Button {
                     model.respondPermission(permission, allow: true, editedInput: questionResponseJSON(permission.inputJSON, answer: answer))
                 } label: {
-                    Label("Send Answer", systemImage: "arrow.right")
+                    Label(L("Send Answer"), systemImage: "arrow.right")
                 }
                 .buttonStyle(.plain)
                 .liquidGlassButton(active: true, radius: 11)
@@ -699,7 +704,7 @@ struct InputBarView: View {
 
     private var projectSelectionTitle: String {
         guard !model.workingDirectory.isEmpty else {
-            return "Project"
+            return L("Project")
         }
         return URL(fileURLWithPath: model.workingDirectory).lastPathComponent
     }
@@ -723,9 +728,9 @@ struct InputBarView: View {
                 HStack(alignment: .center, spacing: 10) {
                     ZStack(alignment: .topLeading) {
                         if model.composerText.isEmpty {
-                            Text(isBusy ? "Add a follow-up while Claude works..." :
-                                model.workingDirectory.isEmpty ? "Type a message to start..." :
-                                "Add message...")
+                            Text(isBusy ? L("Add a follow-up while Claude works...") :
+                                model.workingDirectory.isEmpty ? L("Type a message to start...") :
+                                L("Add message..."))
                                 .foregroundStyle(.tertiary)
                                 .font(.system(size: max(15, model.settings.fontSize)))
                                 .padding(.top, inputTextInset)
@@ -752,7 +757,7 @@ struct InputBarView: View {
                             composerActionIcon(systemImage: "stop.fill", fill: Color.red.opacity(0.18), foreground: .red)
                         }
                         .buttonStyle(.plain)
-                        .help("Stop current turn")
+                        .help(L("Stop current turn"))
                     } else {
                         Button {
                             model.sendComposer()
@@ -766,7 +771,7 @@ struct InputBarView: View {
                         .buttonStyle(.plain)
                         .keyboardShortcut(.return, modifiers: [])
                         .disabled(!canSend)
-                        .help(model.pendingPermissionsForSelectedSession.isEmpty ? "Send (Return)" : "Respond to inline card first")
+                        .help(model.pendingPermissionsForSelectedSession.isEmpty ? L("Send (Return)") : L("Respond to inline card first"))
                     }
                 }
                 .padding(.horizontal, 14)
@@ -874,11 +879,11 @@ struct InputBarView: View {
                         .disabled(model.selectedLastUserMessage == nil)
                     }
                 } label: {
-                    NativeToolbarMenuLabel(title: compact ? "" : "Rewind", systemImage: "arrow.counterclockwise", minWidth: compact ? 38 : 84)
+                    NativeToolbarMenuLabel(title: compact ? "" : L("Rewind"), systemImage: "arrow.counterclockwise", minWidth: compact ? 38 : 84)
                 }
                 .buttonStyle(.plain)
                 .disabled(model.selectedLastUserMessage == nil)
-                .help("Restore conversation, code, both, or prepare a summary from the last user turn")
+                .help(L("Restore conversation, code, both, or prepare a summary from the last user turn"))
 
                 Menu {
                     ForEach(model.skills) { skill in
@@ -888,13 +893,13 @@ struct InputBarView: View {
                         }
                     }
                     if model.skills.isEmpty {
-                        Button("No skills loaded") {}.disabled(true)
+                        Button(L("No skills loaded")) {}.disabled(true)
                     }
                 } label: {
-                    NativeToolbarMenuLabel(title: compact ? "" : "Skills", systemImage: "sparkles", minWidth: compact ? 38 : 78)
+                    NativeToolbarMenuLabel(title: compact ? "" : L("Skills"), systemImage: "sparkles", minWidth: compact ? 38 : 78)
                 }
                 .buttonStyle(.plain)
-                .help("Insert skill slash command")
+                .help(L("Insert skill slash command"))
             }
 
             Spacer(minLength: compact ? 6 : 12)
@@ -921,19 +926,19 @@ struct InputBarView: View {
             Button {
                 model.chooseWorkingDirectory()
             } label: {
-                Label("Choose Folder…", systemImage: "folder.badge.plus")
+                Label(L("Choose Folder…"), systemImage: "folder.badge.plus")
             }
             Button {
                 model.selectMostRecentClaudeProject()
             } label: {
-                Label("Use Claude Recent Project", systemImage: "clock.arrow.circlepath")
+                Label(L("Use Claude Recent Project"), systemImage: "clock.arrow.circlepath")
             }
             if !model.workingDirectory.isEmpty {
                 Divider()
                 Button(role: .destructive) {
                     model.clearWorkingDirectory()
                 } label: {
-                    Label("Clear Project", systemImage: "xmark.circle")
+                    Label(L("Clear Project"), systemImage: "xmark.circle")
                 }
             }
         } label: {
@@ -945,7 +950,7 @@ struct InputBarView: View {
             )
         }
         .buttonStyle(.plain)
-        .help(model.workingDirectory.isEmpty ? "Choose a project folder or start with Claude Code's default directory" : model.workingDirectory)
+        .help(model.workingDirectory.isEmpty ? L("Choose a project folder or start with Claude Code's default directory") : model.workingDirectory)
     }
 
     private func updateSlashState(_ text: String) {
@@ -1064,7 +1069,7 @@ struct SlashCommandPopoverView: View {
     let onSelect: (PaletteCommand) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack { Image(systemName: "slash.circle"); Text(query.isEmpty ? "Commands" : "Commands matching /\(query)").font(.caption.bold()); Spacer() }
+            HStack { Image(systemName: "slash.circle"); Text(query.isEmpty ? L("Commands") : LF("Commands matching /%@", query)).font(.caption.bold()); Spacer() }
                 .foregroundStyle(.secondary)
             ForEach(Array(commands.prefix(12).enumerated()), id: \.element.id) { index, command in
                 Button { onSelect(command) } label: {
@@ -1079,7 +1084,7 @@ struct SlashCommandPopoverView: View {
                 }.buttonStyle(.plain)
             }
             if commands.isEmpty {
-                Text("No command matches /\(query)").font(.caption).foregroundStyle(.secondary).padding(8)
+                Text(LF("No command matches /%@", query)).font(.caption).foregroundStyle(.secondary).padding(8)
             }
         }
         .padding(8)
@@ -1111,7 +1116,7 @@ struct SecondaryPanelView: View {
                 HStack(spacing: 6) {
                     ForEach(SecondaryTab.allCases) { tab in
                         Button { model.secondaryTab = tab } label: {
-                            Label(tab.rawValue, systemImage: tab.systemImage)
+                            Label(tab.label, systemImage: tab.systemImage)
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(model.secondaryTab == tab ? Color.white : Color.primary.opacity(0.74))
                                 .padding(.horizontal, 11)
@@ -1177,13 +1182,13 @@ struct FilePanelView: View {
                     LazyVStack(alignment: .leading, spacing: 3) {
                         if showingSearchResults {
                             if searchResults.isEmpty {
-                                ContentUnavailableView("No files match", systemImage: "magnifyingglass", description: Text(fileSearchText))
+                                ContentUnavailableView(L("No files match"), systemImage: "magnifyingglass", description: Text(fileSearchText))
                                     .padding(.vertical, 24)
                             } else {
                                 ForEach(searchResults) { SearchFileResultRowView(node: $0, rootPath: model.workingDirectory) }
                             }
                         } else if model.fileTree.isEmpty {
-                            ContentUnavailableView("Empty project", systemImage: "folder", description: Text("Create a file or refresh the tree."))
+                            ContentUnavailableView(L("Empty project"), systemImage: "folder", description: Text(L("Create a file or refresh the tree.")))
                                 .padding(.vertical, 28)
                         } else {
                             ForEach(model.fileTree) { FileNodeView(node: $0) }
@@ -1193,9 +1198,9 @@ struct FilePanelView: View {
                     .padding(.bottom, 10)
                 }
                 .contextMenu {
-                    Button("New file") { createFile() }
-                    Button("New folder") { createFolder() }
-                    Button("Refresh") { model.reloadFileTree() }
+                    Button(L("New file")) { createFile() }
+                    Button(L("New folder")) { createFolder() }
+                    Button(L("Refresh")) { model.reloadFileTree() }
                 }
             }
         }
@@ -1206,11 +1211,11 @@ struct FilePanelView: View {
             HStack(spacing: 8) {
                 Image(systemName: "folder")
                     .foregroundStyle(.secondary)
-                Text(model.workingDirectory.isEmpty ? "Files" : URL(fileURLWithPath: model.workingDirectory).lastPathComponent)
+                Text(model.workingDirectory.isEmpty ? L("Files") : URL(fileURLWithPath: model.workingDirectory).lastPathComponent)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                 if changedCount > 0 {
-                    Text("\(changedCount) changed")
+                    Text(LF("%d changed", changedCount))
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -1241,7 +1246,7 @@ struct FilePanelView: View {
             Image(systemName: "folder.badge.questionmark")
                 .font(.system(size: 34))
                 .foregroundStyle(.tertiary.opacity(0.7))
-            Text("Select a project from the welcome screen to browse files")
+            Text(L("Select a project from the welcome screen to browse files"))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -1272,13 +1277,13 @@ struct FilePanelView: View {
     }
 
     private func createFile() {
-        if let name = promptForFileName(title: "New file", defaultValue: "untitled.txt") {
+        if let name = promptForFileName(title: L("New file"), defaultValue: "untitled.txt") {
             model.createFile(inDirectory: model.workingDirectory, named: name)
         }
     }
 
     private func createFolder() {
-        if let name = promptForFileName(title: "New folder", defaultValue: "untitled") {
+        if let name = promptForFileName(title: L("New folder"), defaultValue: "untitled") {
             model.createFolder(inDirectory: model.workingDirectory, named: name)
         }
     }
@@ -1291,37 +1296,37 @@ struct FileNodeView: View {
         if node.isDirectory {
             DisclosureGroup { ForEach(node.children) { FileNodeView(node: $0) } } label: { FileNodeLabelView(node: node, icon: "folder") }
                 .contextMenu {
-                    Button("New file here") { model.createFile(inDirectory: node.path) }
-                    Button("New folder here") { if let name = promptForFileName(title: "New folder", defaultValue: "untitled") {
+                    Button(L("New file here")) { model.createFile(inDirectory: node.path) }
+                    Button(L("New folder here")) { if let name = promptForFileName(title: L("New folder"), defaultValue: "untitled") {
                         model.createFolder(
                             inDirectory: node.path,
                             named: name
                         ) } }
-                    Button("Rename") { if let name = promptForFileName(title: "Rename", defaultValue: node.name) {
+                    Button(L("Rename")) { if let name = promptForFileName(title: L("Rename"), defaultValue: node.name) {
                         model.requestRenameFile(node.path, to: name)
                     } }
-                    Button("Reveal") { model.requestRevealFile(node.path) }
-                    Button("Open") { model.requestOpenExternalFile(node.path) }
-                    Button("Insert Path") { model.requestInsertFilePath(node.path) }
+                    Button(L("Reveal")) { model.requestRevealFile(node.path) }
+                    Button(L("Open")) { model.requestOpenExternalFile(node.path) }
+                    Button(L("Insert Path")) { model.requestInsertFilePath(node.path) }
                     Divider()
-                    Button("Delete", role: .destructive) { model.requestDeleteFile(node.path) }
+                    Button(L("Delete"), role: .destructive) { model.requestDeleteFile(node.path) }
                 }
         } else {
             Button { _ = model.requestOpenFile(node.path) } label: { FileNodeLabelView(node: node, icon: icon) }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    Button("Preview") { _ = model.requestOpenFile(node.path) }
-                    Button("Insert Path") { model.requestInsertFilePath(node.path) }
-                    Button("Insert Content") { model.requestInsertFileContent(node.path) }
-                    Button("Copy Path") { model.requestCopyFilePath(node.path) }
-                    Button("Rename") { if let name = promptForFileName(title: "Rename", defaultValue: node.name) {
+                    Button(L("Preview")) { _ = model.requestOpenFile(node.path) }
+                    Button(L("Insert Path")) { model.requestInsertFilePath(node.path) }
+                    Button(L("Insert Content")) { model.requestInsertFileContent(node.path) }
+                    Button(L("Copy Path")) { model.requestCopyFilePath(node.path) }
+                    Button(L("Rename")) { if let name = promptForFileName(title: L("Rename"), defaultValue: node.name) {
                         model.requestRenameFile(node.path, to: name)
                     } }
-                    Button("Reveal") { model.requestRevealFile(node.path) }
-                    Button("Open") { model.requestOpenExternalFile(node.path) }
-                    Button("Share") { model.requestShareFile(node.path) }
+                    Button(L("Reveal")) { model.requestRevealFile(node.path) }
+                    Button(L("Open")) { model.requestOpenExternalFile(node.path) }
+                    Button(L("Share")) { model.requestShareFile(node.path) }
                     Divider()
-                    Button("Delete", role: .destructive) { model.requestDeleteFile(node.path) }
+                    Button(L("Delete"), role: .destructive) { model.requestDeleteFile(node.path) }
                 }
         }
     }
@@ -1369,31 +1374,31 @@ struct SearchFileResultRowView: View {
 
     @ViewBuilder private var contextMenu: some View {
         if node.isDirectory {
-            Button("New file here") { model.createFile(inDirectory: node.path) }
-            Button("New folder here") { if let name = promptForFileName(title: "New folder", defaultValue: "untitled") {
+            Button(L("New file here")) { model.createFile(inDirectory: node.path) }
+            Button(L("New folder here")) { if let name = promptForFileName(title: L("New folder"), defaultValue: "untitled") {
                 model.createFolder(inDirectory: node.path, named: name)
             } }
-            Button("Rename") { if let name = promptForFileName(title: "Rename", defaultValue: node.name) {
+            Button(L("Rename")) { if let name = promptForFileName(title: L("Rename"), defaultValue: node.name) {
                 model.requestRenameFile(node.path, to: name)
             } }
-            Button("Reveal") { model.requestRevealFile(node.path) }
-            Button("Open") { openDirectory() }
-            Button("Insert Path") { model.requestInsertFilePath(node.path) }
+            Button(L("Reveal")) { model.requestRevealFile(node.path) }
+            Button(L("Open")) { openDirectory() }
+            Button(L("Insert Path")) { model.requestInsertFilePath(node.path) }
             Divider()
-            Button("Delete", role: .destructive) { model.requestDeleteFile(node.path) }
+            Button(L("Delete"), role: .destructive) { model.requestDeleteFile(node.path) }
         } else {
-            Button("Preview") { _ = model.requestOpenFile(node.path) }
-            Button("Insert Path") { model.requestInsertFilePath(node.path) }
-            Button("Insert Content") { model.requestInsertFileContent(node.path) }
-            Button("Copy Path") { model.requestCopyFilePath(node.path) }
-            Button("Rename") { if let name = promptForFileName(title: "Rename", defaultValue: node.name) {
+            Button(L("Preview")) { _ = model.requestOpenFile(node.path) }
+            Button(L("Insert Path")) { model.requestInsertFilePath(node.path) }
+            Button(L("Insert Content")) { model.requestInsertFileContent(node.path) }
+            Button(L("Copy Path")) { model.requestCopyFilePath(node.path) }
+            Button(L("Rename")) { if let name = promptForFileName(title: L("Rename"), defaultValue: node.name) {
                 model.requestRenameFile(node.path, to: name)
             } }
-            Button("Reveal") { model.requestRevealFile(node.path) }
-            Button("Open") { model.requestOpenExternalFile(node.path) }
-            Button("Share") { model.requestShareFile(node.path) }
+            Button(L("Reveal")) { model.requestRevealFile(node.path) }
+            Button(L("Open")) { model.requestOpenExternalFile(node.path) }
+            Button(L("Share")) { model.requestShareFile(node.path) }
             Divider()
-            Button("Delete", role: .destructive) { model.requestDeleteFile(node.path) }
+            Button(L("Delete"), role: .destructive) { model.requestDeleteFile(node.path) }
         }
     }
 
@@ -1449,9 +1454,9 @@ struct FileNodeLabelView: View {
 @MainActor func promptForFileName(title: String, defaultValue: String) -> String? {
     let alert = NSAlert()
     alert.messageText = title
-    alert.informativeText = "Enter a file or folder name."
-    alert.addButton(withTitle: "OK")
-    alert.addButton(withTitle: "Cancel")
+    alert.informativeText = L("Enter a file or folder name.")
+    alert.addButton(withTitle: L("OK"))
+    alert.addButton(withTitle: L("Cancel"))
     let field = NSTextField(string: defaultValue)
     field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
     alert.accessoryView = field
@@ -1463,18 +1468,18 @@ struct FileNodeLabelView: View {
 @MainActor func promptForMCPServer(title: String, defaultName: String, defaultCommand: String) -> (name: String, command: String)? {
     let alert = NSAlert()
     alert.messageText = title
-    alert.informativeText = "Enter a server name and either a command with args or an HTTP URL."
-    alert.addButton(withTitle: "Save")
-    alert.addButton(withTitle: "Cancel")
+    alert.informativeText = L("Enter a server name and either a command with args or an HTTP URL.")
+    alert.addButton(withTitle: L("Save"))
+    alert.addButton(withTitle: L("Cancel"))
 
     let nameField = NSTextField(string: defaultName)
-    nameField.placeholderString = "server name"
+    nameField.placeholderString = L("server name")
     let commandField = NSTextField(string: defaultCommand)
     commandField.placeholderString = "npx -y @modelcontextprotocol/server-filesystem /path or https://host/mcp"
 
     let stack = NSStackView(views: [
-        labeledField("Name", field: nameField),
-        labeledField("Command / URL", field: commandField)
+        labeledField(L("Name"), field: nameField),
+        labeledField(L("Command / URL"), field: commandField)
     ])
     stack.orientation = .vertical
     stack.spacing = 8
@@ -1552,7 +1557,7 @@ struct SkillsPanelView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Label("Skills", systemImage: "sparkles")
+                    Label(L("Skills"), systemImage: "sparkles")
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
                     Text("\(filteredSkills.count)")
                         .font(.caption.weight(.semibold))
@@ -1563,12 +1568,12 @@ struct SkillsPanelView: View {
                         .clipShape(Capsule())
                     Spacer()
                     ToolbarMenuIconButton(systemImage: "plus", help: "Create skill") {
-                        Button("Global Skill") { createSkill(projectScoped: false) }
-                        Button("Project Skill") { createSkill(projectScoped: true) }.disabled(model.workingDirectory.isEmpty)
+                        Button(L("Global Skill")) { createSkill(projectScoped: false) }
+                        Button(L("Project Skill")) { createSkill(projectScoped: true) }.disabled(model.workingDirectory.isEmpty)
                     }
                     ToolbarIconButton(systemImage: "arrow.clockwise", help: "Reload skills") { model.reloadMCPAndSkills() }
                 }
-                Text("Global and project skills are available as slash commands in the composer.")
+                Text(L("Global and project skills are available as slash commands in the composer."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -1583,9 +1588,9 @@ struct SkillsPanelView: View {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     if filteredSkills.isEmpty {
                         ContentUnavailableView(
-                            skillSearchText.isEmpty ? "No skills" : "No matching skills",
+                            skillSearchText.isEmpty ? L("No skills") : L("No matching skills"),
                             systemImage: "sparkles",
-                            description: Text(skillSearchText.isEmpty ? "Create a global or project skill from the + menu." : skillSearchText)
+                            description: Text(skillSearchText.isEmpty ? L("Create a global or project skill from the + menu.") : skillSearchText)
                         )
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 36)
@@ -1621,7 +1626,7 @@ struct SkillsPanelView: View {
                         .lineLimit(1)
                     scopeBadge(skill.scope)
                 }
-                Text(skill.description.isEmpty ? "No description" : skill.description)
+                Text(skill.description.isEmpty ? L("No description") : skill.description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -1633,15 +1638,15 @@ struct SkillsPanelView: View {
             }
             Spacer(minLength: 6)
             ToolbarMenuIconButton(systemImage: "ellipsis", help: "Skill actions") {
-                Button("Use in Input") { model.useSkillInComposer(skill) }
-                Button("Edit") { if model.requestOpenFile(skill.path) {
+                Button(L("Use in Input")) { model.useSkillInComposer(skill) }
+                Button(L("Edit")) { if model.requestOpenFile(skill.path) {
                     model.selectedSkill = skill
                 } }
-                Button("Duplicate") { model.duplicateSkill(skill) }
-                Button("Reveal in Finder") { model.requestRevealFile(skill.path) }
-                Button("Open") { model.requestOpenExternalFile(skill.path) }
+                Button(L("Duplicate")) { model.duplicateSkill(skill) }
+                Button(L("Reveal in Finder")) { model.requestRevealFile(skill.path) }
+                Button(L("Open")) { model.requestOpenExternalFile(skill.path) }
                 Divider()
-                Button("Delete", role: .destructive) { model.selectedSkill = skill; model.deleteSelectedSkill() }
+                Button(L("Delete"), role: .destructive) { model.selectedSkill = skill; model.deleteSelectedSkill() }
             }
             Toggle("", isOn: Binding(
                 get: { !skill.disabled },
@@ -1655,7 +1660,7 @@ struct SkillsPanelView: View {
             ))
             .toggleStyle(.switch)
             .labelsHidden()
-            .help(skill.disabled ? "Enable skill" : "Disable skill")
+            .help(skill.disabled ? L("Enable skill") : L("Disable skill"))
         }
         .padding(10)
         .liquidGlassControl(
@@ -1673,34 +1678,34 @@ struct SkillsPanelView: View {
             }
         }
         .contextMenu {
-            Button("Use in Input") { model.useSkillInComposer(skill) }
-            Button("Edit") { if model.requestOpenFile(skill.path) {
+            Button(L("Use in Input")) { model.useSkillInComposer(skill) }
+            Button(L("Edit")) { if model.requestOpenFile(skill.path) {
                 model.selectedSkill = skill
             } }
-            Button("Duplicate") { model.duplicateSkill(skill) }
-            Button(skill.disabled ? "Enable" : "Disable") { model.selectedSkill = skill; model.toggleSelectedSkillEnabled() }
-            Button("Reveal in Finder") { model.requestRevealFile(skill.path) }
-            Button("Open") { model.requestOpenExternalFile(skill.path) }
+            Button(L("Duplicate")) { model.duplicateSkill(skill) }
+            Button(skill.disabled ? L("Enable") : L("Disable")) { model.selectedSkill = skill; model.toggleSelectedSkillEnabled() }
+            Button(L("Reveal in Finder")) { model.requestRevealFile(skill.path) }
+            Button(L("Open")) { model.requestOpenExternalFile(skill.path) }
             Divider()
-            Button("Delete", role: .destructive) { model.selectedSkill = skill; model.deleteSelectedSkill() }
+            Button(L("Delete"), role: .destructive) { model.selectedSkill = skill; model.deleteSelectedSkill() }
         }
     }
 
     private func scopeBadge(_ scope: String) -> some View {
-        Text(scope == "global" ? "G" : "P")
+        Text(scope == "global" ? L("G") : L("P"))
             .font(.system(size: 9, weight: .bold, design: .rounded))
             .frame(width: 18, height: 18)
             .background((scope == "global" ? Color.blue : Color.green).opacity(0.18))
             .foregroundStyle(scope == "global" ? Color.blue : Color.green)
             .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .help(scope.capitalized)
+            .help(scope == "global" ? L("Global") : L("Project"))
     }
 
     @ViewBuilder private func metadataLine(for skill: SkillInfo) -> some View {
         let parts = [
-            skill.model.map { "model: \($0)" },
-            skill.context.map { "context: \($0)" },
-            skill.version.map { "version: \($0)" }
+            skill.model.map { LF("model: %@", $0) },
+            skill.context.map { LF("context: %@", $0) },
+            skill.version.map { LF("version: %@", $0) }
         ].compactMap { $0 }
         if !parts.isEmpty {
             Text(parts.joined(separator: " · "))
@@ -1711,7 +1716,7 @@ struct SkillsPanelView: View {
     }
 
     private func createSkill(projectScoped: Bool) {
-        if let name = promptForFileName(title: projectScoped ? "New project skill" : "New global skill", defaultValue: "new-skill") {
+        if let name = promptForFileName(title: projectScoped ? L("New project skill") : L("New global skill"), defaultValue: "new-skill") {
             model.createSkill(name: name, projectScoped: projectScoped)
         }
     }
@@ -1741,8 +1746,8 @@ struct MCPPanelView: View {
     @State private var command = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Text("MCP Servers").font(.headline); Spacer(); Button("Reload") { model.reloadMCPAndSkills() } }
-            HStack { TextField("name", text: $serverName); TextField("command", text: $command); Button("Add") { if !serverName.isEmpty {
+            HStack { Text(L("MCP Servers")).font(.headline); Spacer(); Button(L("Reload")) { model.reloadMCPAndSkills() } }
+            HStack { TextField(L("name"), text: $serverName); TextField(L("command"), text: $command); Button(L("Add")) { if !serverName.isEmpty {
                 model.addMCPServer(
                     name: serverName,
                     command: command
@@ -1750,13 +1755,13 @@ struct MCPPanelView: View {
             List(model.mcpServers) { server in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack { Text(server.name).font(.headline); Spacer(); Text(server.transport).font(.caption).padding(4).background(.thinMaterial).clipShape(Capsule()) }
-                    Text(server.command ?? server.url ?? "No command/url").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Text(server.command ?? server.url ?? L("No command/url")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     HStack {
-                        Text(server.source).font(.caption2).foregroundStyle(.tertiary); Spacer(); Button("Test") { model.testMCPServer(server) }; if
+                        Text(server.source).font(.caption2).foregroundStyle(.tertiary); Spacer(); Button(L("Test")) { model.testMCPServer(server) }; if
                             server
                                 .source != "Claude" {
                             Button(
-                                "Delete",
+                                L("Delete"),
                                 role: .destructive
                             ) { model.deleteMCPServer(server) } } }
                 }.padding(.vertical, 4)
@@ -1772,9 +1777,9 @@ struct AgentPanelView: View {
             LazyVStack(alignment: .leading, spacing: 10) {
                 if model.selectedToolCalls.isEmpty {
                     ContentUnavailableView(
-                        "No agent activity",
+                        L("No agent activity"),
                         systemImage: "point.3.connected.trianglepath.dotted",
-                        description: Text("Tool calls and sub-agent work appear here while Claude is running.")
+                        description: Text(L("Tool calls and sub-agent work appear here while Claude is running."))
                     )
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 80)
@@ -1798,7 +1803,7 @@ struct AgentPanelView: View {
                                         .isEmpty {
                                     Text(tool.inputPreview).font(.system(.caption, design: .monospaced)).lineLimit(3).foregroundStyle(.secondary).textSelection(.enabled) }
                                 if let parent = tool.parentID {
-                                    Text("Parent: \(parent)").font(.caption2).foregroundStyle(.tertiary)
+                                    Text(LF("Parent: %@", parent)).font(.caption2).foregroundStyle(.tertiary)
                                 }
                             }
                             Spacer()
@@ -1819,10 +1824,10 @@ struct AgentPopoverView: View {
         GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 22) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Agents")
+                    Text(L("Agents"))
                         .font(.headline)
                     Spacer()
-                    Text("\(max(model.selectedToolCalls.count, model.selectedHasActiveTurn ? 1 : 0)) agents")
+                    Text(LF("%d agents", max(model.selectedToolCalls.count, model.selectedHasActiveTurn ? 1 : 0)))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1848,7 +1853,7 @@ struct AgentFloatingOverlayView: View {
             GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 24) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Label("Agent Activity", systemImage: "point.3.connected.trianglepath.dotted")
+                        Label(L("Agent Activity"), systemImage: "point.3.connected.trianglepath.dotted")
                             .font(.title3.bold())
                         Spacer()
                         ToolbarIconButton(systemImage: "xmark", help: "Close agents") { model.agentPanelOpen = false }
@@ -1878,7 +1883,7 @@ struct PermissionSheetView: View {
                             Text(permission.title).font(.title3.bold()); Text(permission.risk.rawValue).font(.caption).foregroundStyle(.secondary) }; Spacer() }
                 Text(permission.summary).font(.callout).foregroundStyle(.secondary)
                 TextEditor(text: $editedInput).font(.system(.caption, design: .monospaced)).frame(height: 180).onAppear { editedInput = permission.inputJSON }
-                HStack { Button("Deny", role: .destructive) { model.respondPermission(permission, allow: false) }; Spacer(); Button("Allow Once") { model.respondPermission(
+                HStack { Button(L("Deny"), role: .destructive) { model.respondPermission(permission, allow: false) }; Spacer(); Button(L("Allow Once")) { model.respondPermission(
                     permission,
                     allow: true,
                     editedInput: editedInput
@@ -1943,7 +1948,7 @@ struct SettingsPanelView: View {
 
     private var settingsHeader: some View {
         HStack {
-            Text("Settings")
+            Text(L("Settings"))
                 .font(.system(size: 25, weight: .bold, design: .rounded))
             Spacer()
             ToolbarIconButton(systemImage: "xmark", help: "Close settings") { model.settingsOpen = false }
@@ -1959,7 +1964,7 @@ struct SettingsPanelView: View {
                     HStack(spacing: 12) {
                         Image(systemName: settingsTabIcon(tab))
                             .frame(width: 18)
-                        Text(tab.rawValue)
+                        Text(tab.label)
                         if tab == .cli && model.cliStatus.updateAvailable {
                             Circle().fill(Color.red).frame(width: 7, height: 7)
                         }
@@ -1977,7 +1982,7 @@ struct SettingsPanelView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("LiquidCode v0.1.0")
                         .font(.caption.weight(.semibold))
-                    Text("Interaction parity")
+                    Text(L("Interaction parity"))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -1991,19 +1996,22 @@ struct SettingsPanelView: View {
 
     private var settingsFooter: some View {
         HStack(spacing: 12) {
-            Label(model.cliStatus.installed ? "CLI ready" : "CLI missing", systemImage: model.cliStatus.installed ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(model.cliStatus.installed ? .mint : .orange)
+            Label(
+                model.cliStatus.installed ? L("CLI ready") : L("CLI missing"),
+                systemImage: model.cliStatus.installed ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+            )
+            .foregroundStyle(model.cliStatus.installed ? .mint : .orange)
             if let version = model.cliStatus.version {
                 Text("v\(version)").foregroundStyle(.secondary)
             }
             if model.cliStatus.updateAvailable, let latest = model.cliStatus.latestVersion {
-                Text("Update available: \(latest)")
+                Text(LF("Update available: %@", latest))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.red)
             }
             Spacer()
-            Button("Changelog") { model.showChangelog() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
-            Button("Check CLI") { model.refreshCLIStatus() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
+            Button(L("Changelog")) { model.showChangelog() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
+            Button(L("Check CLI")) { model.refreshCLIStatus() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
         }
         .font(.caption)
         .padding(.horizontal, 24)
@@ -2012,9 +2020,9 @@ struct SettingsPanelView: View {
 
     private var generalContent: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsSectionCard(title: "General", subtitle: "LiquidCode visual identity with native interaction parity", icon: "sun.max") {
+            SettingsSectionCard(title: L("General"), subtitle: L("LiquidCode visual identity with native interaction parity"), icon: "sun.max") {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Theme")
+                    Text(L("Theme"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
@@ -2032,13 +2040,13 @@ struct SettingsPanelView: View {
                             .liquidGlassButton(active: model.settings.theme == theme, radius: 16)
                         }
                     }
-                    Text("Accent")
+                    Text(L("Accent"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
                         ForEach(AccentTheme.allCases) { accent in
                             Button { model.settings.accent = accent; model.persistSettings() } label: {
-                                HStack { Circle().fill(accent.color).frame(width: 16, height: 16); Text(accent.rawValue.capitalized); Spacer() }
+                                HStack { Circle().fill(accent.color).frame(width: 16, height: 16); Text(L(accent.rawValue.capitalized)); Spacer() }
                             }
                             .buttonStyle(.plain)
                             .liquidGlassButton(active: model.settings.accent == accent, radius: 14)
@@ -2047,17 +2055,17 @@ struct SettingsPanelView: View {
                 }
             }
 
-            SettingsSectionCard(title: "Composer defaults", subtitle: "Mode, thinking and typography used by new sends", icon: "text.cursor") {
+            SettingsSectionCard(title: L("Composer defaults"), subtitle: L("Mode, thinking and typography used by new sends"), icon: "text.cursor") {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading) {
-                        Text("Font size: \(Int(model.settings.fontSize))")
+                        Text(LF("Font size: %d", Int(model.settings.fontSize)))
                             .font(.caption.weight(.semibold))
-                        Slider(value: $model.settings.fontSize, in: 11 ... 22) { Text("Font Size") }
+                        Slider(value: $model.settings.fontSize, in: 11 ... 22) { Text(L("Font Size")) }
                             .onChange(of: model.settings.fontSize) { _, _ in model.persistSettings() }
                     }
-                    Picker("Mode", selection: $model.settings.sessionMode) { ForEach(SessionMode.allCases) { Text($0.label).tag($0) } }
+                    Picker(L("Mode"), selection: $model.settings.sessionMode) { ForEach(SessionMode.allCases) { Text($0.label).tag($0) } }
                         .onChange(of: model.settings.sessionMode) { _, value in model.setComposerMode(value) }
-                    Picker("Thinking", selection: $model.settings.thinkingLevel) { ForEach(ThinkingLevel.allCases) { Text($0.label).tag($0) } }
+                    Picker(L("Thinking"), selection: $model.settings.thinkingLevel) { ForEach(ThinkingLevel.allCases) { Text($0.label).tag($0) } }
                         .onChange(of: model.settings.thinkingLevel) { _, value in model.setComposerThinkingLevel(value) }
                 }
             }
@@ -2065,11 +2073,11 @@ struct SettingsPanelView: View {
     }
 
     private var mcpContent: some View {
-        SettingsSectionCard(title: "MCP Servers", subtitle: "Create, edit, test and delete app-local MCP profiles", icon: "server.rack") {
+        SettingsSectionCard(title: L("MCP Servers"), subtitle: L("Create, edit, test and delete app-local MCP profiles"), icon: "server.rack") {
             HStack(spacing: 8) {
-                TextField("server name", text: $mcpName).textFieldStyle(.roundedBorder)
-                TextField("command with args or URL", text: $mcpCommand).textFieldStyle(.roundedBorder)
-                Button("Add") { if !mcpName.isEmpty {
+                TextField(L("server name"), text: $mcpName).textFieldStyle(.roundedBorder)
+                TextField(L("command with args or URL"), text: $mcpCommand).textFieldStyle(.roundedBorder)
+                Button(L("Add")) { if !mcpName.isEmpty {
                     model.addMCPServer(name: mcpName, command: mcpCommand); mcpName = ""; mcpCommand = ""
                 } }
                 .buttonStyle(.plain)
@@ -2093,7 +2101,7 @@ struct SettingsPanelView: View {
                                     .background(Color.primary.opacity(0.05))
                                     .clipShape(Capsule())
                                 if !server.args.isEmpty {
-                                    Text("\(server.args.count) args")
+                                    Text(LF("%d args", server.args.count))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                         .padding(.horizontal, 6)
@@ -2105,23 +2113,23 @@ struct SettingsPanelView: View {
                             Text(mcpCommandLine(server)).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
                         }
                         Spacer()
-                        Button("Test") { model.testMCPServer(server) }
+                        Button(L("Test")) { model.testMCPServer(server) }
                             .buttonStyle(.plain)
                             .liquidGlassButton(radius: 10)
                         if server.source == "LiquidCode" {
-                            Button("Edit") {
-                                if let result = promptForMCPServer(title: "Edit MCP server", defaultName: server.name, defaultCommand: mcpCommandLine(server)) {
+                            Button(L("Edit")) {
+                                if let result = promptForMCPServer(title: L("Edit MCP server"), defaultName: server.name, defaultCommand: mcpCommandLine(server)) {
                                     model.updateMCPServer(server, name: result.name, command: result.command)
                                 }
                             }
                             .buttonStyle(.plain)
                             .liquidGlassButton(radius: 10)
-                            Button("Delete", role: .destructive) { model.deleteMCPServer(server) }
+                            Button(L("Delete"), role: .destructive) { model.deleteMCPServer(server) }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.red)
                                 .liquidGlassButton(radius: 10)
                         } else {
-                            Text("Read-only")
+                            Text(L("Read-only"))
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.tertiary)
                                 .padding(.horizontal, 8)
@@ -2135,7 +2143,7 @@ struct SettingsPanelView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 if model.mcpServers.isEmpty {
-                    ContentUnavailableView("No MCP servers", systemImage: "server.rack")
+                    ContentUnavailableView(L("No MCP servers"), systemImage: "server.rack")
                 }
             }
         }
@@ -2150,19 +2158,24 @@ struct SettingsPanelView: View {
 
     private var cliContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionCard(title: "Claude Code CLI", subtitle: "Native install, update, login and repair", icon: "terminal") {
+            SettingsSectionCard(title: L("Claude Code CLI"), subtitle: L("Native install, update, login and repair"), icon: "terminal") {
                 HStack(alignment: .top, spacing: 14) {
                     StatusDot(color: model.cliStatus.installed ? .mint : .orange)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(model.cliStatus.installed ? "Installed" : "Not installed")
+                        Text(model.cliStatus.installed ? L("Installed") : L("Not installed"))
                             .font(.headline)
-                        Text(model.cliStatus.path ?? "Claude CLI executable was not found")
+                        Text(model.cliStatus.path ?? L("Claude CLI executable was not found"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
-                        Text("Auth: \(model.cliStatus.authStatus) · node \(model.cliStatus.nodeAvailable ? "yes" : "no") · npm \(model.cliStatus.npmAvailable ? "yes" : "no")")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                        Text(LF(
+                            "Auth: %@ · node %@ · npm %@",
+                            L(model.cliStatus.authStatus),
+                            model.cliStatus.nodeAvailable ? L("yes") : L("no"),
+                            model.cliStatus.npmAvailable ? L("yes") : L("no")
+                        ))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                     }
                     Spacer()
                     if let version = model.cliStatus.version {
@@ -2170,7 +2183,7 @@ struct SettingsPanelView: View {
                     }
                 }
                 if model.cliStatus.updateAvailable, let latest = model.cliStatus.latestVersion {
-                    Label("Update available: \(latest)", systemImage: "arrow.down.circle.fill")
+                    Label(LF("Update available: %@", latest), systemImage: "arrow.down.circle.fill")
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.red)
                         .padding(10)
@@ -2187,16 +2200,16 @@ struct SettingsPanelView: View {
                     }
                 }
                 HStack {
-                    Button("Refresh") { model.refreshCLIStatus() }; Button("Install / Update") { model.installOrUpdateCLI() }; Button("Login") { model.openClaudeLogin()
-                    }; Button("Repair") { model.repairCLI() }; Button("Open Config") { model.openClaudeConfig() } }
+                    Button(L("Refresh")) { model.refreshCLIStatus() }; Button(L("Install / Update")) { model.installOrUpdateCLI() }; Button(L("Login")) { model.openClaudeLogin()
+                    }; Button(L("Repair")) { model.repairCLI() }; Button(L("Open Config")) { model.openClaudeConfig() } }
                     .buttonStyle(.plain)
             }
         }
     }
 
     private var feedbackContent: some View {
-        SettingsSectionCard(title: "Feedback & Diagnostics", subtitle: "Logs and support artifacts", icon: "bubble.left.and.text.bubble.right") {
-            Text("Diagnostics live at:")
+        SettingsSectionCard(title: L("Feedback & Diagnostics"), subtitle: L("Logs and support artifacts"), icon: "bubble.left.and.text.bubble.right") {
+            Text(L("Diagnostics live at:"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(AppPaths.shared.logs.path)
@@ -2206,10 +2219,10 @@ struct SettingsPanelView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.primary.opacity(0.04))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            HStack { Button("Reveal Logs") { model.revealLogs() }; Button("Copy Diagnostics") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(
+            HStack { Button(L("Reveal Logs")) { model.revealLogs() }; Button(L("Copy Diagnostics")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(
                 "LiquidCode \(model.cliStatus.version ?? "unknown")\nLogs: \(AppPaths.shared.logs.path)",
                 forType: .string
-            ); model.toastSuccess("Copied diagnostics", AppPaths.shared.logs.path) } }
+            ); model.toastSuccess(L("Copied diagnostics"), AppPaths.shared.logs.path) } }
         }
     }
 

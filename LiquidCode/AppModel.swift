@@ -550,7 +550,7 @@ extension AppModel {
             filePreviewCleanContent = ""
             fileEditDirty = false
             directoryWatcher.unwatchAll()
-            toastWarning("Project unavailable", "\(session.projectDir) no longer exists. Reopen the project folder to continue editing files.")
+            toastWarning("Project unavailable", LF("%@ no longer exists. Reopen the project folder to continue editing files.", session.projectDir))
             reloadMCPAndSkills()
             return
         }
@@ -584,11 +584,11 @@ extension AppModel {
 
     func newChat() {
         let panel = NSOpenPanel()
-        panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false; panel.prompt = "Open Project"
+        panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false; panel.prompt = L("Open Project")
         if panel.runModal() == .OK, let url = panel.url {
             let projectDir = existingDirectoryPath(url.path) ?? url.path
             let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
-            let session = SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: "New chat", cliResumeID: nil, isDraft: true)
+            let session = SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: L("New chat"), cliResumeID: nil, isDraft: true)
             sessions.insert(session, at: 0)
             messagesBySession[id] = []
             snapshotComposerState(for: selectedSessionID)
@@ -609,11 +609,11 @@ extension AppModel {
     func loadProject(_ path: String) {
         guard let projectDir = existingDirectoryPath(path) else {
             forgetRecentProject(path)
-            toastWarning("Project unavailable", "\(path) no longer exists and was removed from Recent Projects.")
+            toastWarning("Project unavailable", LF("%@ no longer exists and was removed from Recent Projects.", path))
             return
         }
         let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
-        sessions.insert(SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: "New chat", isDraft: true), at: 0)
+        sessions.insert(SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: L("New chat"), isDraft: true), at: 0)
         snapshotComposerState(for: selectedSessionID)
         selectedSessionID = id
         composerTextBySession[id] = ""
@@ -633,7 +633,7 @@ extension AppModel {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Choose Project"
+        panel.prompt = L("Choose Project")
         if !workingDirectory.isEmpty {
             panel.directoryURL = URL(fileURLWithPath: workingDirectory, isDirectory: true)
         } else if let recent = sessionIndex.mostRecentProjectDirectory() {
@@ -695,7 +695,7 @@ extension AppModel {
         guard let projectDir = existingDirectoryPath(path) else {
             forgetRecentProject(path)
             if showToast {
-                toastWarning("Project unavailable", "\(path) no longer exists.")
+                toastWarning("Project unavailable", LF("%@ no longer exists.", path))
             }
             return false
         }
@@ -736,7 +736,7 @@ extension AppModel {
                 ? workingDirectory
                 : FileManager.default.homeDirectoryForCurrentUser.path
             let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
-            let session = SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: "New chat", cliResumeID: nil, isDraft: true)
+            let session = SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: L("New chat"), cliResumeID: nil, isDraft: true)
             sessions.insert(session, at: 0)
             messagesBySession[id] = []
             selectedSessionID = id
@@ -779,7 +779,7 @@ extension AppModel {
         guard let cwd = existingDirectoryPath(preferredCWD) ?? existingDirectoryPath(fallbackCWD) else {
             setComposerText(text, for: id)
             setAttachments(attachments, for: id)
-            showError("Project unavailable", "\(preferredCWD) no longer exists. Reopen the project folder before sending.")
+            showError("Project unavailable", LF("%@ no longer exists. Reopen the project folder before sending.", preferredCWD))
             return
         }
         do {
@@ -842,9 +842,9 @@ extension AppModel {
 
     func respondPermission(_ permission: PermissionRequest, allow: Bool, editedInput: String? = nil) {
         do {
-            try engine.respondPermission(permission, allow: allow, updatedInputJSON: editedInput, message: allow ? nil : "User denied this operation")
+            try engine.respondPermission(permission, allow: allow, updatedInputJSON: editedInput, message: allow ? nil : L("User denied this operation"))
             pendingPermissions.removeAll { $0.id == permission.id }
-            let state = allow ? "Allowed" : "Denied"
+            let state = allow ? L("Allowed") : L("Denied")
             appendMessage(ChatMessage(role: .system, content: "\(state) \(permission.toolName): \(permission.summary)"), sessionID: permission.sessionID)
         } catch { showError("Permission response failed", error.localizedDescription) }
     }
@@ -929,7 +929,7 @@ extension AppModel {
         guard let root = existingDirectoryPath(workingDirectory) else {
             directoryWatcher.unwatchAll()
             fileTree = []
-            toastWarning("Project unavailable", "\(workingDirectory) no longer exists. File watching is paused.")
+            toastWarning("Project unavailable", LF("%@ no longer exists. File watching is paused.", workingDirectory))
             return
         }
         workingDirectory = root
@@ -1028,7 +1028,7 @@ extension AppModel {
         for id in selectedSessionIDs {
             mutateSession(id) { $0.archived = true }
         }
-        toastSuccess("Archived sessions", "\(selectedSessionIDs.count) session(s)")
+        toastSuccess("Archived sessions", LF("%d session(s)", selectedSessionIDs.count))
         clearSessionSelection()
     }
 
@@ -1044,7 +1044,7 @@ extension AppModel {
         let compact = source
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = compact.isEmpty ? "New Chat" : String(compact.prefix(42))
+        let title = compact.isEmpty ? L("New Chat") : String(compact.prefix(42))
         mutateSession(session.id) { $0.customTitle = title }
         toastSuccess("Generated title", title)
     }
@@ -1080,7 +1080,7 @@ extension AppModel {
             selectedSessionID = sessions.first?.id
         }
         saveSessionMeta()
-        toastWarning("Deleted session", "Undo is available for \(session.title)")
+        toastWarning("Deleted session", LF("Undo is available for %@", session.title))
     }
 
     private func backupSessionForUndo(_ session: SessionRecord) -> String? {
@@ -1155,9 +1155,9 @@ extension AppModel {
         let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
         if ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff"].contains(ext) {
             let info = try? fileSystem.imageInfo(path, sessionID: selectedSessionID)
-            let size = info?.size ?? "unknown size"
-            let dimensions = info?.dimensions ?? "unknown dimensions"
-            let preview = "Image preview\n\nPath: \(path)\nSize: \(size)\nDimensions: \(dimensions)\n\nUse Open or Reveal for the native image viewer."
+            let size = info?.size ?? L("unknown size")
+            let dimensions = info?.dimensions ?? L("unknown dimensions")
+            let preview = LF("Image preview\n\nPath: %@\nSize: %@\nDimensions: %@\n\nUse Open or Reveal for the native image viewer.", path, size, dimensions)
             selectedFilePath = path
             filePreview = preview
             filePreviewCleanContent = preview
@@ -1223,12 +1223,12 @@ extension AppModel {
             return true
         }
         let alert = NSAlert()
-        alert.messageText = "Unsaved file changes"
-        alert.informativeText = "Save the current file before changing the preview selection?"
+        alert.messageText = L("Unsaved file changes")
+        alert.informativeText = L("Save the current file before changing the preview selection?")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("Save"))
+        alert.addButton(withTitle: L("Discard"))
+        alert.addButton(withTitle: L("Cancel"))
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             saveSelectedFile()
@@ -1726,7 +1726,7 @@ extension AppModel {
 
     func updateMCPServer(_ server: MCPServer, name: String, command: String) {
         guard server.source == "LiquidCode" else {
-            toastWarning("MCP is read-only", "\(server.name) is managed by \(server.source).")
+            toastWarning("MCP is read-only", LF("%@ is managed by %@.", server.name, server.source))
             return
         }
         let next = appLocalMCPServer(name: name, commandLine: command)
@@ -1737,7 +1737,7 @@ extension AppModel {
 
     func deleteMCPServer(_ server: MCPServer) {
         guard server.source == "LiquidCode" else {
-            toastWarning("MCP is read-only", "\(server.name) is managed by \(server.source).")
+            toastWarning("MCP is read-only", LF("%@ is managed by %@.", server.name, server.source))
             return
         }
         mcpServers.removeAll { $0.name == server.name && $0.source == "LiquidCode" }
@@ -1746,12 +1746,12 @@ extension AppModel {
 
     func testMCPServer(_ server: MCPServer) {
         if let url = server.url, URL(string: url) != nil {
-            toastSuccess("MCP config valid", "\(server.name) uses \(url)"); return
+            toastSuccess("MCP config valid", LF("%@ uses %@", server.name, url)); return
         }
         guard let command = server.command?.split(separator: " ").first.map(String.init), !command.isEmpty else {
             toastWarning(
                 "MCP config incomplete",
-                "\(server.name) has no command or URL"
+                LF("%@ has no command or URL", server.name)
             ); return }
         let resolved = command.contains("/") ? (FileManager.default.isExecutableFile(atPath: command) ? command : nil) : Shell.capture("/usr/bin/env", ["which", command])
         if let resolved, !resolved.isEmpty {
@@ -1850,16 +1850,16 @@ extension AppModel {
             return
         }
         guard let apiKey = providerVault.apiKey(providerID: activeProvider.id), !apiKey.isEmpty else {
-            toastWarning("Provider key missing", "Save an API key for \(activeProvider.name) before testing the connection.")
+            toastWarning("Provider key missing", LF("Save an API key for %@ before testing the connection.", activeProvider.name))
             return
         }
         do {
             let model = try resolvedModelForActiveProvider()
-            toastInfo("Testing provider", "Calling \(activeProvider.name) with \(model)…")
+            toastInfo("Testing provider", LF("Calling %@ with %@…", activeProvider.name, model))
             Task { @MainActor in
                 do {
                     let result = try await ProviderConnectionProbe.probe(provider: activeProvider, apiKey: apiKey, model: model)
-                    toastSuccess("Provider connected", "\(activeProvider.name) responded in \(result.latencyMilliseconds)ms (HTTP \(result.statusCode)).")
+                    toastSuccess("Provider connected", LF("%@ responded in %dms (HTTP %d).", activeProvider.name, result.latencyMilliseconds, result.statusCode))
                 } catch let appError as AppError {
                     showError(appError.title, appError.message)
                 } catch {
@@ -1931,7 +1931,7 @@ extension AppModel {
     func importProviders() {
         let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.allowedContentTypes = [.json]
         if panel.runModal() == .OK, let url = panel.url, let imported = JSONFile.load(ProviderVault.ProviderFile.self, from: url) {
-            providers = imported.providers; activeProviderID = imported.activeProviderID; saveProviders(); toastSuccess("Imported providers", "\(providers.count) providers")
+            providers = imported.providers; activeProviderID = imported.activeProviderID; saveProviders(); toastSuccess("Imported providers", LF("%d providers", providers.count))
         }
     }
 
@@ -1948,7 +1948,7 @@ extension AppModel {
             activeProviderID = result.providerFile.activeProviderID ?? settings.selectedProviderID
             persistSettings()
             refreshOnboardingPlan()
-            toastSuccess("Migrated providers", "Imported \(result.importedProviderIDs.count) providers. Rollback is available.")
+            toastSuccess("Migrated providers", LF("Imported %d providers. Rollback is available.", result.importedProviderIDs.count))
         } catch {
             showError("Provider migration failed", error.localizedDescription)
             refreshOnboardingPlan()
@@ -1990,7 +1990,7 @@ extension AppModel {
     }
 
     func installOrUpdateCLI() {
-        setupProgress = SetupProgress(phase: .checking, percent: 0.05, message: "Checking Claude CLI release sources")
+        setupProgress = SetupProgress(phase: .checking, percent: 0.05, message: L("Checking Claude CLI release sources"))
         DispatchQueue.global(qos: .userInitiated).async { [cliService] in
             let result = cliService.installOrUpdate(progress: { event in
                 Task { @MainActor in
@@ -2007,7 +2007,7 @@ extension AppModel {
     func repairCLI() {
         let report = cliService.repairCLI()
         refreshCLIStatus()
-        let removed = report.removed.isEmpty ? "No files removed" : "Removed \(report.removed.count) app-local broken item(s)"
+        let removed = report.removed.isEmpty ? L("No files removed") : LF("Removed %d app-local broken item(s)", report.removed.count)
         let notes = report.notes.prefix(3).joined(separator: "\n")
         toastInfo("CLI repair complete", [removed, notes].filter { !$0.isEmpty }.joined(separator: "\n"))
     }
@@ -2025,7 +2025,7 @@ extension AppModel {
     }
 
     func openClaudeLogin() {
-        cliService.openTerminalLogin(); setupProgress = SetupProgress(phase: .authenticating, percent: 0.5, message: "Claude login opened in Terminal")
+        cliService.openTerminalLogin(); setupProgress = SetupProgress(phase: .authenticating, percent: 0.5, message: L("Claude login opened in Terminal"))
     }
 
     func openClaudeConfig() {
@@ -2042,7 +2042,7 @@ extension AppModel {
     }
 
     private func showToast(_ kind: ToastMessage.Kind, _ title: String, _ message: String) {
-        let next = ToastMessage(kind: kind, title: title, message: message)
+        let next = ToastMessage(kind: kind, title: L(title), message: L(message))
         toast = next
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(4))
@@ -2153,24 +2153,24 @@ extension AppModel {
 
     var paletteCommands: [PaletteCommand] {
         var commands: [PaletteCommand] = [
-            .init(title: "New Chat", subtitle: "Open a project and start a draft", kind: .newChat),
-            .init(title: "Settings", subtitle: "CLI, MCP, appearance", kind: .settings),
-            .init(title: "Files Panel", subtitle: "Show project files", kind: .panel(.files)),
-            .init(title: "Plan Panel", subtitle: "Review plan drafts and approvals", kind: .panel(.plan)),
-            .init(title: "Skills Panel", subtitle: "Show Claude skills", kind: .panel(.skills)),
-            .init(title: "MCP Settings", subtitle: "Show MCP servers in Settings", kind: .mcpSettings),
-            .init(title: "Agents Panel", subtitle: "Show agent activity overlay", kind: .agentsOverlay),
-            .init(title: "Install or Update Claude CLI", subtitle: cliStatus.version ?? "Claude CLI", kind: .installCLI),
-            .init(title: "Claude Login", subtitle: cliStatus.authStatus, kind: .loginCLI),
-            .init(title: "Export Current Session", subtitle: "Markdown export", kind: .exportCurrent),
-            .init(title: "Rewind to Last User Turn", subtitle: "Request Claude checkpoint restore", kind: .rewind),
-            .init(title: "What's New", subtitle: "Open changelog", kind: .changelog)
+            .init(title: L("New Chat"), subtitle: L("Open a project and start a draft"), kind: .newChat),
+            .init(title: L("Settings"), subtitle: L("CLI, MCP, appearance"), kind: .settings),
+            .init(title: L("Files Panel"), subtitle: L("Show project files"), kind: .panel(.files)),
+            .init(title: L("Plan Panel"), subtitle: L("Review plan drafts and approvals"), kind: .panel(.plan)),
+            .init(title: L("Skills Panel"), subtitle: L("Show Claude skills"), kind: .panel(.skills)),
+            .init(title: L("MCP Settings"), subtitle: L("Show MCP servers in Settings"), kind: .mcpSettings),
+            .init(title: L("Agents Panel"), subtitle: L("Show agent activity overlay"), kind: .agentsOverlay),
+            .init(title: L("Install or Update Claude CLI"), subtitle: cliStatus.version ?? "Claude CLI", kind: .installCLI),
+            .init(title: L("Claude Login"), subtitle: cliStatus.authStatus, kind: .loginCLI),
+            .init(title: L("Export Current Session"), subtitle: L("Markdown export"), kind: .exportCurrent),
+            .init(title: L("Rewind to Last User Turn"), subtitle: L("Request Claude checkpoint restore"), kind: .rewind),
+            .init(title: L("What's New"), subtitle: L("Open changelog"), kind: .changelog)
         ]
-        commands += SessionMode.allCases.map { .init(title: "Mode: \($0.label)", subtitle: $0.permissionMode, kind: .mode($0)) }
-        commands += defaultModels.map { .init(title: "Model: \(modelMenuDisplayName($0))", subtitle: "Switch Claude model", kind: .model($0)) }
+        commands += SessionMode.allCases.map { .init(title: LF("Mode: %@", $0.label), subtitle: $0.permissionMode, kind: .mode($0)) }
+        commands += defaultModels.map { .init(title: LF("Model: %@", modelMenuDisplayName($0)), subtitle: L("Switch Claude model"), kind: .model($0)) }
         commands += ["/compact", "/cost", "/doctor", "/help", "/init", "/memory", "/mcp", "/permissions", "/pr_comments", "/review"].map { .init(
             title: $0,
-            subtitle: "Insert slash command",
+            subtitle: L("Insert slash command"),
             kind: .sendSlash($0)
         ) }
         commands += skills.map { .init(title: "/\($0.name)", subtitle: $0.description, kind: .sendSlash("/\($0.name)")) }
@@ -2193,7 +2193,7 @@ extension AppModel {
     }
 
     private func showError(_ title: String, _ message: String) {
-        currentError = AppError(title: title, message: message)
+        currentError = AppError(title: L(title), message: L(message))
     }
 
 }

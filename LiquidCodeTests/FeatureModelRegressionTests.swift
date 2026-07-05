@@ -764,7 +764,7 @@ final class FeatureModelRegressionTests: XCTestCase {
             XCTAssertTrue(model.sessions.isEmpty)
             XCTAssertTrue(model.recentProjects.isEmpty)
             XCTAssertNil(model.currentError)
-            XCTAssertEqual(model.toast?.title, "Project unavailable")
+            XCTAssertEqual(model.toast?.title, L("Project unavailable"))
             XCTAssertTrue(model.workingDirectory.isEmpty)
         }
     }
@@ -786,7 +786,7 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(model.selectedMessages.first?.content, "Old transcript remains readable.")
         XCTAssertTrue(model.fileTree.isEmpty)
         XCTAssertNil(model.currentError)
-        XCTAssertEqual(model.toast?.title, "Project unavailable")
+        XCTAssertEqual(model.toast?.title, L("Project unavailable"))
     }
 
     func testSendRestoresDraftWhenSelectedProjectDirectoryDisappeared() throws {
@@ -806,7 +806,7 @@ final class FeatureModelRegressionTests: XCTestCase {
 
         XCTAssertTrue(engine.startRequests.isEmpty)
         XCTAssertEqual(model.composerText, "do not lose this")
-        XCTAssertEqual(model.currentError?.title, "Project unavailable")
+        XCTAssertEqual(model.currentError?.title, L("Project unavailable"))
     }
 
     func testSessionBatchArchiveGenerateTitleDeleteAndUndo() throws {

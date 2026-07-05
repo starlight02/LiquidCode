@@ -1,6 +1,52 @@
 import Foundation
 import SwiftUI
 
+enum AppLocalization {
+    static let supportedLanguageCode = languageCode(for: Locale.preferredLanguages)
+    static let locale = Locale(identifier: supportedLanguageCode)
+
+    private static let selectedBundle = bundle(for: supportedLanguageCode)
+    private static let englishBundle = bundle(for: "en")
+
+    static func languageCode(for preferredLanguages: [String]) -> String {
+        let primary = preferredLanguages.first ?? Locale.current.identifier
+        return primary.lowercased().hasPrefix("zh") ? "zh-Hans" : "en"
+    }
+
+    static func localizedString(_ key: String, comment: String = "") -> String {
+        _ = comment
+        if let selected = selectedBundle {
+            let value = selected.localizedString(forKey: key, value: nil, table: nil)
+            if value != key {
+                return value
+            }
+        }
+        if supportedLanguageCode != "en", let english = englishBundle {
+            let value = english.localizedString(forKey: key, value: nil, table: nil)
+            if value != key {
+                return value
+            }
+        }
+        return key
+    }
+
+    private static func bundle(for languageCode: String) -> Bundle? {
+        guard let path = Bundle.main.path(forResource: languageCode, ofType: "lproj") else {
+            return nil
+        }
+        return Bundle(path: path)
+    }
+}
+
+// swiftlint:disable:next identifier_name
+func L(_ key: String, comment: String = "") -> String {
+    AppLocalization.localizedString(key, comment: comment)
+}
+
+func LF(_ key: String, _ arguments: CVarArg..., comment: String = "") -> String {
+    String(format: L(key, comment: comment), locale: AppLocalization.locale, arguments: arguments)
+}
+
 struct AppError: Identifiable, Error, Sendable {
     let id = UUID()
     let title: String
@@ -17,9 +63,9 @@ enum ThemeMode: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .system: "System"
-        case .light: "Light"
-        case .dark: "Dark"
+        case .system: L("System")
+        case .light: L("Light")
+        case .dark: L("Dark")
         }
     }
 }
@@ -54,10 +100,10 @@ enum SessionMode: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .code: "Code"
-        case .ask: "Ask"
-        case .plan: "Plan"
-        case .bypass: "Bypass"
+        case .code: L("Code")
+        case .ask: L("Ask")
+        case .plan: L("Plan")
+        case .bypass: L("Bypass")
         }
     }
 
@@ -84,12 +130,12 @@ enum ThinkingLevel: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .off: "No think"
-        case .low: "Low"
-        case .medium: "Medium"
-        case .high: "High"
-        case .xhigh: "X High"
-        case .max: "Max"
+        case .off: L("No think")
+        case .low: L("Low")
+        case .medium: L("Medium")
+        case .high: L("High")
+        case .xhigh: L("X High")
+        case .max: L("Max")
         }
     }
 
@@ -117,10 +163,10 @@ enum RewindAction: String, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .restoreAll: "Restore all"
-        case .restoreConversation: "Restore conversation"
-        case .restoreCode: "Restore code"
-        case .summarize: "Summarize from here"
+        case .restoreAll: L("Restore all")
+        case .restoreConversation: L("Restore conversation")
+        case .restoreCode: L("Restore code")
+        case .summarize: L("Summarize from here")
         }
     }
 
@@ -142,6 +188,10 @@ enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
         rawValue
     }
 
+    var label: String {
+        L(rawValue)
+    }
+
     var systemImage: String {
         switch self {
         case .files: "folder"
@@ -158,6 +208,10 @@ enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     case feedback = "Feedback"
     var id: String {
         rawValue
+    }
+
+    var label: String {
+        L(rawValue)
     }
 }
 
@@ -198,7 +252,7 @@ struct SessionRecord: Identifiable, Codable, Hashable, Sendable {
             return preview
         }
         if isDraft {
-            return "New Chat"
+            return L("New Chat")
         }
         return id
     }

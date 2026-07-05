@@ -76,23 +76,23 @@ final class CLIService: @unchecked Sendable {
         progress: @escaping @Sendable (CLIProgressEvent) -> Void
     ) -> CLIActionResult {
         let orderedBases = bases ?? (preferChina ? [Self.mirrorBase, Self.gcsBase] : releaseBases)
-        progress(CLIProgressEvent(phase: .checking, percent: 0.05, message: "Checking Claude CLI release sources"))
+        progress(CLIProgressEvent(phase: .checking, percent: 0.05, message: L("Checking Claude CLI release sources")))
         do {
             let version = try installNative(from: orderedBases, progress: progress)
-            progress(CLIProgressEvent(phase: .complete, percent: 1, message: "Claude CLI native install complete: \(version)"))
-            return CLIActionResult(ok: true, version: version, source: "native", message: "Installed Claude CLI \(version)")
+            progress(CLIProgressEvent(phase: .complete, percent: 1, message: LF("Claude CLI native install complete: %@", version)))
+            return CLIActionResult(ok: true, version: version, source: "native", message: LF("Installed Claude CLI %@", version))
         } catch {
             guard allowNPMFallback else {
                 progress(CLIProgressEvent(phase: .failed, percent: 1, message: error.localizedDescription))
                 return CLIActionResult(ok: false, version: nil, source: "native", message: error.localizedDescription)
             }
-            progress(CLIProgressEvent(phase: .npmFallback, percent: 0.7, message: "Native download failed; trying npm fallback"))
+            progress(CLIProgressEvent(phase: .npmFallback, percent: 0.7, message: L("Native download failed; trying npm fallback")))
             do {
                 let version = try installViaNPM()
-                progress(CLIProgressEvent(phase: .complete, percent: 1, message: "Claude CLI npm install complete: \(version ?? "unknown")"))
-                return CLIActionResult(ok: true, version: version, source: "npm", message: "Installed Claude CLI via npm")
+                progress(CLIProgressEvent(phase: .complete, percent: 1, message: LF("Claude CLI npm install complete: %@", version ?? L("unknown"))))
+                return CLIActionResult(ok: true, version: version, source: "npm", message: L("Installed Claude CLI via npm"))
             } catch let npmError {
-                let message = "Native download failed: \(error.localizedDescription). npm fallback failed: \(npmError.localizedDescription)"
+                let message = LF("Native download failed: %@. npm fallback failed: %@", error.localizedDescription, npmError.localizedDescription)
                 progress(CLIProgressEvent(phase: .failed, percent: 1, message: message))
                 return CLIActionResult(ok: false, version: nil, source: "none", message: message)
             }
@@ -189,7 +189,7 @@ final class CLIService: @unchecked Sendable {
         var downloaded = false
         for source in sources where source.version == version {
             let url = source.base.appendingPathComponent(version).appendingPathComponent(platform).appendingPathComponent(binaryName)
-            progress(CLIProgressEvent(phase: .downloading, percent: 0.2, message: "Downloading \(url.absoluteString)"))
+            progress(CLIProgressEvent(phase: .downloading, percent: 0.2, message: LF("Downloading %@", url.absoluteString)))
             guard let data = try? fetchData(url) else {
                 continue
             }
@@ -208,7 +208,7 @@ final class CLIService: @unchecked Sendable {
             try fileManager.removeItem(at: dest)
         }
         try fileManager.moveItem(at: tmp, to: dest)
-        progress(CLIProgressEvent(phase: .installing, percent: 0.9, message: "Installed \(dest.path)"))
+        progress(CLIProgressEvent(phase: .installing, percent: 0.9, message: LF("Installed %@", dest.path)))
         return version
     }
 
@@ -479,12 +479,12 @@ enum ProviderConnectionProbe {
         let start = Date()
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw AppError(title: "Provider check failed", message: "No HTTP response from \(provider.name)")
+            throw AppError(title: L("Provider check failed"), message: LF("No HTTP response from %@", provider.name))
         }
         let preview = responsePreview(from: data)
         let elapsed = max(0, Int(Date().timeIntervalSince(start) * 1000))
         guard (200 ..< 300).contains(http.statusCode) else {
-            throw AppError(title: "Provider check failed", message: "\(provider.name) returned HTTP \(http.statusCode): \(preview)")
+            throw AppError(title: L("Provider check failed"), message: LF("%@ returned HTTP %d: %@", provider.name, http.statusCode, preview))
         }
         return ProviderConnectionProbeResult(statusCode: http.statusCode, latencyMilliseconds: elapsed, preview: preview)
     }
@@ -501,7 +501,7 @@ enum ProviderConnectionProbe {
     private static func endpointURL(baseURL: String, apiRoot: String, leaf: String) throws -> URL {
         let clean = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, var components = URLComponents(string: clean), components.scheme != nil, components.host != nil else {
-            throw AppError(title: "Provider URL invalid", message: "Base URL is not a valid HTTP URL: \(baseURL)")
+            throw AppError(title: L("Provider URL invalid"), message: LF("Base URL is not a valid HTTP URL: %@", baseURL))
         }
         var path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let pathLower = path.lowercased()
@@ -515,7 +515,7 @@ enum ProviderConnectionProbe {
         }
         components.path = "/\(path)"
         guard let url = components.url else {
-            throw AppError(title: "Provider URL invalid", message: "Cannot construct provider endpoint from \(baseURL)")
+            throw AppError(title: L("Provider URL invalid"), message: LF("Cannot construct provider endpoint from %@", baseURL))
         }
         return url
     }

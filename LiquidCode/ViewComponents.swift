@@ -11,7 +11,7 @@ struct PaneResizeHandle: View {
             .frame(width: 8)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            .help(title)
+            .help(L(title))
             .zIndex(20)
     }
 }
@@ -53,7 +53,7 @@ struct NativeToolbarMenuLabel: View {
             Image(systemName: systemImage)
                 .font(.system(size: 12.5, weight: .semibold))
             if !title.isEmpty {
-                Text(title)
+                Text(L(title))
                     .font(.system(size: 12.5, weight: .semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
@@ -309,14 +309,14 @@ struct GlassSearchField: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.tertiary)
-            TextField(placeholder, text: $text)
+            TextField(L(placeholder), text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
-                    .help("Clear search")
+                    .help(L("Clear search"))
             }
         }
         .padding(.horizontal, 12)
@@ -333,7 +333,7 @@ struct IconChip: View {
     var action: () -> Void
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
+            Label(L(title), systemImage: systemImage)
                 .font(.system(size: 13, weight: .semibold))
                 .labelStyle(.titleAndIcon)
                 .foregroundStyle(Color.primary.opacity(active ? 0.90 : 0.78))
@@ -369,7 +369,7 @@ struct ToolbarIconButton: View {
         }
         .buttonStyle(.plain)
         .disabled(disabled)
-        .help(help)
+        .help(L(help))
     }
 }
 
@@ -398,7 +398,7 @@ struct ToolbarMenuIconButton<MenuContent: View>: View {
         }
         .buttonStyle(.plain)
         .disabled(disabled)
-        .help(help)
+        .help(L(help))
     }
 }
 
@@ -407,7 +407,7 @@ struct SectionCaption: View {
     var trailing: String?
     var body: some View {
         HStack {
-            Text(title.uppercased())
+            Text(L(title).uppercased())
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundStyle(.tertiary)
             Spacer()
@@ -633,12 +633,12 @@ struct FilePreviewShellView: View {
                         HStack(spacing: 8) {
                             Text(fileName).font(.system(size: 15, weight: .semibold)).lineLimit(1)
                             if lineCount(model.filePreview) > 0 {
-                                Text("\(lineCount(model.filePreview)) lines")
+                                Text(LF("%d lines", lineCount(model.filePreview)))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                             if model.fileEditDirty {
-                                Text("Unsaved")
+                                Text(L("Unsaved"))
                                     .font(.caption2.bold())
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
@@ -647,18 +647,18 @@ struct FilePreviewShellView: View {
                                     .clipShape(Capsule())
                             }
                         }
-                        Text(model.selectedFilePath ?? "No file selected").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Text(model.selectedFilePath ?? L("No file selected")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 12)
                     if model.fileEditDirty {
-                        Button("Discard") {
+                        Button(L("Discard")) {
                             if let path = model.selectedFilePath {
                                 model.openFile(path)
                             }
                         }
                         .buttonStyle(.plain)
                         .liquidGlassButton(radius: 10)
-                        Button("Save") { model.saveSelectedFile() }
+                        Button(L("Save")) { model.saveSelectedFile() }
                             .buttonStyle(.plain)
                             .liquidGlassButton(active: true, radius: 10)
                     }
@@ -689,7 +689,7 @@ struct FilePreviewShellView: View {
                     ToolbarIconButton(systemImage: "doc.on.clipboard", help: "Insert file content into chat", disabled: model.filePreview.isEmpty) {
                         model.insertSelectedContentIntoChat() }
                     Spacer()
-                    Button("Delete") { model.requestDeleteSelectedFile() }
+                    Button(L("Delete")) { model.requestDeleteSelectedFile() }
                         .buttonStyle(.plain)
                         .foregroundStyle(.red)
                         .liquidGlassButton(radius: 10)
@@ -737,7 +737,7 @@ struct FilePreviewModeButton: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(mode == .html ? "Preview" : mode.rawValue)
+            Text(mode == .html ? L("Preview") : mode.label)
                 .font(.system(size: 13, weight: active ? .semibold : .medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -831,7 +831,7 @@ struct ImageFilePreview: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.opacity(0.04))
         } else {
-            ContentUnavailableView("Cannot render image", systemImage: "photo.badge.exclamationmark", description: Text(path))
+            ContentUnavailableView(L("Cannot render image"), systemImage: "photo.badge.exclamationmark", description: Text(path))
         }
     }
 }
@@ -931,12 +931,12 @@ struct SidebarView: View {
         }
         .sheet(item: $renameTarget) { session in
             VStack(alignment: .leading, spacing: 16) {
-                Text("Rename Session").font(.headline)
-                TextField("Title", text: $renameText)
+                Text(L("Rename Session")).font(.headline)
+                TextField(L("Title"), text: $renameText)
                 HStack {
                     Spacer()
-                    Button("Cancel") { renameTarget = nil }
-                    Button("Save") { model.rename(session, to: renameText); renameTarget = nil }.keyboardShortcut(.defaultAction)
+                    Button(L("Cancel")) { renameTarget = nil }
+                    Button(L("Save")) { model.rename(session, to: renameText); renameTarget = nil }.keyboardShortcut(.defaultAction)
                 }
             }
             .padding()
@@ -951,7 +951,7 @@ struct SidebarView: View {
             Button(action: onCollapse) { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .help("Hide sidebar")
+                .help(L("Hide sidebar"))
         }
         .padding(.horizontal, 20)
         .padding(.top, 22)
@@ -963,7 +963,7 @@ struct SidebarView: View {
             HStack(spacing: 10) {
                 Image(systemName: "plus")
                     .font(.system(size: 15.5, weight: .bold))
-                Text("New Chat")
+                Text(L("New Chat"))
                     .font(.system(size: 15.5, weight: .semibold, design: .rounded))
                 Spacer()
             }
@@ -978,7 +978,7 @@ struct SidebarView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
-        .help("Return to the start screen")
+        .help(L("Return to the start screen"))
     }
 
     private var searchAndFilters: some View {
@@ -993,10 +993,10 @@ struct SidebarView: View {
                 }
                 Spacer()
                 if model.sessionSelectionMode {
-                    Button("Archive") { model.archiveSelectedSessions() }
+                    Button(L("Archive")) { model.archiveSelectedSessions() }
                         .buttonStyle(.borderless)
                         .disabled(model.selectedSessionIDs.isEmpty)
-                    Button("Delete") { model.deleteSelectedSessions() }
+                    Button(L("Delete")) { model.deleteSelectedSessions() }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.red)
                         .disabled(model.selectedSessionIDs.isEmpty)
@@ -1012,11 +1012,11 @@ struct SidebarView: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.uturn.backward.circle.fill")
                     .foregroundStyle(.orange)
-                Text("Deleted \(deleted.session.title)")
+                Text(LF("Deleted %@", deleted.session.title))
                     .font(.caption)
                     .lineLimit(1)
                 Spacer()
-                Button("Undo") { model.undoLastSessionDelete() }
+                Button(L("Undo")) { model.undoLastSessionDelete() }
                     .buttonStyle(.borderless)
             }
             .padding(10)
@@ -1029,10 +1029,10 @@ struct SidebarView: View {
 
     private var sidebarFooter: some View {
         HStack(spacing: 10) {
-            Button { model.agentPanelOpen.toggle() } label: { Label("Agents", systemImage: "point.3.connected.trianglepath.dotted") }
+            Button { model.agentPanelOpen.toggle() } label: { Label(L("Agents"), systemImage: "point.3.connected.trianglepath.dotted") }
                 .buttonStyle(.plain)
             Spacer()
-            Button { model.settingsOpen = true } label: { Label("Settings", systemImage: "gearshape") }
+            Button { model.settingsOpen = true } label: { Label(L("Settings"), systemImage: "gearshape") }
                 .buttonStyle(.plain)
         }
         .font(.system(size: 14, weight: .medium))
@@ -1047,12 +1047,12 @@ struct SidebarView: View {
                 SectionCaption(title: "Task Groups")
                 Spacer(minLength: 0)
                 Button {
-                    if let name = promptForFileName(title: "New task group", defaultValue: "New Task Group") {
+                    if let name = promptForFileName(title: L("New task group"), defaultValue: L("New Task Group")) {
                         model.createGroup(name: name)
                     }
                 } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain)
-                    .help("Create task group in current project")
+                    .help(L("Create task group in current project"))
             }
         }
     }
@@ -1065,7 +1065,7 @@ struct SidebarView: View {
                     ForEach(scopedSessions) { session in
                         SessionRowView(session: session)
                             .onTapGesture { model.selectSession(session.id) }
-                            .contextMenu { Button("Remove from Group") { model.removeSession(session, from: group) } }
+                            .contextMenu { Button(L("Remove from Group")) { model.removeSession(session, from: group) } }
                     }
                 } label: {
                     HStack {
@@ -1078,9 +1078,9 @@ struct SidebarView: View {
                 }
                 .contextMenu {
                     if let selected = model.selectedSession, selected.projectDir == group.projectPath {
-                        Button("Add Current Session") { model.addSession(selected, to: group) }
+                        Button(L("Add Current Session")) { model.addSession(selected, to: group) }
                     }
-                    Button("Delete Group", role: .destructive) { model.deleteGroup(group) }
+                    Button(L("Delete Group"), role: .destructive) { model.deleteGroup(group) }
                 }
             }
         }
@@ -1147,7 +1147,7 @@ struct SidebarView: View {
         let path: String
         let sessions: [SessionRecord]
         var id: String { path }
-        var name: String { path.isEmpty ? "Unknown Project" : URL(fileURLWithPath: path).lastPathComponent }
+        var name: String { path.isEmpty ? L("Unknown Project") : URL(fileURLWithPath: path).lastPathComponent }
         var latest: Date { sessions.first?.modifiedAt ?? .distantPast }
         var firstConversationAt: Date {
             sessions.map { $0.createdAt ?? $0.modifiedAt }.min() ?? .distantPast
@@ -1171,19 +1171,19 @@ struct SidebarView: View {
                 }
             }
             .contextMenu {
-                Button(session.pinned ? "Unpin" : "Pin") { model.togglePin(session) }
-                Button(session.archived ? "Unarchive" : "Archive") { model.toggleArchive(session) }
-                Button("Generate Title") { model.generateSessionTitle(session) }
-                Button("Rename") { renameTarget = session; renameText = session.title }
+                Button(session.pinned ? L("Unpin") : L("Pin")) { model.togglePin(session) }
+                Button(session.archived ? L("Unarchive") : L("Archive")) { model.toggleArchive(session) }
+                Button(L("Generate Title")) { model.generateSessionTitle(session) }
+                Button(L("Rename")) { renameTarget = session; renameText = session.title }
                 let projectGroups = model.sessionGroups.filter { $0.projectPath == session.projectDir }
                 if !projectGroups.isEmpty {
-                    Menu("Add to Group") { ForEach(projectGroups) { group in Button(group.name) { model.addSession(session, to: group) } } }
+                    Menu(L("Add to Group")) { ForEach(projectGroups) { group in Button(group.name) { model.addSession(session, to: group) } } }
                 }
                 Divider()
-                Button("Export Markdown") { model.exportMarkdown(session: session) }
-                Button("Export JSON") { model.exportJSON(session: session) }
+                Button(L("Export Markdown")) { model.exportMarkdown(session: session) }
+                Button(L("Export JSON")) { model.exportJSON(session: session) }
                 Divider()
-                Button("Delete", role: .destructive) { model.deleteSession(session) }
+                Button(L("Delete"), role: .destructive) { model.deleteSession(session) }
             }
     }
 }
@@ -1218,7 +1218,7 @@ struct SessionRowView: View {
                 .font(.system(size: 14, weight: selected ? .semibold : .regular, design: .rounded))
                 .foregroundStyle(selected ? Color.primary : Color.primary.opacity(0.86))
             if session.isDraft {
-                Text("Draft")
+                Text(L("Draft"))
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.orange)
             }
@@ -1303,7 +1303,7 @@ struct SessionRowView: View {
                     .background(Color.primary.opacity(session.pinned ? 0.105 : 0.035), in: Circle())
             }
             .buttonStyle(.plain)
-            .help(session.pinned ? "Unpin conversation" : "Pin conversation")
+            .help(session.pinned ? L("Unpin conversation") : L("Pin conversation"))
 
             if session.archived {
                 Image(systemName: "archivebox.fill")
@@ -1328,7 +1328,7 @@ struct SessionRowView: View {
                     .background(pendingDelete ? Color.red : Color.primary.opacity(0.035), in: Capsule())
             }
             .buttonStyle(.plain)
-            .help(pendingDelete ? "Click again to delete from Claude Code" : "Delete conversation")
+            .help(pendingDelete ? L("Click again to delete from Claude Code") : L("Delete conversation"))
         }
     }
 }
@@ -1421,7 +1421,7 @@ struct ChatPanelView: View {
                         Circle()
                             .fill(model.selectedHasActiveTurn ? Color.orange : Color.mint)
                             .frame(width: 7, height: 7)
-                        Text("Agent")
+                        Text(L("Agent"))
                         if !model.selectedToolCalls.isEmpty {
                             Text("\(model.selectedToolCalls.count)")
                                 .font(.caption2.weight(.semibold))
@@ -1548,13 +1548,13 @@ struct ChatPanelView: View {
                     .shadow(color: .black.opacity(0.055), radius: 14, y: 7)
                     .opacity(logoOpacity)
 
-                Text(model.currentGreeting.heading)
+                Text(L(model.currentGreeting.heading))
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.center)
                     .opacity(headingOpacity)
 
-                Text(model.currentGreeting.subtitle)
+                Text(L(model.currentGreeting.subtitle))
                     .font(.system(size: 15, weight: .regular, design: .rounded))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -1574,9 +1574,9 @@ struct ChatPanelView: View {
                 .padding(.vertical, 12)
                 .background(.thinMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            Text("Ready when you are")
+            Text(L("Ready when you are"))
                 .font(.title3.weight(.semibold))
-            Text("Use / for commands, attach files, choose thinking effort, or switch into Plan mode before sending.")
+            Text(L("Use / for commands, attach files, choose thinking effort, or switch into Plan mode before sending."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -1660,11 +1660,11 @@ struct ActivityPillView: View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.small)
             if let permission = model.pendingPermissionsForSelectedSession.first {
-                Text("Awaiting: \(permission.toolName)")
+                Text(LF("Awaiting: %@", permission.toolName))
             } else if !model.selectedStreamingText.isEmpty {
-                Text("Writing")
+                Text(L("Writing"))
             } else {
-                Text("Running")
+                Text(L("Running"))
             }
         }
         .font(.caption)
@@ -1697,7 +1697,7 @@ struct FindBarView: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-            TextField("Find in conversation", text: $model.chatFindText)
+            TextField(L("Find in conversation"), text: $model.chatFindText)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { model.searchChatNext(direction: 1) }
@@ -1708,15 +1708,15 @@ struct FindBarView: View {
             Button { model.searchChatNext(direction: -1) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.borderless)
                 .disabled(model.chatFindText.isEmpty || targets.isEmpty)
-                .help("Previous match")
+                .help(L("Previous match"))
             Button { model.searchChatNext(direction: 1) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.borderless)
                 .disabled(model.chatFindText.isEmpty || targets.isEmpty)
-                .help("Next match")
+                .help(L("Next match"))
             Button { model.chatFindText = ""; onClose() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
-                .help("Close find bar")
+                .help(L("Close find bar"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -1812,7 +1812,7 @@ struct QueuedUserMessageView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "clock.arrow.circlepath")
-                    Text("Queued")
+                    Text(L("Queued"))
                     Spacer()
                     Text(message.createdAt, style: .time).font(.caption2).foregroundStyle(.tertiary)
                 }
@@ -1820,7 +1820,7 @@ struct QueuedUserMessageView: View {
                 .foregroundStyle(.secondary)
                 MarkdownRendererView(content: message.content)
                 if !message.attachments.isEmpty {
-                    Text("\(message.attachments.count) attachment(s) queued")
+                    Text(LF("%d attachment(s) queued", message.attachments.count))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1851,10 +1851,10 @@ struct PlanInspectorView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Label("Plan", systemImage: "list.bullet.rectangle")
+                    Label(L("Plan"), systemImage: "list.bullet.rectangle")
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
                     if model.settings.sessionMode == .plan {
-                        Text("Active")
+                        Text(L("Active"))
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
@@ -1864,7 +1864,7 @@ struct PlanInspectorView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                Text("Review plan drafts, todos, and resolved plan approvals without resizing the transcript.")
+                Text(L("Review plan drafts, todos, and resolved plan approvals without resizing the transcript."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1874,12 +1874,12 @@ struct PlanInspectorView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if planMessages.isEmpty && pendingPlanApprovals.isEmpty {
-                        ContentUnavailableView("No plan yet", systemImage: "list.bullet.rectangle", description: Text("Switch to Plan mode or approve an ExitPlanMode card."))
+                        ContentUnavailableView(L("No plan yet"), systemImage: "list.bullet.rectangle", description: Text(L("Switch to Plan mode or approve an ExitPlanMode card.")))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 36)
                     }
                     if !pendingPlanApprovals.isEmpty {
-                        Label("Plan approval pending in the composer action slot.", systemImage: "arrow.down.circle")
+                        Label(L("Plan approval pending in the composer action slot."), systemImage: "arrow.down.circle")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(10)
@@ -1913,11 +1913,11 @@ struct MessageBubbleView: View {
         case .thinking:
             thinkingMessage
         case .tool:
-            systemLikeMessage(icon: "wrench.and.screwdriver", tint: .secondary, title: message.toolName ?? "Tool")
+            systemLikeMessage(icon: "wrench.and.screwdriver", tint: .secondary, title: message.toolName ?? L("Tool"))
         case .error:
-            systemLikeMessage(icon: "exclamationmark.triangle.fill", tint: .red, title: "Error")
+            systemLikeMessage(icon: "exclamationmark.triangle.fill", tint: .red, title: L("Error"))
         case .system:
-            systemLikeMessage(icon: "info.circle", tint: .secondary, title: "System")
+            systemLikeMessage(icon: "info.circle", tint: .secondary, title: L("System"))
         }
     }
 
@@ -1930,7 +1930,7 @@ struct MessageBubbleView: View {
             TranscriptAvatar(systemImage: "chevron.left.forwardslash.chevron.right", foreground: .white, background: .primary)
             VStack(alignment: .leading, spacing: 8) {
                 if isFindMatch {
-                    Label("match", systemImage: "magnifyingglass")
+                    Label(L("match"), systemImage: "magnifyingglass")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }
@@ -1954,7 +1954,7 @@ struct MessageBubbleView: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
             } label: {
-                Text(message.content.isEmpty ? "Thinking…" : "Thinking…")
+                Text(L("Thinking…"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
             }
@@ -2194,7 +2194,7 @@ struct MarkdownImageView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.plain)
-            .help("Open image")
+            .help(L("Open image"))
         } else {
             Label(reference.source, systemImage: "photo.badge.exclamationmark")
                 .font(.caption)
@@ -2227,7 +2227,7 @@ struct ImageLightboxOverlayView: View {
 
     private var imageTitle: String {
         guard let alt = content.alt, !alt.isEmpty else {
-            return "Image Preview"
+            return L("Image Preview")
         }
         return alt
     }
@@ -2251,7 +2251,7 @@ struct ImageLightboxOverlayView: View {
                     Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain)
                         .keyboardShortcut(.cancelAction)
-                        .help("Close image preview")
+                        .help(L("Close image preview"))
                 }
                 if let image = NSImage(data: content.imageData) {
                     Image(nsImage: image)
@@ -2260,7 +2260,7 @@ struct ImageLightboxOverlayView: View {
                         .frame(maxWidth: 920, maxHeight: 680)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 } else {
-                    ContentUnavailableView("Cannot display image", systemImage: "photo.badge.exclamationmark")
+                    ContentUnavailableView(L("Cannot display image"), systemImage: "photo.badge.exclamationmark")
                 }
             }
             .padding(18)

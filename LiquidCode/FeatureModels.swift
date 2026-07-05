@@ -18,6 +18,10 @@ enum FilePreviewMode: String, Codable, CaseIterable, Identifiable, Sendable {
     var id: String {
         rawValue
     }
+
+    var label: String {
+        L(rawValue)
+    }
 }
 
 struct AttachmentChip: Identifiable, Codable, Hashable, Sendable {
@@ -97,7 +101,7 @@ struct TranscriptToolItem: Identifiable, Equatable, Sendable {
     let content: String
     var summaryName: String {
         guard kind == .use else {
-            return "Tool result"
+            return L("Tool result")
         }
         if toolName == "Task", let subagentName = taskSubagentType(in: content) {
             return subagentName
@@ -223,7 +227,7 @@ enum TranscriptDisplayBuilder {
                 appendTool()
                 appendText()
                 toolKind = .result
-                toolName = "Tool result"
+                toolName = L("Tool result")
                 toolLines = [line]
             } else if toolKind != nil {
                 toolLines.append(line)
@@ -313,7 +317,7 @@ extension ChatMessage {
                 .replacingOccurrences(of: "]", with: "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        return role == .tool ? "Tool result" : "Tool use"
+        return role == .tool ? L("Tool result") : L("Tool use")
     }
 }
 

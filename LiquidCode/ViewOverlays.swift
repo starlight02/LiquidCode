@@ -22,7 +22,7 @@ struct CommandPaletteView: View {
             .onTapGesture { model.commandPaletteOpen = false }
         GlassPanel(role: .commandPalette, prominence: .prominent, cornerRadius: 22) {
             VStack(spacing: 0) {
-                TextField("Type a command or session action", text: $query).textFieldStyle(.plain).font(.title3).padding(16)
+                TextField(L("Type a command or session action"), text: $query).textFieldStyle(.plain).font(.title3).padding(16)
                 Divider()
                 ScrollView { LazyVStack(alignment: .leading, spacing: 4) { ForEach(model.filteredPaletteCommands(query)) { cmd in
                     Button { model.runCommand(cmd) } label: {
@@ -49,7 +49,7 @@ struct AttachmentChipView: View {
             }
             Button { model.removeAttachment(attachment) } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
-                .help("Remove attachment")
+                .help(L("Remove attachment"))
         }
         .font(.caption)
         .padding(.horizontal, 8)
@@ -69,7 +69,7 @@ struct ToastBannerView: View {
                     model.toast = nil
                 } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
-                    .help("Dismiss notification") }
+                    .help(L("Dismiss notification")) }
                 .padding(14)
                 .background(.ultraThinMaterial)
                 .clipShape(RoundedRectangle(
@@ -97,13 +97,13 @@ struct ChangelogSheetView: View {
         GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 24) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    Text("What's New").font(.title.bold()); Spacer(); Button { model.changelogOpen = false } label: { Image(systemName: "xmark.circle.fill") }
+                    Text(L("What's New")).font(.title.bold()); Spacer(); Button { model.changelogOpen = false } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain)
-                        .help("Close changelog") }
+                        .help(L("Close changelog")) }
                 ForEach(bundledChangelog) { entry in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Version \(entry.version) · \(entry.date)").font(.headline)
-                        ForEach(entry.items, id: \.self) { Text("• \($0)") }
+                        Text(LF("Version %@ · %@", entry.version, entry.date)).font(.headline)
+                        ForEach(entry.items, id: \.self) { Text("• \(L($0))") }
                     }
                 }
             }

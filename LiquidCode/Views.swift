@@ -108,7 +108,7 @@ struct AppShellView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .alert(item: $model.currentError) { err in Alert(title: Text(err.title), message: Text(err.message), dismissButton: .default(Text("OK"))) }
+        .alert(item: $model.currentError) { err in Alert(title: Text(err.title), message: Text(err.message), dismissButton: .default(Text(L("OK")))) }
         .onAppear { model.bootstrap() }
         .onChange(of: model.selectedSessionID) { _, newValue in
             if newValue == nil {
