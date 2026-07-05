@@ -1,6 +1,11 @@
 # LiquidCode
 
-LiquidCode 是 Claude Code 桌面客户端的原生 SwiftUI/AppKit macOS 产品化路线。
+<p align="center">
+  <img src="docs/assets/liquidcode-screenshot.png" alt="LiquidCode 应用截图" width="960">
+</p>
+
+LiquidCode 是 Claude Code 的原生 macOS 客户端。它把 CLI 放进一个像样的桌面应用里：左侧管理项目和会话，中间直接聊天，Provider、MCP、Skills 和
+CLI 安装/登录/修复都放进设置页，不用再到处翻 dotfiles。
 
 ## 配置
 

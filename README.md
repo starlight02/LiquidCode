@@ -1,7 +1,12 @@
 # LiquidCode
 
-LiquidCode is the native SwiftUI/AppKit macOS productization track for a
-Claude Code desktop client.
+<p align="center">
+  <img src="docs/assets/liquidcode-screenshot.png" alt="LiquidCode app screenshot" width="960">
+</p>
+
+LiquidCode is a native macOS app for Claude Code. It gives the CLI a proper
+desktop home: project and session lists on the left, chat in the middle, and
+Provider, MCP, Skills, and CLI setup in Settings instead of scattered dotfiles.
 
 ## Configure
 
