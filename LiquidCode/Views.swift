@@ -103,10 +103,6 @@ struct AppShellView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay {
-                ClickableCursorBridge()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
         }
         .alert(item: $model.currentError) { err in Alert(title: Text(err.title), message: Text(err.message), dismissButton: .default(Text(L("OK")))) }
         .onAppear { model.bootstrap() }

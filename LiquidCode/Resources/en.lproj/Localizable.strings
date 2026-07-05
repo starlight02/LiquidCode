@@ -459,3 +459,17 @@
 "Native SwiftUI/AppKit shell with a sidebar-chat-secondary layout." = "Native SwiftUI/AppKit shell with a sidebar-chat-secondary layout.";
 "Claude Code stream-json process bridge with stdio permission control." = "Claude Code stream-json process bridge with stdio permission control.";
 "Keychain-backed provider secrets, MCP/Skills panels, file explorer, session export and Liquid Glass panels." = "Keychain-backed provider secrets, MCP/Skills panels, file explorer, session export and Liquid Glass panels.";
+"Open agent activity" = "Open agent activity";
+"Open settings" = "Open settings";
+"Expand tool details" = "Expand tool details";
+"Collapse tool details" = "Collapse tool details";
+"Expand tool run" = "Expand tool run";
+"Collapse tool run" = "Collapse tool run";
+"Expand permission details" = "Expand permission details";
+"Collapse permission details" = "Collapse permission details";
+"Expand plan details" = "Expand plan details";
+"Collapse plan details" = "Collapse plan details";
+"Select mode" = "Select mode";
+"Select thinking level" = "Select thinking level";
+"Select model" = "Select model";
+"Toggle thinking details" = "Toggle thinking details";

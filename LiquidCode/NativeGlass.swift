@@ -192,24 +192,34 @@ struct LiquidGlassControlModifier<S: Shape>: ViewModifier {
 
 private struct PointingHandCursorModifier: ViewModifier {
     var enabled = true
+    @State private var cursorPushed = false
 
     func body(content: Content) -> some View {
         content
             .onHover { hovering in
-                if hovering && enabled {
-                    NSCursor.pointingHand.set()
-                } else {
-                    NSCursor.arrow.set()
-                }
+                updatePointerCursor(active: hovering && enabled)
             }
             .onChange(of: enabled) { _, isEnabled in
                 if !isEnabled {
-                    NSCursor.arrow.set()
+                    updatePointerCursor(active: false)
                 }
             }
             .onDisappear {
-                NSCursor.arrow.set()
+                updatePointerCursor(active: false)
             }
+    }
+
+    private func updatePointerCursor(active: Bool) {
+        switch (active, cursorPushed) {
+        case (true, false):
+            NSCursor.pointingHand.push()
+            cursorPushed = true
+        case (false, true):
+            NSCursor.pop()
+            cursorPushed = false
+        default:
+            break
+        }
     }
 }
 
@@ -372,123 +382,6 @@ struct NativeGlassBackground: NSViewRepresentable {
         case .regular: NSColor.windowBackgroundColor.withAlphaComponent(0.30)
         case .prominent: NSColor.windowBackgroundColor.withAlphaComponent(0.42)
         }
-    }
-}
-
-struct ClickableCursorBridge: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        ClickableCursorTrackingView()
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-private final class ClickableCursorTrackingView: NSView {
-    private static let clickableRoles: Set<String> = [
-        "AXButton",
-        "AXCheckBox",
-        "AXDisclosureTriangle",
-        "AXLink",
-        "AXMenuButton",
-        "AXPopUpButton",
-        "AXRadioButton"
-    ]
-    private static let textInputRoles: Set<String> = ["AXTextArea", "AXTextField"]
-    private var trackingArea: NSTrackingArea?
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func updateTrackingAreas() {
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-        }
-        let area = NSTrackingArea(
-            rect: .zero,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        trackingArea = area
-        super.updateTrackingAreas()
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        updateCursor(at: event.locationInWindow)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        NSCursor.arrow.set()
-    }
-
-    private func updateCursor(at windowPoint: NSPoint) {
-        guard let window else {
-            return
-        }
-        if isTextInput(at: windowPoint, in: window) {
-            NSCursor.iBeam.set()
-        } else if isClickable(at: windowPoint, in: window) {
-            NSCursor.pointingHand.set()
-        } else {
-            NSCursor.arrow.set()
-        }
-    }
-
-    private func isTextInput(at windowPoint: NSPoint, in window: NSWindow) -> Bool {
-        if let role = accessibilityRole(at: windowPoint, in: window), Self.textInputRoles.contains(role) {
-            return true
-        }
-        guard let hitView = hitView(at: windowPoint, in: window) else {
-            return false
-        }
-        return firstSuperview(from: hitView) { view in
-            if view is NSTextView {
-                return true
-            }
-            if let textField = view as? NSTextField {
-                return textField.isEditable
-            }
-            return false
-        } != nil
-    }
-
-    private func isClickable(at windowPoint: NSPoint, in window: NSWindow) -> Bool {
-        if let role = accessibilityRole(at: windowPoint, in: window), Self.clickableRoles.contains(role) {
-            return true
-        }
-        guard let hitView = hitView(at: windowPoint, in: window) else {
-            return false
-        }
-        return firstSuperview(from: hitView) { view in
-            view is NSButton || view is NSSegmentedControl
-        } != nil
-    }
-
-    private func accessibilityRole(at windowPoint: NSPoint, in window: NSWindow) -> String? {
-        let screenPoint = window.convertPoint(toScreen: windowPoint)
-        let element = window.accessibilityHitTest(screenPoint)
-        return (element as? NSAccessibilityElement)?.accessibilityRole()?.rawValue
-    }
-
-    private func hitView(at windowPoint: NSPoint, in window: NSWindow) -> NSView? {
-        guard let contentView = window.contentView else {
-            return nil
-        }
-        let contentPoint = contentView.convert(windowPoint, from: nil)
-        return contentView.hitTest(contentPoint)
-    }
-
-    private func firstSuperview(from view: NSView, matching predicate: (NSView) -> Bool) -> NSView? {
-        var current: NSView? = view
-        while let candidate = current {
-            if predicate(candidate) {
-                return candidate
-            }
-            current = candidate.superview
-        }
-        return nil
     }
 }
 

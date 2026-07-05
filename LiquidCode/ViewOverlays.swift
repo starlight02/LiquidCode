@@ -31,7 +31,9 @@ struct CommandPaletteView: View {
                                 maxWidth: .infinity,
                                 alignment: .leading
                             )
-                            .padding(10) }.buttonStyle(.plain) } }.padding(8) }
+                            .padding(10) }
+                        .buttonStyle(.plain)
+                        .pointingHandCursor() } }.padding(8) }
             }.frame(width: 620, height: 520)
         }
     }
@@ -49,6 +51,7 @@ struct AttachmentChipView: View {
             }
             Button { model.removeAttachment(attachment) } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
                 .help(L("Remove attachment"))
         }
         .font(.caption)
@@ -69,6 +72,7 @@ struct ToastBannerView: View {
                     model.toast = nil
                 } label: { Image(systemName: "xmark") }
                     .buttonStyle(.plain)
+                    .pointingHandCursor()
                     .help(L("Dismiss notification")) }
                 .padding(14)
                 .background(.ultraThinMaterial)
@@ -99,6 +103,7 @@ struct ChangelogSheetView: View {
                 HStack {
                     Text(L("What's New")).font(.title.bold()); Spacer(); Button { model.changelogOpen = false } label: { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain)
+                        .pointingHandCursor()
                         .help(L("Close changelog")) }
                 ForEach(bundledChangelog) { entry in
                     VStack(alignment: .leading, spacing: 6) {

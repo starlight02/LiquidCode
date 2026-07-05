@@ -45,6 +45,7 @@ struct NativeToolbarMenuLabel: View {
     let title: String
     let systemImage: String
     var active = false
+    var disabled = false
     var minWidth: CGFloat = 0
 
     var body: some View {
@@ -66,7 +67,14 @@ struct NativeToolbarMenuLabel: View {
         .padding(.horizontal, 11)
         .frame(minWidth: minWidth)
         .frame(height: GlassControlMetric.menuHeight)
-        .liquidGlassControl(shape, active: false, fallbackRadius: GlassControlMetric.menuHeight / 2, fallbackIntensity: active ? .regular : .subtle)
+        .liquidGlassControl(
+            shape,
+            active: false,
+            disabled: disabled,
+            interactive: !disabled,
+            fallbackRadius: GlassControlMetric.menuHeight / 2,
+            fallbackIntensity: active ? .regular : .subtle
+        )
         .overlay {
             if active {
                 shape
@@ -316,6 +324,7 @@ struct GlassSearchField: View {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
+                    .pointingHandCursor()
                     .help(L("Clear search"))
             }
         }
@@ -344,6 +353,7 @@ struct IconChip: View {
                 .liquidGlassControl(RoundedRectangle(cornerRadius: 13, style: .continuous), active: active, fallbackRadius: 13, fallbackIntensity: active ? .prominent : .regular)
         }
         .buttonStyle(.plain)
+        .pointingHandCursor()
     }
 }
 
@@ -368,8 +378,9 @@ struct ToolbarIconButton: View {
                 )
         }
         .buttonStyle(.plain)
-        .disabled(disabled)
+        .pointingHandCursor(enabled: !disabled)
         .help(L(help))
+        .disabled(disabled)
     }
 }
 
@@ -397,8 +408,9 @@ struct ToolbarMenuIconButton<MenuContent: View>: View {
                 )
         }
         .buttonStyle(.plain)
-        .disabled(disabled)
+        .pointingHandCursor(enabled: !disabled)
         .help(L(help))
+        .disabled(disabled)
     }
 }
 
@@ -746,6 +758,8 @@ struct FilePreviewModeButton: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
+        .pointingHandCursor()
+        .help(mode == .html ? L("Preview") : mode.label)
     }
 }
 
@@ -951,6 +965,7 @@ struct SidebarView: View {
             Button(action: onCollapse) { Image(systemName: "chevron.left") }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
+                .pointingHandCursor()
                 .help(L("Hide sidebar"))
         }
         .padding(.horizontal, 20)
@@ -976,6 +991,7 @@ struct SidebarView: View {
             .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
         }
         .buttonStyle(.plain)
+        .pointingHandCursor()
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
         .help(L("Return to the start screen"))
@@ -995,10 +1011,12 @@ struct SidebarView: View {
                 if model.sessionSelectionMode {
                     Button(L("Archive")) { model.archiveSelectedSessions() }
                         .buttonStyle(.borderless)
+                        .pointingHandCursor(enabled: !model.selectedSessionIDs.isEmpty)
                         .disabled(model.selectedSessionIDs.isEmpty)
                     Button(L("Delete")) { model.deleteSelectedSessions() }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.red)
+                        .pointingHandCursor(enabled: !model.selectedSessionIDs.isEmpty)
                         .disabled(model.selectedSessionIDs.isEmpty)
                 }
             }
@@ -1018,6 +1036,7 @@ struct SidebarView: View {
                 Spacer()
                 Button(L("Undo")) { model.undoLastSessionDelete() }
                     .buttonStyle(.borderless)
+                    .pointingHandCursor()
             }
             .padding(10)
             .background(Color.orange.opacity(0.10))
@@ -1031,9 +1050,13 @@ struct SidebarView: View {
         HStack(spacing: 10) {
             Button { model.agentPanelOpen.toggle() } label: { Label(L("Agents"), systemImage: "point.3.connected.trianglepath.dotted") }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(L("Open agent activity"))
             Spacer()
             Button { model.settingsOpen = true } label: { Label(L("Settings"), systemImage: "gearshape") }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(L("Open settings"))
         }
         .font(.system(size: 14, weight: .medium))
         .foregroundStyle(.secondary)
@@ -1052,6 +1075,7 @@ struct SidebarView: View {
                     }
                 } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain)
+                    .pointingHandCursor()
                     .help(L("Create task group in current project"))
             }
         }
@@ -1130,6 +1154,7 @@ struct SidebarView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
             .help(group.path)
 
             if isExpanded {
@@ -1303,6 +1328,7 @@ struct SessionRowView: View {
                     .background(Color.primary.opacity(session.pinned ? 0.105 : 0.035), in: Circle())
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
             .help(session.pinned ? L("Unpin conversation") : L("Pin conversation"))
 
             if session.archived {
@@ -1328,6 +1354,7 @@ struct SessionRowView: View {
                     .background(pendingDelete ? Color.red : Color.primary.opacity(0.035), in: Capsule())
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
             .help(pendingDelete ? L("Click again to delete from Claude Code") : L("Delete conversation"))
         }
     }
@@ -1436,6 +1463,8 @@ struct ChatPanelView: View {
                 .padding(.vertical, 5)
                 .background(agentPopoverOpen ? Color.accentColor.opacity(0.10) : Color.clear)
                 .clipShape(Capsule())
+                .pointingHandCursor()
+                .help(L("Open agent activity"))
                 .popover(isPresented: $agentPopoverOpen, arrowEdge: .top) {
                     AgentPopoverView()
                         .environmentObject(model)
@@ -1707,14 +1736,17 @@ struct FindBarView: View {
                 .frame(width: 70, alignment: .trailing)
             Button { model.searchChatNext(direction: -1) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.borderless)
+                .pointingHandCursor(enabled: !model.chatFindText.isEmpty && !targets.isEmpty)
                 .disabled(model.chatFindText.isEmpty || targets.isEmpty)
                 .help(L("Previous match"))
             Button { model.searchChatNext(direction: 1) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.borderless)
+                .pointingHandCursor(enabled: !model.chatFindText.isEmpty && !targets.isEmpty)
                 .disabled(model.chatFindText.isEmpty || targets.isEmpty)
                 .help(L("Next match"))
             Button { model.chatFindText = ""; onClose() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
                 .keyboardShortcut(.cancelAction)
                 .help(L("Close find bar"))
         }
@@ -1959,6 +1991,8 @@ struct MessageBubbleView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: 760, alignment: .leading)
+            .pointingHandCursor()
+            .help(L("Toggle thinking details"))
             Spacer(minLength: 60)
         }
         .padding(.vertical, 1)
@@ -2194,6 +2228,7 @@ struct MarkdownImageView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
             .help(L("Open image"))
         } else {
             Label(reference.source, systemImage: "photo.badge.exclamationmark")
@@ -2250,6 +2285,7 @@ struct ImageLightboxOverlayView: View {
                     Spacer()
                     Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
                         .buttonStyle(.plain)
+                        .pointingHandCursor()
                         .keyboardShortcut(.cancelAction)
                         .help(L("Close image preview"))
                 }

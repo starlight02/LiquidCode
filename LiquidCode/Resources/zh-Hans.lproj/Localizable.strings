@@ -459,3 +459,17 @@
 "Native SwiftUI/AppKit shell with a sidebar-chat-secondary layout." = "原生 SwiftUI/AppKit 外壳，提供侧边栏、对话和右侧面板三栏布局。";
 "Claude Code stream-json process bridge with stdio permission control." = "Claude Code stream-json 进程桥接，支持 stdio 权限控制。";
 "Keychain-backed provider secrets, MCP/Skills panels, file explorer, session export and Liquid Glass panels." = "基于钥匙串保存供应商密钥，内置 MCP/技能面板、文件浏览器、会话导出和液态玻璃面板。";
+"Open agent activity" = "查看代理活动";
+"Open settings" = "打开设置";
+"Expand tool details" = "展开工具详情";
+"Collapse tool details" = "收起工具详情";
+"Expand tool run" = "展开工具运行记录";
+"Collapse tool run" = "收起工具运行记录";
+"Expand permission details" = "展开权限详情";
+"Collapse permission details" = "收起权限详情";
+"Expand plan details" = "展开计划详情";
+"Collapse plan details" = "收起计划详情";
+"Select mode" = "选择工作模式";
+"Select thinking level" = "选择思考强度";
+"Select model" = "选择模型";
+"Toggle thinking details" = "展开或收起思考过程";

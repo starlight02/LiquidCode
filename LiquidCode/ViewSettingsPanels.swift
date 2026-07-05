@@ -63,6 +63,8 @@ struct ToolDisplayItemView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(expanded ? L("Collapse tool details") : L("Expand tool details"))
 
                 toolSummary
 
@@ -176,6 +178,8 @@ struct ToolMessageGroupView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(expanded ? L("Collapse tool run") : L("Expand tool run"))
                 if expanded {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(items) { ToolDisplayItemView(item: $0, compact: true) }
@@ -375,6 +379,8 @@ struct PermissionInlineCardView: View {
                         .background(color.opacity(0.12))
                         .clipShape(Capsule()); Spacer(); Text(permission.risk.rawValue).font(.caption).foregroundStyle(.secondary) } }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(expanded ? L("Collapse permission details") : L("Expand permission details"))
             Text(permission.summary).font(.callout).foregroundStyle(.secondary)
             if expanded {
                 TextEditor(text: $editedInput)
@@ -441,7 +447,10 @@ struct PlanReviewInlineCardView: View {
                             .padding(.vertical, 2)
                             .background(Color.accentColor.opacity(0.12))
                             .clipShape(Capsule()) }; Spacer(); Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption) } }.buttonStyle(.plain)
+                        .font(.caption) } }
+                .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(expanded ? L("Collapse plan details") : L("Expand plan details"))
             if expanded && !compact {
                 MarkdownRendererView(content: planText).font(.callout)
             }
@@ -757,6 +766,7 @@ struct InputBarView: View {
                             composerActionIcon(systemImage: "stop.fill", fill: Color.red.opacity(0.18), foreground: .red)
                         }
                         .buttonStyle(.plain)
+                        .pointingHandCursor()
                         .help(L("Stop current turn"))
                     } else {
                         Button {
@@ -770,6 +780,7 @@ struct InputBarView: View {
                         }
                         .buttonStyle(.plain)
                         .keyboardShortcut(.return, modifiers: [])
+                        .pointingHandCursor(enabled: canSend)
                         .disabled(!canSend)
                         .help(model.pendingPermissionsForSelectedSession.isEmpty ? L("Send (Return)") : L("Respond to inline card first"))
                     }
@@ -849,6 +860,8 @@ struct InputBarView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(L("Select mode"))
 
                 let thinkingActive = model.settings.thinkingLevel != .off
                 Menu {
@@ -866,6 +879,8 @@ struct InputBarView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(L("Select thinking level"))
             }
 
             HStack(spacing: compact ? 8 : 10) {
@@ -879,9 +894,15 @@ struct InputBarView: View {
                         .disabled(model.selectedLastUserMessage == nil)
                     }
                 } label: {
-                    NativeToolbarMenuLabel(title: compact ? "" : L("Rewind"), systemImage: "arrow.counterclockwise", minWidth: compact ? 38 : 84)
+                    NativeToolbarMenuLabel(
+                        title: compact ? "" : L("Rewind"),
+                        systemImage: "arrow.counterclockwise",
+                        disabled: model.selectedLastUserMessage == nil,
+                        minWidth: compact ? 38 : 84
+                    )
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor(enabled: model.selectedLastUserMessage != nil)
                 .disabled(model.selectedLastUserMessage == nil)
                 .help(L("Restore conversation, code, both, or prepare a summary from the last user turn"))
 
@@ -899,6 +920,7 @@ struct InputBarView: View {
                     NativeToolbarMenuLabel(title: compact ? "" : L("Skills"), systemImage: "sparkles", minWidth: compact ? 38 : 78)
                 }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
                 .help(L("Insert skill slash command"))
             }
 
@@ -918,6 +940,8 @@ struct InputBarView: View {
                 )
             }
             .buttonStyle(.plain)
+            .pointingHandCursor()
+            .help(L("Select model"))
         }
     }
 
@@ -950,6 +974,7 @@ struct InputBarView: View {
             )
         }
         .buttonStyle(.plain)
+        .pointingHandCursor()
         .help(model.workingDirectory.isEmpty ? L("Choose a project folder or start with Claude Code's default directory") : model.workingDirectory)
     }
 
@@ -1081,7 +1106,9 @@ struct SlashCommandPopoverView: View {
                     .padding(8)
                     .background(index == selectedIndex ? Color.accentColor.opacity(0.14) : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .pointingHandCursor()
             }
             if commands.isEmpty {
                 Text(LF("No command matches /%@", query)).font(.caption).foregroundStyle(.secondary).padding(8)
@@ -1129,6 +1156,7 @@ struct SecondaryPanelView: View {
                                 )
                         }
                         .buttonStyle(.plain)
+                        .help(tab.label)
                     }
                     Spacer()
                     ToolbarIconButton(systemImage: "xmark", help: "Close panel", action: onClose)
@@ -1295,6 +1323,8 @@ struct FileNodeView: View {
     var body: some View {
         if node.isDirectory {
             DisclosureGroup { ForEach(node.children) { FileNodeView(node: $0) } } label: { FileNodeLabelView(node: node, icon: "folder") }
+                .pointingHandCursor()
+                .help(node.path)
                 .contextMenu {
                     Button(L("New file here")) { model.createFile(inDirectory: node.path) }
                     Button(L("New folder here")) { if let name = promptForFileName(title: L("New folder"), defaultValue: "untitled") {
@@ -1314,6 +1344,8 @@ struct FileNodeView: View {
         } else {
             Button { _ = model.requestOpenFile(node.path) } label: { FileNodeLabelView(node: node, icon: icon) }
                 .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(node.path)
                 .contextMenu {
                     Button(L("Preview")) { _ = model.requestOpenFile(node.path) }
                     Button(L("Insert Path")) { model.requestInsertFilePath(node.path) }
@@ -1661,6 +1693,7 @@ struct SkillsPanelView: View {
             .toggleStyle(.switch)
             .labelsHidden()
             .help(skill.disabled ? L("Enable skill") : L("Disable skill"))
+            .pointingHandCursor()
         }
         .padding(10)
         .liquidGlassControl(
