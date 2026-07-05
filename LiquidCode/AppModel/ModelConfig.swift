@@ -88,6 +88,7 @@ extension AppModel {
 
     func bootstrap() {
         settings = JSONFile.load(AppSettings.self, from: AppPaths.shared.settingsFile) ?? AppSettings()
+        sendConfigurationBySession = settings.sessionConfigurations
         settings.sidebarWidth = min(450, max(Double(LiquidGlassToken.sidebarWidth), settings.sidebarWidth))
         settings.secondaryWidth = min(Double(LiquidGlassToken.inspectorMaxWidth), max(Double(LiquidGlassToken.inspectorMinWidth), settings.secondaryWidth))
         syncComposerDefaultsFromClaudeUserSettings()
@@ -111,6 +112,7 @@ extension AppModel {
 
     func persistSettings() {
         settings.selectedProviderID = activeProviderID
+        settings.sessionConfigurations = sendConfigurationBySession
         try? JSONFile.save(settings, to: AppPaths.shared.settingsFile)
     }
 
@@ -129,6 +131,27 @@ extension AppModel {
         applyComposerConfigurationChange(model: model, mode: nil, thinkingLevel: nil)
     }
 
+    func snapshotComposerConfiguration(for sessionID: String?) {
+        let configuration = ComposerSendConfiguration(
+            model: settings.selectedModel,
+            mode: settings.sessionMode,
+            thinkingLevel: settings.thinkingLevel
+        )
+        if let sessionID {
+            guard sendConfigurationBySession[sessionID] != configuration else {
+                return
+            }
+            sendConfigurationBySession[sessionID] = configuration
+            persistSettings()
+            return
+        }
+        guard defaultComposerConfiguration != configuration else {
+            return
+        }
+        defaultComposerConfiguration = configuration
+        persistSettings()
+    }
+
     func syncComposerDefaultsFromClaudeUserSettings() {
         let defaults = claudeUserSettings.loadComposerDefaults()
         modelDisplayNames = defaults.modelDisplayNames
@@ -141,11 +164,21 @@ extension AppModel {
         if let thinkingLevel = defaults.thinkingLevel {
             settings.thinkingLevel = thinkingLevel
         }
+        defaultComposerConfiguration = ComposerSendConfiguration(
+            model: settings.selectedModel,
+            mode: settings.sessionMode,
+            thinkingLevel: settings.thinkingLevel
+        )
         persistSettings()
     }
 
     private func applyComposerConfigurationChange(model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) {
         if selectedSessionID == nil {
+            defaultComposerConfiguration = ComposerSendConfiguration(
+                model: settings.selectedModel,
+                mode: settings.sessionMode,
+                thinkingLevel: settings.thinkingLevel
+            )
             do {
                 try claudeUserSettings.saveComposerDefaults(
                     model: settings.selectedModel,
@@ -157,6 +190,13 @@ extension AppModel {
                 showError("Claude settings update failed", error.localizedDescription)
             }
             return
+        }
+        if let selectedSessionID {
+            sendConfigurationBySession[selectedSessionID] = ComposerSendConfiguration(
+                model: settings.selectedModel,
+                mode: settings.sessionMode,
+                thinkingLevel: settings.thinkingLevel
+            )
         }
         persistSettings()
         guard let selectedSessionID else {
@@ -170,5 +210,12 @@ extension AppModel {
         } catch {
             showError("Claude runtime update failed", error.localizedDescription)
         }
+    }
+
+    func restoreComposerConfiguration(for sessionID: String?) {
+        let configuration = sessionID.flatMap { sendConfigurationBySession[$0] } ?? defaultComposerConfiguration
+        settings.selectedModel = configuration.model
+        settings.sessionMode = configuration.mode
+        settings.thinkingLevel = configuration.thinkingLevel
     }
 }

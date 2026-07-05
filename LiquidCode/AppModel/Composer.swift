@@ -133,4 +133,12 @@ extension AppModel {
         }
         imageLightbox = ImageLightboxContent(imageData: data, filePath: url.path, alt: alt)
     }
+
+    func openImageLightbox(_ image: MessageImageReference) {
+        guard let data = image.imageData else {
+            toastWarning("Image unavailable", image.sourceDescription ?? image.displayName)
+            return
+        }
+        imageLightbox = ImageLightboxContent(imageData: data, filePath: image.filePath, alt: image.displayName)
+    }
 }

@@ -1204,8 +1204,11 @@ enum SessionJSONLCodec {
     }
 
     private static func extractPlainText(_ value: Any?) -> String {
+        if claudeControlTranscriptEvent(from: value) != nil {
+            return ""
+        }
         if let text = value as? String {
-            return text
+            return cleanedTextAndInlineImages(from: text).text
         }
         if let blocks = value as? [[String: Any]] {
             return blocks.compactMap { block in
@@ -1214,7 +1217,7 @@ enum SessionJSONLCodec {
                     return nil
                 }
                 if type == "text", let text = block["text"] as? String {
-                    return text
+                    return cleanedTextAndInlineImages(from: text).text
                 }
                 if let nested = block["content"] {
                     return extractPlainText(nested)

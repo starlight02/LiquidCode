@@ -8,7 +8,9 @@ final class AppModel: ObservableObject {
     @Published var sessions: [SessionRecord] = []
     @Published var selectedSessionID: String?
     @Published var messagesBySession: [String: [ChatMessage]] = [:]
+    @Published var displayItemsBySession: [String: [TranscriptDisplayItem]] = [:]
     @Published var streamingTextBySession: [String: String] = [:]
+    @Published var streamingMessagesBySession: [String: ChatMessage] = [:]
     @Published var toolCallsBySession: [String: [ToolCall]] = [:]
     @Published var pendingPermissions: [PermissionRequest] = []
     @Published var workingDirectory: String = ""
@@ -65,6 +67,12 @@ final class AppModel: ObservableObject {
     let skillService = SkillService()
     let sessionIndex = SessionIndexService()
     var reloadSessionsGeneration = 0
+    var loadingMessageSessionIDs: Set<String> = []
+    var defaultComposerConfiguration = ComposerSendConfiguration(
+        model: AppSettings().selectedModel,
+        mode: AppSettings().sessionMode,
+        thinkingLevel: AppSettings().thinkingLevel
+    )
     let cliService = CLIService()
     let shareService = ShareService()
     // periphery:ignore

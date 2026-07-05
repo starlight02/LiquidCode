@@ -29,12 +29,13 @@ extension AppModel {
         setAttachments(restoredAttachments, for: sessionID)
         if let stopped {
             messagesBySession[sessionID]?.removeAll { $0.id == stopped.messageID }
+            rebuildTranscriptDisplayItems(sessionID: sessionID)
         }
     }
 
     func sendComposer() {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !attachments.isEmpty else { return }
 
         // Auto-create session if none selected
         if selectedSessionID == nil {
@@ -45,7 +46,7 @@ extension AppModel {
             let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
             let session = SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: L("New chat"), cliResumeID: nil, isDraft: true)
             sessions.insert(session, at: 0)
-            messagesBySession[id] = []
+            setMessages([], for: id, displayItems: [])
             selectedSessionID = id
             composerTextBySession[id] = ""
             attachmentsBySession[id] = []
@@ -92,9 +93,10 @@ extension AppModel {
         do {
             let resolvedModel = try resolvedModelForActiveProvider()
             let configuration = ComposerSendConfiguration(model: resolvedModel, mode: settings.sessionMode, thinkingLevel: settings.thinkingLevel)
-            let payload = composerPayloadText(text, attachments: attachments)
-            let message = ChatMessage(role: .user, content: text, attachments: attachments)
+            let payload = try composerUserMessageContent(text, attachments: attachments)
+            let message = ChatMessage(role: .user, content: text, attachments: attachments, images: payload.images)
             messagesBySession[id, default: []].append(message)
+            rebuildTranscriptDisplayItems(sessionID: id)
             activeTurnSnapshots[id] = ActiveTurnSnapshot(messageID: message.id, content: text, attachments: attachments)
             if toolCallsBySession[id] == nil {
                 toolCallsBySession[id] = []
@@ -105,7 +107,8 @@ extension AppModel {
             if shouldStartSession(session, sessionID: id, configuration: configuration) {
                 fileSystem.registerWorkspace(cwd)
                 try engine.startSession(ClaudeSessionStartRequest(
-                    prompt: payload,
+                    prompt: payload.text,
+                    content: payload,
                     cwd: cwd,
                     model: resolvedModel,
                     sessionID: id,
@@ -116,9 +119,10 @@ extension AppModel {
                     providerAPIKey: activeProviderID.flatMap { providerVault.apiKey(providerID: $0) }
                 ), eventSink: { [weak self] event in Task { @MainActor in self?.handle(event) } })
             } else {
-                try engine.sendMessage(sessionID: id, text: payload)
+                try engine.sendMessage(sessionID: id, content: payload)
             }
             sendConfigurationBySession[id] = configuration
+            persistSettings()
         } catch {
             activeTurnSnapshots.removeValue(forKey: id)
             setComposerText(text, for: id)
@@ -167,21 +171,25 @@ extension AppModel {
                 sessions[idx].isDraft = false
             }
         case .textDelta(let sessionID, let text):
-            streamingTextBySession[sessionID, default: ""] += text
+            appendStreamingBlockDelta(sessionID: sessionID, index: nil, kind: .text, text: text)
+        case .streamBlockStarted(let sessionID, let index, let block):
+            upsertStreamingBlock(sessionID: sessionID, index: index, block: block)
+        case .streamBlockDelta(let sessionID, let index, let kind, let text):
+            appendStreamingBlockDelta(sessionID: sessionID, index: index, kind: kind, text: text)
         case .message(let sessionID, let message):
             if message.role == .user, let checkpoint = message.checkpointUuid {
                 backfillCheckpoint(checkpoint, echo: message, sessionID: sessionID)
                 return
             }
-            if !streamingTextBySession[sessionID, default: ""].isEmpty, message.role == .assistant {
-                streamingTextBySession[sessionID] = ""
+            if message.role == .assistant {
+                clearStreamingMessage(sessionID: sessionID)
             }
             appendMessage(message, sessionID: sessionID)
         case .toolStarted(let sessionID, let tool),
              .toolUpdated(let sessionID, let tool):
             upsertTool(tool, sessionID: sessionID)
         case .permissionRequested(let permission):
-            pendingPermissions.append(permission)
+            upsertPendingPermission(permission)
             var tool = ToolCall(
                 id: permission.toolUseID ?? permission.requestID,
                 sessionID: permission.sessionID,
@@ -193,10 +201,7 @@ extension AppModel {
             tool.resultPreview = permission.summary
             upsertTool(tool, sessionID: permission.sessionID)
         case .turnCompleted(let sessionID):
-            if let text = streamingTextBySession[sessionID], !text.isEmpty {
-                appendMessage(ChatMessage(role: .assistant, content: text), sessionID: sessionID)
-                streamingTextBySession[sessionID] = ""
-            }
+            flushStreamingMessage(sessionID: sessionID)
             finishTurn(sessionID: sessionID, shouldDrainQueue: true)
             reloadSessions()
         case .stderr(let sessionID, let text):
@@ -204,10 +209,7 @@ extension AppModel {
                 appendMessage(ChatMessage(role: .error, content: text), sessionID: sessionID)
             }
         case .exited(let sessionID):
-            if let text = streamingTextBySession[sessionID], !text.isEmpty {
-                appendMessage(ChatMessage(role: .assistant, content: text), sessionID: sessionID)
-                streamingTextBySession[sessionID] = ""
-            }
+            flushStreamingMessage(sessionID: sessionID)
             restoreActiveTurnToDraft(sessionID: sessionID)
             reloadSessions()
         case .failed(let sessionID, let text):
@@ -220,9 +222,10 @@ extension AppModel {
         var messages = messagesBySession[sessionID] ?? []
         if let idx = messages.indices.reversed().first(where: { messages[$0].role == .user && messages[$0].checkpointUuid == nil }) {
             messages[idx].checkpointUuid = checkpoint
-            messagesBySession[sessionID] = messages
+            setMessages(messages, for: sessionID)
         } else if !messages.contains(where: { $0.id == echo.id }) {
             messagesBySession[sessionID, default: []].append(echo)
+            rebuildTranscriptDisplayItems(sessionID: sessionID)
         }
         if let idx = sessions.firstIndex(where: { $0.id == sessionID }) {
             sessions[idx].lastCheckpointUUID = checkpoint
@@ -264,10 +267,156 @@ extension AppModel {
 
     private func appendMessage(_ message: ChatMessage, sessionID: String) {
         messagesBySession[sessionID, default: []].append(message)
+        rebuildTranscriptDisplayItems(sessionID: sessionID)
         if let idx = sessions.firstIndex(where: { $0.id == sessionID }) {
-            sessions[idx].preview = String(message.content.prefix(120))
+            sessions[idx].preview = String(message.transcriptPreview.prefix(120))
             sessions[idx].modifiedAt = Date()
         }
+    }
+
+    private func upsertStreamingBlock(sessionID: String, index: Int?, block: ChatContentBlock) {
+        var message = streamingMessagesBySession[sessionID] ?? ChatMessage(
+            id: "streaming_\(sessionID)",
+            role: .assistant,
+            content: "",
+            blocks: []
+        )
+        var blocks = message.blocks
+        let targetIndex = index ?? blocks.count
+        if targetIndex < blocks.count {
+            blocks[targetIndex] = mergeStreamingBlock(existing: blocks[targetIndex], incoming: block)
+        } else {
+            while blocks.count < targetIndex {
+                blocks.append(ChatContentBlock(kind: .unknown))
+            }
+            blocks.append(block)
+        }
+        message.blocks = blocks
+        refreshStreamingContent(&message)
+        streamingMessagesBySession[sessionID] = message
+        streamingTextBySession[sessionID] = message.content
+        upsertStreamingToolIfNeeded(block, sessionID: sessionID)
+    }
+
+    private func appendStreamingBlockDelta(sessionID: String, index: Int?, kind: ChatContentBlockKind, text: String) {
+        guard !text.isEmpty else {
+            return
+        }
+        var message = streamingMessagesBySession[sessionID] ?? ChatMessage(
+            id: "streaming_\(sessionID)",
+            role: .assistant,
+            content: "",
+            blocks: []
+        )
+        var blocks = message.blocks
+        let targetIndex: Int
+        if let index {
+            targetIndex = index
+        } else if let existing = blocks.indices.reversed().first(where: { blocks[$0].kind == kind || (kind == .toolUse && blocks[$0].kind == .toolUse) }) {
+            targetIndex = existing
+        } else {
+            targetIndex = blocks.count
+        }
+        while blocks.count <= targetIndex {
+            blocks.append(ChatContentBlock(kind: kind))
+        }
+        var block = blocks[targetIndex]
+        if block.kind == .unknown {
+            block.kind = kind
+        }
+        switch kind {
+        case .toolUse:
+            block.kind = .toolUse
+            block.inputJSON = (block.inputJSON ?? "") + text
+        case .image:
+            break
+        case .toolResult:
+            block.kind = .toolResult
+            block.text += text
+        case .thinking:
+            block.kind = .thinking
+            block.text += text
+        case .text,
+             .unknown:
+            block.kind = .text
+            block.text += text
+        }
+        blocks[targetIndex] = block
+        message.blocks = blocks
+        refreshStreamingContent(&message)
+        streamingMessagesBySession[sessionID] = message
+        streamingTextBySession[sessionID] = message.content
+        upsertStreamingToolIfNeeded(block, sessionID: sessionID)
+    }
+
+    private func mergeStreamingBlock(existing: ChatContentBlock, incoming: ChatContentBlock) -> ChatContentBlock {
+        var merged = incoming
+        if merged.text.isEmpty {
+            merged.text = existing.text
+        }
+        if merged.toolUseID == nil {
+            merged.toolUseID = existing.toolUseID
+        }
+        if merged.toolName == nil {
+            merged.toolName = existing.toolName
+        }
+        if merged.inputJSON == nil || merged.inputJSON?.isEmpty == true {
+            merged.inputJSON = existing.inputJSON
+        }
+        if merged.image == nil {
+            merged.image = existing.image
+        }
+        if merged.rawJSON == nil {
+            merged.rawJSON = existing.rawJSON
+        }
+        if merged.rawType == nil {
+            merged.rawType = existing.rawType
+        }
+        return merged
+    }
+
+    private func refreshStreamingContent(_ message: inout ChatMessage) {
+        message.content = message.blocks
+            .filter { $0.kind == .text }
+            .map(\.text)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n\n")
+        message.images = message.blocks.compactMap(\.image)
+    }
+
+    private func upsertStreamingToolIfNeeded(_ block: ChatContentBlock, sessionID: String) {
+        guard block.kind == .toolUse || block.kind == .toolResult else {
+            return
+        }
+        let id = block.toolUseID ?? block.id
+        var tool = ToolCall(
+            id: id,
+            sessionID: sessionID,
+            name: block.toolName ?? (block.kind == .toolResult ? "Tool" : "Tool"),
+            inputPreview: block.kind == .toolUse ? (block.inputJSON ?? "") : "",
+            resultPreview: block.kind == .toolResult ? block.text : "",
+            status: block.kind == .toolResult ? (block.isError ? .failed : .succeeded) : .streamingInput
+        )
+        if block.kind == .toolResult {
+            tool.completedAt = Date()
+        }
+        upsertTool(tool, sessionID: sessionID)
+    }
+
+    private func clearStreamingMessage(sessionID: String) {
+        streamingMessagesBySession.removeValue(forKey: sessionID)
+        streamingTextBySession[sessionID] = ""
+    }
+
+    private func flushStreamingMessage(sessionID: String) {
+        if
+            let message = streamingMessagesBySession.removeValue(forKey: sessionID),
+            !message.blocks.isEmpty || !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.displayImages.isEmpty {
+            appendMessage(message, sessionID: sessionID)
+        } else if let text = streamingTextBySession[sessionID], !text.isEmpty {
+            appendMessage(ChatMessage(role: .assistant, content: text), sessionID: sessionID)
+        }
+        streamingTextBySession[sessionID] = ""
     }
 
     private func upsertTool(_ tool: ToolCall, sessionID: String) {
@@ -293,5 +442,19 @@ extension AppModel {
             tools.append(tool)
         }
         toolCallsBySession[sessionID] = tools
+    }
+
+    private func upsertPendingPermission(_ permission: PermissionRequest) {
+        if
+            let idx = pendingPermissions.firstIndex(where: { existing in
+                existing.sessionID == permission.sessionID &&
+                    (existing.id == permission.id ||
+                        existing.requestID == permission.requestID ||
+                        (existing.toolUseID != nil && existing.toolUseID == permission.toolUseID))
+            }) {
+            pendingPermissions[idx] = permission
+        } else {
+            pendingPermissions.append(permission)
+        }
     }
 }

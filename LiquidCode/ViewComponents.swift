@@ -1367,6 +1367,7 @@ struct ChatPanelView: View {
     let secondaryOpen: Bool
     let isFilePreviewMode: Bool
     let onToggleSecondary: () -> Void
+    private let transcriptBottomAnchorID = "transcript_bottom_anchor"
     @State private var findOpen = false
     @State private var agentPopoverOpen = false
     @State private var logoOpacity: Double = 0
@@ -1621,7 +1622,44 @@ struct ChatPanelView: View {
     }
 
     private var displayItems: [TranscriptDisplayItem] {
-        TranscriptDisplayBuilder.displayItems(messages: model.selectedMessages, pendingPermissions: model.pendingPermissionsForSelectedSession)
+        model.selectedTranscriptDisplayItems
+    }
+
+    private var streamingDisplayItems: [TranscriptDisplayItem] {
+        guard let message = model.selectedStreamingMessage else {
+            return []
+        }
+        return TranscriptDisplayBuilder.displayItems(messages: [message])
+    }
+
+    private var transcriptAutoScrollToken: String {
+        [
+            model.selectedSessionID ?? "no-session",
+            displayItems.map(\.id).joined(separator: "|"),
+            streamingDisplayItems.map(\.id).joined(separator: "|"),
+            model.selectedStreamingText,
+            model.selectedPendingUserMessages.map(\.id).joined(separator: "|")
+        ].joined(separator: "\u{1f}")
+    }
+
+    @ViewBuilder
+    private func displayItemView(_ item: TranscriptDisplayItem, idPrefix: String = "") -> some View {
+        switch item {
+        case .message(let message):
+            MessageBubbleView(
+                message: message,
+                findText: model.chatFindText,
+                activeOccurrenceIndex: model.selectedChatFindTarget?.itemID == message.id ? model.selectedChatFindTarget?.occurrenceIndex : nil
+            ).id(idPrefix + message.id)
+        case .interaction(let permission):
+            InlineInteractionCardView(permission: permission).id(idPrefix + "interaction_\(permission.id)")
+        case .question(let question):
+            QuestionTranscriptCardView(question: question).id(idPrefix + question.id)
+        case .tool(let item):
+            ToolDisplayItemView(item: item).id(idPrefix + item.id)
+        case .toolRun(let items):
+            ToolMessageGroupView(items: items).id(idPrefix + items.map(\.id).joined(separator: "_"))
+        }
     }
 
     private var transcript: some View {
@@ -1629,47 +1667,41 @@ struct ChatPanelView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(displayItems) { item in
-                        switch item {
-                        case .message(let message):
-                            MessageBubbleView(
-                                message: message,
-                                findText: model.chatFindText,
-                                activeOccurrenceIndex: model.selectedChatFindTarget?.itemID == message.id ? model.selectedChatFindTarget?.occurrenceIndex : nil
-                            ).id(message.id)
-                        case .interaction(let permission):
-                            InlineInteractionCardView(permission: permission).id("interaction_\(permission.id)")
-                        case .tool(let item):
-                            ToolDisplayItemView(item: item).id(item.id)
-                        case .toolRun(let items):
-                            ToolMessageGroupView(items: items).id(items.map(\.id).joined(separator: "_"))
-                        }
+                        displayItemView(item)
                     }
-                    if !model.selectedStreamingText.isEmpty {
-                        MessageBubbleView(
-                            message: ChatMessage(role: .assistant, content: model.selectedStreamingText),
-                            findText: model.chatFindText
-                        ).id("streaming") }
+                    ForEach(streamingDisplayItems) { item in
+                        displayItemView(item, idPrefix: "streaming_")
+                    }
+                    if !streamingDisplayItems.isEmpty {
+                        Color.clear.frame(height: 1).id("streaming")
+                    }
                     ForEach(model.selectedPendingUserMessages) { pending in QueuedUserMessageView(message: pending).id("queued_\(pending.id)") }
+                    Color.clear.frame(height: 1).id(transcriptBottomAnchorID)
                 }
                 .frame(maxWidth: LiquidGlassToken.chatMaxWidth, alignment: .leading)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 18)
-                .padding(.bottom, 154)
+                .padding(.bottom, 230)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-            .onChange(of: model.selectedMessages.count) { _, _ in if let last = model.selectedMessages.last {
-                withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-            } }
-            .onChange(of: model.selectedStreamingText) { _, _ in withAnimation { proxy.scrollTo("streaming", anchor: .bottom) } }
-            .onChange(of: model.selectedPendingUserMessages.count) { _, _ in if let last = model.selectedPendingUserMessages.last {
-                withAnimation { proxy.scrollTo(
-                    "queued_\(last.id)",
-                    anchor: .bottom
-                ) } } }
+            .onAppear { scrollToTranscriptBottom(proxy, animated: false) }
+            .onChange(of: transcriptAutoScrollToken) { _, _ in scrollToTranscriptBottom(proxy) }
             .onChange(of: model.selectedChatFindTarget?.id) { _, _ in
                 if let target = model.selectedChatFindTarget {
                     withAnimation { proxy.scrollTo(target.itemID, anchor: .center) }
                 } }
+        }
+    }
+
+    private func scrollToTranscriptBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.snappy(duration: 0.18)) {
+                    proxy.scrollTo(transcriptBottomAnchorID, anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo(transcriptBottomAnchorID, anchor: .bottom)
+            }
         }
     }
 }
@@ -1679,7 +1711,11 @@ extension AppModel {
         guard let selectedSessionID else {
             return []
         }
-        return pendingPermissions.filter { $0.sessionID == selectedSessionID }
+        var seen = Set<String>()
+        return pendingPermissions.filter { $0.sessionID == selectedSessionID }.filter { permission in
+            let key = permission.toolUseID ?? permission.requestID
+            return seen.insert(key).inserted
+        }
     }
 }
 
@@ -1852,9 +1888,13 @@ struct QueuedUserMessageView: View {
                 .foregroundStyle(.secondary)
                 MarkdownRendererView(content: message.content)
                 if !message.attachments.isEmpty {
-                    Text(LF("%d attachment(s) queued", message.attachments.count))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    let images = imageReferences(from: message.attachments)
+                    if !images.isEmpty {
+                        MessageImageStackView(images: images, inverse: false)
+                    }
+                    if !message.attachments.filter({ !$0.isImage }).isEmpty {
+                        MessageAttachmentStripView(attachments: message.attachments.filter { !$0.isImage })
+                    }
                 }
             }
             .padding(12)
@@ -1949,7 +1989,18 @@ struct MessageBubbleView: View {
         case .error:
             systemLikeMessage(icon: "exclamationmark.triangle.fill", tint: .red, title: L("Error"))
         case .system:
-            systemLikeMessage(icon: "info.circle", tint: .secondary, title: L("System"))
+            systemLikeMessage(icon: systemMessageIcon, tint: .secondary, title: message.toolName ?? L("System"))
+        }
+    }
+
+    private var systemMessageIcon: String {
+        switch message.toolName {
+        case "Claude Code Command":
+            "terminal"
+        case "Interrupted":
+            "pause.circle"
+        default:
+            "info.circle"
         }
     }
 
@@ -1970,6 +2021,9 @@ struct MessageBubbleView: View {
                     .textSelection(.enabled)
                     .font(.system(size: 16, weight: .regular))
                     .lineSpacing(4)
+                if !message.displayImages.isEmpty {
+                    MessageImageStackView(images: message.displayImages)
+                }
             }
             .frame(maxWidth: 920, alignment: .leading)
             Spacer(minLength: 60)
@@ -2002,13 +2056,19 @@ struct MessageBubbleView: View {
         HStack(alignment: .top, spacing: 10) {
             Spacer(minLength: 120)
             VStack(alignment: .leading, spacing: 8) {
-                Text(softWrappedTranscriptText(message.content.isEmpty ? " " : message.content))
-                    .font(.system(size: 14))
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !message.attachments.isEmpty {
-                    MessageAttachmentStripView(attachments: message.attachments, inverse: true)
+                if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(softWrappedTranscriptText(message.content))
+                        .font(.system(size: 14))
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !message.displayImages.isEmpty {
+                    MessageImageStackView(images: message.displayImages, inverse: true)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                if !message.nonImageAttachments.isEmpty {
+                    MessageAttachmentStripView(attachments: message.nonImageAttachments, inverse: true)
                 }
             }
             .foregroundStyle(.white)
@@ -2093,6 +2153,164 @@ struct MessageAttachmentStripView: View {
                 }
             }
         }
+    }
+}
+
+struct MessageImageStackView: View {
+    @EnvironmentObject var model: AppModel
+    let images: [MessageImageReference]
+    var inverse = false
+
+    private var visibleImages: [MessageImageReference] {
+        Array(images.prefix(4))
+    }
+
+    private var stackSize: CGSize {
+        if images.count <= 1, let image = images.first {
+            return singleImageSize(for: image)
+        }
+        return CGSize(width: 340, height: 198)
+    }
+
+    var body: some View {
+        if images.count <= 1, let image = images.first {
+            MessageImageCardView(image: image, width: stackSize.width, height: stackSize.height, inverse: inverse)
+        } else {
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(visibleImages.enumerated()), id: \.element.id) { index, image in
+                    let placement = placement(for: index, visibleCount: visibleImages.count)
+                    MessageImageCardView(image: image, width: placement.size.width, height: placement.size.height, inverse: inverse)
+                        .rotationEffect(.degrees(placement.rotation))
+                        .position(
+                            x: placement.origin.x + placement.size.width / 2,
+                            y: placement.origin.y + placement.size.height / 2
+                        )
+                        .zIndex(Double(index))
+                }
+                if images.count > visibleImages.count {
+                    Text("+\(images.count - visibleImages.count)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.64))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.8))
+                        .offset(x: 286, y: 154)
+                        .zIndex(20)
+                }
+            }
+            .frame(width: stackSize.width, height: stackSize.height, alignment: .topLeading)
+            .accessibilityLabel(LF("%d images", images.count))
+        }
+    }
+
+    private func singleImageSize(for image: MessageImageReference) -> CGSize {
+        let maxWidth: CGFloat = 320
+        let maxHeight: CGFloat = 224
+        let minHeight: CGFloat = 108
+        guard let aspect = image.aspectRatio, aspect.isFinite, aspect > 0 else {
+            return CGSize(width: maxWidth, height: 204)
+        }
+        if aspect >= 1 {
+            let height = min(maxHeight, max(minHeight, maxWidth / aspect))
+            return CGSize(width: maxWidth, height: height)
+        }
+        let width = min(maxWidth, max(168, maxHeight * aspect))
+        return CGSize(width: width, height: maxHeight)
+    }
+
+    private func placement(for index: Int, visibleCount: Int) -> ImageStackPlacement {
+        switch (visibleCount, index) {
+        case (2, 0):
+            ImageStackPlacement(origin: CGPoint(x: 18, y: 42), size: CGSize(width: 218, height: 134), rotation: -6.0)
+        case (2, _):
+            ImageStackPlacement(origin: CGPoint(x: 72, y: 18), size: CGSize(width: 258, height: 158), rotation: 3.5)
+        case (3, 0):
+            ImageStackPlacement(origin: CGPoint(x: 8, y: 36), size: CGSize(width: 198, height: 124), rotation: -7.0)
+        case (3, 1):
+            ImageStackPlacement(origin: CGPoint(x: 132, y: 10), size: CGSize(width: 196, height: 122), rotation: 6.5)
+        case (3, _):
+            ImageStackPlacement(origin: CGPoint(x: 54, y: 34), size: CGSize(width: 258, height: 158), rotation: -1.5)
+        case (_, 0):
+            ImageStackPlacement(origin: CGPoint(x: 4, y: 38), size: CGSize(width: 190, height: 118), rotation: -7.0)
+        case (_, 1):
+            ImageStackPlacement(origin: CGPoint(x: 138, y: 8), size: CGSize(width: 188, height: 116), rotation: 6.5)
+        case (_, 2):
+            ImageStackPlacement(origin: CGPoint(x: 34, y: 14), size: CGSize(width: 218, height: 134), rotation: -3.5)
+        default:
+            ImageStackPlacement(origin: CGPoint(x: 70, y: 36), size: CGSize(width: 258, height: 158), rotation: 2.0)
+        }
+    }
+}
+
+private struct ImageStackPlacement {
+    let origin: CGPoint
+    let size: CGSize
+    let rotation: Double
+}
+
+struct MessageImageCardView: View {
+    @EnvironmentObject var model: AppModel
+    let image: MessageImageReference
+    let width: CGFloat
+    let height: CGFloat
+    var inverse = false
+
+    var body: some View {
+        Button { model.openImageLightbox(image) } label: {
+            ZStack(alignment: .bottomLeading) {
+                if let nsImage = image.nsImage {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: width, height: height)
+                        .clipped()
+                } else {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(inverse ? Color.white.opacity(0.14) : Color.secondary.opacity(0.10))
+                        .frame(width: width, height: height)
+                        .overlay {
+                            VStack(spacing: 7) {
+                                Image(systemName: "photo.badge.exclamationmark")
+                                    .font(.system(size: 26, weight: .semibold))
+                                Text(L("Image unavailable"))
+                                    .font(.caption.weight(.medium))
+                            }
+                            .foregroundStyle(inverse ? Color.white.opacity(0.76) : Color.secondary)
+                        }
+                }
+                if shouldShowCaption {
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.40)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    )
+                    Text(image.displayName)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 7)
+                }
+            }
+            .frame(width: width, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(inverse ? 0.28 : 0.38), lineWidth: 1.2))
+            .shadow(color: .black.opacity(inverse ? 0.30 : 0.16), radius: 18, y: 10)
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .help(L("Open image"))
+    }
+
+    private var shouldShowCaption: Bool {
+        guard image.nsImage != nil else {
+            return false
+        }
+        let trimmed = image.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && trimmed.localizedCaseInsensitiveCompare("Image") != .orderedSame
     }
 }
 
@@ -2181,6 +2399,13 @@ struct MarkdownRendererView: View {
         guard chatFindOccurrenceRanges(in: text, query: findText).isEmpty else {
             return Text(highlightedAttributedString(text))
         }
+        if
+            let markdown = try? AttributedString(
+                markdown: text,
+                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            ) {
+            return Text(markdown)
+        }
         let parts = text.components(separatedBy: "`")
         return parts.indices.reduce(Text("")) { output, index in
             output + Text(parts[index])
@@ -2259,6 +2484,7 @@ struct HTMLPreviewView: NSViewRepresentable {
 struct ImageLightboxOverlayView: View {
     let content: ImageLightboxContent
     let onClose: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     private var imageTitle: String {
         guard let alt = content.alt, !alt.isEmpty else {
@@ -2268,45 +2494,278 @@ struct ImageLightboxOverlayView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black
-                .opacity(0.58)
-                .ignoresSafeArea()
-                .pointingHandCursor()
-                .onTapGesture(perform: onClose)
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(imageTitle).font(.headline)
-                        if let filePath = content.filePath {
-                            Text(filePath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                    }
-                    Spacer()
-                    Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain)
-                        .pointingHandCursor()
-                        .keyboardShortcut(.cancelAction)
-                        .help(L("Close image preview"))
+        GeometryReader { proxy in
+            let image = NSImage(data: content.imageData)
+            let metrics = lightboxMetrics(in: proxy.size, image: image)
+            ZStack {
+                lightboxBackdrop(in: proxy.size)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onClose)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    lightboxHeader(metrics: metrics)
+                    lightboxStage(image: image, metrics: metrics)
+                    lightboxFooter(image: image, metrics: metrics)
                 }
-                if let image = NSImage(data: content.imageData) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 920, maxHeight: 680)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                } else {
-                    ContentUnavailableView(L("Cannot display image"), systemImage: "photo.badge.exclamationmark")
+                .padding(14)
+                .frame(width: metrics.panel.width, height: metrics.panel.height, alignment: .topLeading)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [.white.opacity(0.10), .white.opacity(0.035), .black.opacity(0.10)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .allowsHitTesting(false)
                 }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 30, style: .continuous)
+                        .stroke(
+                            LinearGradient(
+                                colors: [.white.opacity(0.46), .white.opacity(0.14), .black.opacity(0.20)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.1
+                        )
+                }
+                .shadow(color: .black.opacity(0.46), radius: 34, y: 22)
+                .contentShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+                .onTapGesture {}
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .padding(14)
             }
-            .padding(18)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .shadow(radius: 28)
-            .padding(32)
         }
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        .onExitCommand(perform: onClose)
     }
+
+    private func lightboxBackdrop(in size: CGSize) -> some View {
+        ZStack {
+            Color.black.opacity(colorScheme == .dark ? 0.78 : 0.72)
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.18),
+                    Color.black.opacity(0.54),
+                    Color.black.opacity(0.82)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            RadialGradient(
+                colors: [Color.white.opacity(0.20), Color.blue.opacity(0.08), Color.clear],
+                center: .center,
+                startRadius: 28,
+                endRadius: max(size.width, size.height) * 0.58
+            )
+            .blendMode(.screen)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func lightboxHeader(metrics: LightboxLayoutMetrics) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.24), Color.white.opacity(0.06)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: metrics.isPanorama ? "arrow.left.and.right.righttriangle.left.righttriangle.right" : "photo")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+            }
+            .frame(width: 34, height: 34)
+            .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 0.8))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(imageTitle)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary.opacity(0.92))
+                    .lineLimit(1)
+                if let subtitle = sourceSubtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 16)
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.primary.opacity(0.78))
+                    .frame(width: 32, height: 32)
+                    .background(.thinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color.primary.opacity(0.10), lineWidth: 0.8))
+            }
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+            .keyboardShortcut(.cancelAction)
+            .help(L("Close image preview"))
+        }
+        .frame(width: metrics.stage.width, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func lightboxStage(image: NSImage?, metrics: LightboxLayoutMetrics) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: metrics.stageCornerRadius, style: .continuous)
+                .fill(Color.black.opacity(0.58))
+                .overlay {
+                    LinearGradient(
+                        colors: [.white.opacity(0.12), .clear, .black.opacity(0.34)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+
+            if let image {
+                lightboxImage(image, metrics: metrics)
+            } else {
+                ContentUnavailableView(L("Cannot display image"), systemImage: "photo.badge.exclamationmark")
+                    .foregroundStyle(.white.opacity(0.78))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(width: metrics.stage.width, height: metrics.stage.height)
+        .clipShape(RoundedRectangle(cornerRadius: metrics.stageCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: metrics.stageCornerRadius, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [.white.opacity(0.36), .white.opacity(0.10), .black.opacity(0.35)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.1
+                )
+        }
+        .shadow(color: .black.opacity(0.56), radius: 34, y: 20)
+        .shadow(color: .white.opacity(0.08), radius: 18, x: -10, y: -10)
+    }
+
+    private func lightboxImage(_ image: NSImage, metrics: LightboxLayoutMetrics) -> some View {
+        Image(nsImage: image)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: metrics.image.width, height: metrics.image.height)
+            .background(Color.white.opacity(0.035))
+            .clipShape(RoundedRectangle(cornerRadius: metrics.imageCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: metrics.imageCornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.28), lineWidth: 0.8)
+            }
+            .shadow(color: .black.opacity(0.42), radius: 20, y: 12)
+    }
+
+    private func lightboxFooter(image: NSImage?, metrics: LightboxLayoutMetrics) -> some View {
+        HStack(spacing: 7) {
+            if let image, let pixelSize = pixelSize(for: image) {
+                lightboxMetricChip(systemImage: "aspectratio", text: "\(Int(pixelSize.width)) × \(Int(pixelSize.height))")
+            }
+            lightboxMetricChip(systemImage: "internaldrive", text: ByteCountFormatter.string(fromByteCount: Int64(content.imageData.count), countStyle: .file))
+            Spacer()
+            if let filePath = content.filePath {
+                Text(filePath)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .frame(width: metrics.stage.width, alignment: .leading)
+    }
+
+    private func lightboxMetricChip(systemImage: String, text: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(0.055), in: Capsule())
+            .overlay(Capsule().stroke(Color.primary.opacity(0.08), lineWidth: 0.7))
+    }
+
+    private var sourceSubtitle: String? {
+        if let filePath = content.filePath, !filePath.isEmpty {
+            let name = URL(fileURLWithPath: filePath).lastPathComponent
+            return name.isEmpty ? filePath : name
+        }
+        return nil
+    }
+
+    private func lightboxMetrics(in container: CGSize, image: NSImage?) -> LightboxLayoutMetrics {
+        let panel = CGSize(
+            width: max(360, container.width - 28),
+            height: max(300, container.height - 28)
+        )
+        let chromeHorizontal: CGFloat = 28
+        let chromeVertical: CGFloat = 28 + 42 + 12 + 18 + 8
+        let stage = CGSize(
+            width: max(300, panel.width - chromeHorizontal),
+            height: max(180, panel.height - chromeVertical)
+        )
+        guard let image, let pixels = pixelSize(for: image), pixels.width > 0, pixels.height > 0 else {
+            return LightboxLayoutMetrics(
+                panel: panel,
+                stage: stage,
+                image: stage,
+                imagePadding: 16,
+                imageCornerRadius: 16,
+                stageCornerRadius: 26,
+                isPanorama: false
+            )
+        }
+
+        let aspect = pixels.width / pixels.height
+        let available = CGSize(width: max(120, stage.width - 32), height: max(96, stage.height - 32))
+        var imageWidth = available.width
+        var imageHeight = imageWidth / aspect
+        if imageHeight > available.height {
+            imageHeight = available.height
+            imageWidth = imageHeight * aspect
+        }
+        return LightboxLayoutMetrics(
+            panel: panel,
+            stage: stage,
+            image: CGSize(width: imageWidth, height: imageHeight),
+            imagePadding: 16,
+            imageCornerRadius: aspect >= 3.2 ? 12 : 16,
+            stageCornerRadius: 26,
+            isPanorama: aspect >= 3.2
+        )
+    }
+
+    private func pixelSize(for image: NSImage) -> CGSize? {
+        if
+            let representation = image.representations.max(by: {
+                ($0.pixelsWide * $0.pixelsHigh) < ($1.pixelsWide * $1.pixelsHigh)
+            }), representation.pixelsWide > 0, representation.pixelsHigh > 0 {
+            return CGSize(width: representation.pixelsWide, height: representation.pixelsHigh)
+        }
+        guard image.size.width > 0, image.size.height > 0 else {
+            return nil
+        }
+        return image.size
+    }
+}
+
+private struct LightboxLayoutMetrics {
+    let panel: CGSize
+    let stage: CGSize
+    let image: CGSize
+    let imagePadding: CGFloat
+    let imageCornerRadius: CGFloat
+    let stageCornerRadius: CGFloat
+    let isPanorama: Bool
 }
 
 func parseMarkdown(_ content: String) -> [MarkdownBlock] {

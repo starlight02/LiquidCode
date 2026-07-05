@@ -1,7 +1,22 @@
 // swiftlint:disable file_length
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
+
+let toolPreviewVisibleLineLimit = 5
+
+func toolPreviewLineCount(_ text: String) -> Int {
+    max(1, text.split(separator: "\n", omittingEmptySubsequences: false).count)
+}
+
+func toolPreviewNeedsScroll(_ text: String, visibleLineLimit: Int = toolPreviewVisibleLineLimit) -> Bool {
+    toolPreviewLineCount(text) > visibleLineLimit
+}
+
+func toolPreviewMaxHeight(fontSize: CGFloat, verticalPadding: CGFloat = 20, visibleLineLimit: Int = toolPreviewVisibleLineLimit) -> CGFloat {
+    (fontSize * 1.42 * CGFloat(visibleLineLimit)) + verticalPadding
+}
 
 struct ToolDisplayItemView: View {
     let item: TranscriptToolItem
@@ -23,12 +38,28 @@ struct ToolDisplayItemView: View {
         toolPayloadKeyValues(payload)
     }
 
+    private var payloadObject: [String: Any] {
+        toolPayloadObject(payload) ?? [:]
+    }
+
+    private func payloadValue(_ key: String) -> String? {
+        guard let value = payloadObject[key] else {
+            return nil
+        }
+        let display = toolPayloadDisplayValue(value).trimmingCharacters(in: .whitespacesAndNewlines)
+        return display.isEmpty ? nil : display
+    }
+
     private var tint: Color {
         item.kind == .use ? Color.accentColor : Color.green
     }
 
     private var icon: String {
         item.kind == .use ? toolIconName(item.toolName) : "checkmark.circle.fill"
+    }
+
+    private var codeEditDiff: String? {
+        toolPayloadDiff(payload, toolName: item.toolName)
     }
 
     var body: some View {
@@ -81,7 +112,7 @@ struct ToolDisplayItemView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(10)
                         }
-                        .frame(maxHeight: 160)
+                        .frame(maxHeight: toolPreviewMaxHeight(fontSize: 12, verticalPadding: 20))
                         .background(Color.primary.opacity(0.045))
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
@@ -100,35 +131,167 @@ struct ToolDisplayItemView: View {
 
     @ViewBuilder private var toolSummary: some View {
         if item.kind == .use {
-            if parsedJSON.isEmpty {
+            if let diff = codeEditDiff {
+                VStack(alignment: .leading, spacing: 7) {
+                    if let file = payloadValue("file_path") ?? payloadValue("path") {
+                        ToolSectionView(title: L("TARGET"), text: file, monospace: true, tint: tint)
+                    }
+                    ToolDiffSectionView(diff: diff, tint: tint)
+                }
+            } else if let command = payloadValue("command") {
+                ToolSectionView(title: L("COMMAND"), text: command, monospace: true, tint: tint)
+            } else if let file = payloadValue("file_path") ?? payloadValue("path") {
+                VStack(alignment: .leading, spacing: 7) {
+                    ToolSectionView(title: L("TARGET"), text: file, monospace: true, tint: tint)
+                    compactKeyValueRows
+                }
+            } else if parsedJSON.isEmpty {
                 Text(payload.isEmpty ? L("No input payload.") : payload)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(compact ? 2 : 4)
                     .textSelection(.enabled)
             } else {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(Array(parsedJSON.prefix(compact ? 3 : 6)), id: \.0) { key, value in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(key)
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.tertiary)
-                                .frame(width: compact ? 72 : 110, alignment: .leading)
-                            Text(value)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(compact ? 1 : 3)
-                                .textSelection(.enabled)
-                        }
-                    }
-                }
+                compactKeyValueRows
             }
         } else {
-            MarkdownRendererView(content: displayPayload)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+            ToolSectionView(
+                title: item.isError ? L("ERROR") : L("OUTPUT"),
+                text: displayPayload,
+                monospace: shouldRenderResultAsMonospace(displayPayload),
+                tint: item.isError ? .red : tint
+            )
         }
+    }
+
+    private var compactKeyValueRows: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(parsedJSON.prefix(compact ? 3 : 6)), id: \.0) { key, value in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(key.uppercased())
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: compact ? 72 : 110, alignment: .leading)
+                    Text(value)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(compact ? 1 : 3)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+    }
+}
+
+struct ToolSectionView: View {
+    let title: String
+    let text: String
+    var monospace = false
+    var tint: Color = .accentColor
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .tracking(0.8)
+                .foregroundStyle(.tertiary)
+            limitedContent
+                .background(tint.opacity(0.055))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tint.opacity(0.12), lineWidth: 1))
+        }
+    }
+
+    @ViewBuilder private var limitedContent: some View {
+        if toolPreviewNeedsScroll(text) {
+            ScrollView(.vertical) {
+                content
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            .frame(maxHeight: toolPreviewMaxHeight(fontSize: monospace ? 13 : 14, verticalPadding: 20))
+        } else {
+            content
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        Group {
+            if monospace {
+                Text(text)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+            } else {
+                MarkdownRendererView(content: text)
+                    .font(.callout)
+            }
+        }
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct ToolDiffSectionView: View {
+    let diff: String
+    var tint: Color = .accentColor
+
+    private var lines: [String] {
+        diff.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("DIFF"))
+                .font(.caption2.weight(.bold))
+                .tracking(0.8)
+                .foregroundStyle(.tertiary)
+            limitedDiff
+                .background(tint.opacity(0.050))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tint.opacity(0.13), lineWidth: 1))
+        }
+    }
+
+    @ViewBuilder private var limitedDiff: some View {
+        if toolPreviewNeedsScroll(diff) {
+            ScrollView(.vertical) {
+                diffLines
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            .frame(maxHeight: toolPreviewMaxHeight(fontSize: 12, verticalPadding: 20))
+        } else {
+            diffLines
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+        }
+    }
+
+    private var diffLines: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                Text(line.isEmpty ? " " : line)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(diffLineColor(line))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func diffLineColor(_ line: String) -> Color {
+        if line.hasPrefix("+++") || line.hasPrefix("---") || line.hasPrefix("@@") {
+            return tint.opacity(0.90)
+        }
+        if line.hasPrefix("+") {
+            return .green
+        }
+        if line.hasPrefix("-") {
+            return .red
+        }
+        return .secondary
     }
 }
 
@@ -205,11 +368,87 @@ func cleanToolPayload(_ content: String) -> String {
     return lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
-func toolPayloadKeyValues(_ payload: String) -> [(String, String)] {
+func isCodeEditToolName(_ toolName: String) -> Bool {
+    let lower = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return lower == "edit" ||
+        lower == "multiedit" ||
+        lower == "multi_edit" ||
+        lower == "write" ||
+        lower == "notebookedit" ||
+        lower == "notebook_edit" ||
+        lower.contains("apply_patch")
+}
+
+func toolPayloadDiff(_ payload: String, toolName: String) -> String? {
+    let lowerName = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if lowerName == "bash" || lowerName == "shell" {
+        return patchDiffFromBashCommand(payload)
+    }
+    guard isCodeEditToolName(toolName), let object = toolPayloadObject(payload) else {
+        return nil
+    }
+    let filePath = payloadString(object["file_path"]) ?? payloadString(object["path"]) ?? L("edited file")
+    if lowerName == "multiedit" || lowerName == "multi_edit" {
+        guard let edits = object["edits"] as? [[String: Any]] else {
+            return nil
+        }
+        var chunks: [String] = ["--- \(filePath)", "+++ \(filePath)"]
+        for (index, edit) in edits.enumerated() {
+            guard let old = payloadString(edit["old_string"]), let new = payloadString(edit["new_string"]) else {
+                continue
+            }
+            chunks.append("@@ edit \(index + 1) @@")
+            chunks.append(contentsOf: prefixedDiffLines(oldString: old, newString: new))
+        }
+        return chunks.count > 2 ? chunks.joined(separator: "\n") : nil
+    }
+    if lowerName == "write", let content = payloadString(object["content"]) {
+        return (["--- /dev/null", "+++ \(filePath)", "@@ new file @@"] + content
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { "+" + String($0) })
+            .joined(separator: "\n")
+    }
+    guard let old = payloadString(object["old_string"]), let new = payloadString(object["new_string"]) else {
+        return nil
+    }
+    return (["--- \(filePath)", "+++ \(filePath)", "@@ replacement @@"] + prefixedDiffLines(oldString: old, newString: new))
+        .joined(separator: "\n")
+}
+
+private func payloadString(_ value: Any?) -> String? {
+    guard let value else {
+        return nil
+    }
+    if let string = value as? String {
+        return string
+    }
+    if value is NSNull {
+        return nil
+    }
+    return String(describing: value)
+}
+
+private func prefixedDiffLines(oldString: String, newString: String) -> [String] {
+    let oldLines = oldString.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    let newLines = newString.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    return oldLines.map { "-" + $0 } + newLines.map { "+" + $0 }
+}
+
+private func patchDiffFromBashCommand(_ payload: String) -> String? {
     guard
-        let data = payload.data(using: .utf8),
-        let object = try? JSONSerialization.jsonObject(with: data),
-        let dict = object as? [String: Any] else {
+        let object = toolPayloadObject(payload),
+        let command = payloadString(object["command"]),
+        command.contains("*** Begin Patch"),
+        let start = command.range(of: "*** Begin Patch")
+    else {
+        return nil
+    }
+    let patch = String(command[start.lowerBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    return patch.isEmpty ? nil : patch
+}
+
+func toolPayloadKeyValues(_ payload: String) -> [(String, String)] {
+    guard let dict = toolPayloadObject(payload) else {
         return []
     }
     let preferred = ["description", "command", "file_path", "path", "subagent_type", "prompt", "url", "pattern"]
@@ -221,6 +460,16 @@ func toolPayloadKeyValues(_ payload: String) -> [(String, String)] {
         let value = toolPayloadDisplayValue(raw)
         return (key.replacingOccurrences(of: "_", with: " "), value)
     }
+}
+
+func toolPayloadObject(_ payload: String) -> [String: Any]? {
+    guard
+        let data = payload.data(using: .utf8),
+        let object = try? JSONSerialization.jsonObject(with: data),
+        let dict = object as? [String: Any] else {
+        return nil
+    }
+    return dict
 }
 
 func toolPayloadDisplayValue(_ raw: Any) -> String {
@@ -263,6 +512,17 @@ func toolIconName(_ name: String) -> String {
         return "globe"
     }
     return "wrench.and.screwdriver"
+}
+
+func shouldRenderResultAsMonospace(_ text: String) -> Bool {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else {
+        return false
+    }
+    if trimmed.contains("\n") && !trimmed.contains("# ") && !trimmed.contains("## ") {
+        return true
+    }
+    return trimmed.contains("error:") || trimmed.contains("warning:") || trimmed.contains("Container ") || trimmed.contains("diff --git")
 }
 
 enum InteractionCardKind { case permission, planReview, question }
@@ -459,8 +719,7 @@ struct PlanReviewInlineCardView: View {
                     .buttonStyle(.plain)
                     .liquidGlassButton(radius: 11)
                 Button(L("Restart Plan")) {
-                    model.settings.sessionMode = .plan
-                    model.persistSettings()
+                    model.setComposerMode(.plan)
                     model.updateComposerText(L("Please revise the plan before execution:") + "\n\n")
                     model.respondPermission(
                         permission,
@@ -472,7 +731,7 @@ struct PlanReviewInlineCardView: View {
                 .liquidGlassButton(radius: 11)
                 Spacer()
                 Button {
-                    model.settings.sessionMode = .code; model.persistSettings(); model.respondPermission(permission, allow: true, editedInput: permission.inputJSON)
+                    model.setComposerMode(.code); model.respondPermission(permission, allow: true, editedInput: permission.inputJSON)
                 } label: {
                     Label(L("Approve Plan"), systemImage: "checkmark.circle.fill")
                 }
@@ -492,76 +751,241 @@ struct QuestionInlineCardView: View {
     @EnvironmentObject var model: AppModel
     let permission: PermissionRequest
     @State private var answer = ""
-    private var prompt: String {
-        questionPrompt(from: permission.inputJSON, fallback: permission.summary)
+    @State private var selectedOption: String?
+
+    private var question: ParsedQuestionPrompt {
+        questionPrompts(from: permission.inputJSON, fallback: permission.summary).first ?? ParsedQuestionPrompt(
+            header: L("Question"),
+            question: permission.summary,
+            options: [],
+            multiSelect: false
+        )
     }
 
-    private var options: [String] {
-        questionOptions(from: permission.inputJSON)
+    private var canSend: Bool {
+        !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack { Image(systemName: "questionmark.bubble.fill").foregroundStyle(Color.accentColor); Text(L("Claude asks a question")).font(.headline); Spacer() }
-            Text(prompt).font(.callout)
-            if
-                !options
-                    .isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 8)], alignment: .leading, spacing: 8) { ForEach(options, id: \.self) { option in
-                    Button(option) { answer = option }.buttonStyle(.bordered) } } }
-            TextField(L("Type an answer"), text: $answer)
-                .textFieldStyle(.plain)
-                .padding(10)
-                .background(Color.primary.opacity(0.045))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            HStack {
-                Button(L("Skip")) { model.respondPermission(permission, allow: true, editedInput: questionSkipResponseJSON(permission.inputJSON)) }
+        HStack(alignment: .top, spacing: 12) {
+            TranscriptAvatar(systemImage: "questionmark.bubble.fill", foreground: .white, background: .accentColor)
+            VStack(alignment: .leading, spacing: 12) {
+                QuestionCardHeaderView(title: L("Claude Code question"), subtitle: question.header, isPending: true)
+                MarkdownRendererView(content: question.question)
+                    .font(.system(size: 15, weight: .medium))
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                if !question.options.isEmpty {
+                    QuestionOptionsListView(options: question.options, selected: selectedOption) { option in
+                        selectedOption = option.label
+                        answer = option.label
+                    }
+                }
+                TextField(L("Type an answer"), text: $answer)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color.primary.opacity(0.045))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(LiquidGlassToken.hairline, lineWidth: 1))
+                HStack(spacing: 10) {
+                    Button(L("Skip")) { model.respondPermission(permission, allow: true, editedInput: questionSkipResponseJSON(permission.inputJSON)) }
+                        .buttonStyle(.plain)
+                        .liquidGlassButton(radius: 11)
+                    Spacer()
+                    Button {
+                        model.respondPermission(permission, allow: true, editedInput: questionResponseJSON(permission.inputJSON, answer: answer))
+                    } label: {
+                        Label(L("Send Answer"), systemImage: "arrow.right")
+                    }
                     .buttonStyle(.plain)
-                    .liquidGlassButton(radius: 11)
-                Spacer()
+                    .liquidGlassButton(active: canSend, radius: 11)
+                    .disabled(!canSend)
+                }
+            }
+            .padding(16)
+            .background { StandardContentCardBackground(cornerRadius: 18, tint: .accentColor) }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .frame(maxWidth: 720, alignment: .leading)
+            Spacer(minLength: 60)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+struct QuestionTranscriptCardView: View {
+    let question: TranscriptQuestionItem
+
+    private var prompt: ParsedQuestionPrompt {
+        questionPrompts(from: question.inputJSON, fallback: L("Claude asked a question")).first ?? ParsedQuestionPrompt(
+            header: L("Question"),
+            question: question.inputJSON,
+            options: [],
+            multiSelect: false
+        )
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            TranscriptAvatar(systemImage: "questionmark.bubble", foreground: Color.accentColor, background: Color.accentColor.opacity(0.14))
+            VStack(alignment: .leading, spacing: 11) {
+                QuestionCardHeaderView(title: L("Question from Claude Code"), subtitle: prompt.header, isPending: false)
+                MarkdownRendererView(content: prompt.question)
+                    .font(.system(size: 15, weight: .medium))
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                if !prompt.options.isEmpty {
+                    QuestionOptionsListView(options: prompt.options, selected: nil, onSelect: nil)
+                }
+            }
+            .padding(14)
+            .background { StandardContentCardBackground(cornerRadius: 18, tint: .accentColor) }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .frame(maxWidth: 720, alignment: .leading)
+            Spacer(minLength: 60)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+struct QuestionCardHeaderView: View {
+    let title: String
+    let subtitle: String
+    let isPending: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 9) {
+            Image(systemName: isPending ? "questionmark.bubble.fill" : "questionmark.bubble")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 24, height: 24)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                if !subtitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(subtitle)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            Spacer(minLength: 0)
+            Text(isPending ? L("Awaiting reply") : L("History"))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(isPending ? Color.orange : Color.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background((isPending ? Color.orange : Color.secondary).opacity(0.10), in: Capsule())
+        }
+    }
+}
+
+struct QuestionOptionsListView: View {
+    let options: [ParsedQuestionOption]
+    let selected: String?
+    var onSelect: ((ParsedQuestionOption) -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(options) { option in
                 Button {
-                    model.respondPermission(permission, allow: true, editedInput: questionResponseJSON(permission.inputJSON, answer: answer))
+                    onSelect?(option)
                 } label: {
-                    Label(L("Send Answer"), systemImage: "arrow.right")
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: selected == option.label ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(selected == option.label ? Color.accentColor : Color.secondary.opacity(0.55))
+                            .frame(width: 16, height: 18)
+                            .padding(.top, 1)
+                            .opacity(onSelect == nil && selected == nil ? 0 : 1)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(option.label)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if !option.description.isEmpty {
+                                Text(option.description)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, option.description.isEmpty ? 9 : 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        (selected == option.label ? Color.accentColor : Color.primary)
+                            .opacity(selected == option.label ? 0.14 : 0.045)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .strokeBorder(
+                                selected == option.label ? Color.accentColor.opacity(0.35) : LiquidGlassToken.hairline,
+                                lineWidth: 1
+                            )
+                    )
                 }
                 .buttonStyle(.plain)
-                .liquidGlassButton(active: true, radius: 11)
-                .disabled(answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .pointingHandCursor(enabled: onSelect != nil)
+                .allowsHitTesting(onSelect != nil)
             }
         }
-        .padding(14)
-        .background { StandardContentCardBackground(cornerRadius: 16, tint: .accentColor) }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(alignment: .leading) { Rectangle().fill(Color.accentColor).frame(width: 3) }
-        .padding(.leading, 44)
     }
 }
 
-func questionPrompt(from json: String, fallback: String) -> String {
-    guard let data = json.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-        return fallback
-    }
-    if let question = obj["question"] as? String {
-        return question
-    }
-    if let questions = obj["questions"] as? [[String: Any]], let first = questions.first, let question = first["question"] as? String {
-        return question
-    }
-    return fallback
+struct ParsedQuestionOption: Identifiable, Equatable, Sendable {
+    var id: String { label + "\n" + description }
+    var label: String
+    var description: String
 }
 
-func questionOptions(from json: String) -> [String] {
+struct ParsedQuestionPrompt: Identifiable, Equatable, Sendable {
+    var id: String { header + "\n" + question }
+    var header: String
+    var question: String
+    var options: [ParsedQuestionOption]
+    var multiSelect: Bool
+}
+
+func questionPrompts(from json: String, fallback: String) -> [ParsedQuestionPrompt] {
     guard let data = json.data(using: .utf8), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         return []
     }
-    let rawOptions: Any? = obj["options"] ?? (obj["questions"] as? [[String: Any]])?.first?["options"]
-    if let strings = rawOptions as? [String] {
-        return strings
+    let rawQuestions = obj["questions"] as? [[String: Any]] ?? [obj]
+    let prompts = rawQuestions.compactMap { raw -> ParsedQuestionPrompt? in
+        let question = (raw["question"] as? String ?? fallback).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else {
+            return nil
+        }
+        let rawOptions: Any? = raw["options"] ?? obj["options"]
+        let options: [ParsedQuestionOption]
+        if let strings = rawOptions as? [String] {
+            options = strings.map { ParsedQuestionOption(label: $0, description: "") }
+        } else if let dicts = rawOptions as? [[String: Any]] {
+            options = dicts.compactMap { option in
+                let label = (option["label"] as? String ?? option["value"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !label.isEmpty else {
+                    return nil
+                }
+                let description = (option["description"] as? String ?? option["detail"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return ParsedQuestionOption(label: label, description: description)
+            }
+        } else {
+            options = []
+        }
+        return ParsedQuestionPrompt(
+            header: (raw["header"] as? String ?? obj["header"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            question: question,
+            options: options,
+            multiSelect: raw["multiSelect"] as? Bool ?? obj["multiSelect"] as? Bool ?? false
+        )
     }
-    if let dicts = rawOptions as? [[String: Any]] {
-        return dicts.compactMap { $0["label"] as? String ?? $0["value"] as? String }
-    }
-    return []
+    return prompts.isEmpty && !fallback.isEmpty ? [ParsedQuestionPrompt(header: "", question: fallback, options: [], multiSelect: false)] : prompts
 }
 
 func questionResponseJSON(_ input: String, answer: String) -> String {
@@ -598,6 +1022,8 @@ struct ComposerTextView: NSViewRepresentable {
     @Binding var text: String
     let fontSize: CGFloat
     let verticalInset: CGFloat
+    var onPasteImages: () -> Bool = { false }
+    var onSend: () -> Bool = { false }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -612,8 +1038,10 @@ struct ComposerTextView: NSViewRepresentable {
         scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
 
-        let textView = NSTextView()
+        let textView = ComposerNSTextView()
         textView.delegate = context.coordinator
+        textView.onPasteImages = onPasteImages
+        textView.onSend = onSend
         textView.drawsBackground = false
         textView.isRichText = false
         textView.allowsUndo = true
@@ -645,6 +1073,10 @@ struct ComposerTextView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else {
             return
         }
+        if let textView = textView as? ComposerNSTextView {
+            textView.onPasteImages = onPasteImages
+            textView.onSend = onSend
+        }
         if textView.string != text {
             textView.string = text
         }
@@ -672,6 +1104,37 @@ struct ComposerTextView: NSViewRepresentable {
     }
 }
 
+private final class ComposerNSTextView: NSTextView {
+    var onPasteImages: (() -> Bool)?
+    var onSend: (() -> Bool)?
+
+    override func paste(_ sender: Any?) {
+        if onPasteImages?() == true {
+            return
+        }
+        super.paste(sender)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if shouldSend(with: event) {
+            if onSend?() == true {
+                return
+            }
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    private func shouldSend(with event: NSEvent) -> Bool {
+        let isReturn = event.keyCode == 36 || event.keyCode == 76
+        guard isReturn, !hasMarkedText() else {
+            return false
+        }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return flags.isDisjoint(with: [.shift, .option, .control, .command])
+    }
+}
+
 struct InputBarView: View {
     let presentation: InputBarPresentation
     @EnvironmentObject var model: AppModel
@@ -687,7 +1150,7 @@ struct InputBarView: View {
         model.filteredPaletteCommands(slashQuery).filter { $0.title.hasPrefix("/") || $0.subtitle.localizedCaseInsensitiveContains("slash") } }
 
     private var canSend: Bool {
-        !model.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.pendingPermissionsForSelectedSession.isEmpty
+        (!model.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.attachments.isEmpty) && model.pendingPermissionsForSelectedSession.isEmpty
     }
 
     private var isBusy: Bool {
@@ -730,7 +1193,8 @@ struct InputBarView: View {
             }
             if !model.attachments.isEmpty {
                 FileUploadChipsNativeView()
-                    .frame(maxWidth: barMaxWidth)
+                    .padding(.horizontal, usesDock ? 16 : 22)
+                    .frame(maxWidth: barMaxWidth, alignment: .leading)
             }
 
             VStack(spacing: usesDock ? 12 : 10) {
@@ -747,7 +1211,15 @@ struct InputBarView: View {
                         ComposerTextView(
                             text: Binding(get: { model.composerText }, set: { model.updateComposerText($0) }),
                             fontSize: max(15, model.settings.fontSize),
-                            verticalInset: inputTextInset
+                            verticalInset: inputTextInset,
+                            onPasteImages: { model.attachImagesFromPasteboard() },
+                            onSend: {
+                                guard canSend else {
+                                    return false
+                                }
+                                model.sendComposer()
+                                return true
+                            }
                         )
                         .frame(height: editorHeight)
                         .onChange(of: model.composerText) { _, value in updateSlashState(value) }
@@ -795,6 +1267,9 @@ struct InputBarView: View {
                     fallbackIntensity: .subtle
                 )
                 .shadow(color: .black.opacity(usesDock ? 0.08 : 0), radius: usesDock ? 16 : 0, y: usesDock ? 6 : 0)
+                .onDrop(of: [UTType.fileURL.identifier, UTType.image.identifier], isTargeted: nil) { providers in
+                    model.attachDroppedProviders(providers)
+                }
 
                 GeometryReader { proxy in
                     let compact = proxy.size.width < 720
@@ -1123,15 +1598,182 @@ struct SlashCommandPopoverView: View {
 
 struct FileUploadChipsNativeView: View {
     @EnvironmentObject var model: AppModel
+    private var imageAttachments: [AttachmentChip] {
+        model.attachments.filter(\.isImage)
+    }
+
+    private var fileAttachments: [AttachmentChip] {
+        model.attachments.filter { !$0.isImage }
+    }
+
+    private var hasImages: Bool {
+        !imageAttachments.isEmpty
+    }
+
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) { ForEach(model.attachments) { AttachmentChipView(attachment: $0) } }.padding(
-            .horizontal,
-            2
-        ) }
-        .frame(height: 34)
-        .padding(6)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)) }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: hasImages ? 12 : 10) {
+                ForEach(imageAttachments) { attachment in
+                    ComposerImageAttachmentCard(attachment: attachment)
+                }
+                ForEach(fileAttachments) { attachment in
+                    AttachmentChipView(attachment: attachment)
+                }
+            }
+            .padding(.horizontal, hasImages ? 10 : 3)
+            .padding(.vertical, hasImages ? 8 : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollClipDisabled()
+        .frame(height: hasImages ? 88 : 34)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private enum ComposerImageAttachmentMetric {
+    static let width: CGFloat = 104
+    static let height: CGFloat = 72
+    static let radius: CGFloat = 20
+    static let closeSize: CGFloat = 27
+}
+
+struct ComposerImageAttachmentCard: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.colorScheme) private var colorScheme
+    let attachment: AttachmentChip
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: ComposerImageAttachmentMetric.radius, style: .continuous)
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            thumbnail
+                .frame(width: ComposerImageAttachmentMetric.width, height: ComposerImageAttachmentMetric.height)
+                .clipShape(shape)
+                .background { cardBase }
+                .overlay { cardChrome }
+                .contentShape(shape)
+                .onTapGesture(perform: openAttachmentPreview)
+                .accessibilityLabel(attachment.name)
+
+            removeButton
+                .padding(4)
+        }
+        .frame(
+            width: ComposerImageAttachmentMetric.width + 8,
+            height: ComposerImageAttachmentMetric.height + 8,
+            alignment: .center
+        )
+        .help(attachment.path)
+    }
+
+    @ViewBuilder private var thumbnail: some View {
+        if let image = NSImage(contentsOfFile: attachment.path) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: ComposerImageAttachmentMetric.width, height: ComposerImageAttachmentMetric.height)
+        } else {
+            unavailableThumbnail
+        }
+    }
+
+    private var unavailableThumbnail: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color.secondary.opacity(colorScheme == .dark ? 0.22 : 0.12),
+                    Color.accentColor.opacity(colorScheme == .dark ? 0.16 : 0.08)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            VStack(spacing: 5) {
+                Image(systemName: "photo.badge.exclamationmark")
+                    .font(.system(size: 22, weight: .semibold))
+                Text(L("Unavailable"))
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+            }
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private var cardBase: some View {
+        shape
+            .fill(.thinMaterial)
+            .overlay {
+                shape.fill(Color.white.opacity(colorScheme == .dark ? 0.035 : 0.26))
+            }
+            .shadow(color: .white.opacity(colorScheme == .dark ? 0.04 : 0.42), radius: 11, x: -5, y: -5)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.30 : 0.13), radius: 15, x: 0, y: 8)
+    }
+
+    private var cardChrome: some View {
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(colorScheme == .dark ? 0.10 : 0.26),
+                    Color.clear,
+                    Color.black.opacity(0.34)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .allowsHitTesting(false)
+
+            Text(attachment.name)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .shadow(color: .black.opacity(0.48), radius: 4, x: 0, y: 1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+        }
+        .clipShape(shape)
+        .overlay {
+            shape.stroke(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(colorScheme == .dark ? 0.34 : 0.58),
+                        Color.white.opacity(0.13),
+                        Color.black.opacity(colorScheme == .dark ? 0.24 : 0.08)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 0.9
+            )
+        }
+    }
+
+    private var removeButton: some View {
+        Button { model.removeAttachment(attachment) } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Color.primary.opacity(0.78))
+                .frame(width: ComposerImageAttachmentMetric.closeSize, height: ComposerImageAttachmentMetric.closeSize)
+                .liquidGlassControl(
+                    Circle(),
+                    interactive: false,
+                    fallbackRadius: ComposerImageAttachmentMetric.closeSize / 2,
+                    fallbackIntensity: .regular
+                )
+                .overlay(Circle().stroke(Color.white.opacity(colorScheme == .dark ? 0.24 : 0.42), lineWidth: 0.8))
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.30 : 0.18), radius: 8, y: 4)
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+        .help(L("Remove attachment"))
+    }
+
+    private func openAttachmentPreview() {
+        guard let reference = MessageImageReference.reference(fromSource: attachment.path) else {
+            model.toastWarning("Image unavailable", attachment.path)
+            return
+        }
+        model.openImageLightbox(reference)
+    }
 }
 
 struct SecondaryPanelView: View {

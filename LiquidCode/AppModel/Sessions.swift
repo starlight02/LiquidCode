@@ -51,7 +51,8 @@ extension AppModel {
     }
 
     func generateSessionTitle(_ session: SessionRecord) {
-        let source = (messagesBySession[session.id] ?? []).first { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }?.content ?? session.preview
+        let source = (messagesBySession[session.id] ?? []).first { !$0.transcriptPreview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }?.transcriptPreview ?? session
+            .preview
         let compact = source
             .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,7 +79,9 @@ extension AppModel {
         }
         sessions.removeAll { $0.id == session.id }
         messagesBySession.removeValue(forKey: session.id)
+        displayItemsBySession.removeValue(forKey: session.id)
         streamingTextBySession.removeValue(forKey: session.id)
+        streamingMessagesBySession.removeValue(forKey: session.id)
         toolCallsBySession.removeValue(forKey: session.id)
         pendingPermissions.removeAll { $0.sessionID == session.id }
         composerTextBySession.removeValue(forKey: session.id)
@@ -90,6 +93,7 @@ extension AppModel {
         if selectedSessionID == session.id {
             selectedSessionID = sessions.first?.id
         }
+        persistSettings()
         saveSessionMeta()
         toastWarning("Deleted session", LF("Undo is available for %@", session.title))
     }
@@ -132,7 +136,7 @@ extension AppModel {
             sessionIndex.trackSession(cliID, projectDir: snapshot.session.projectDir)
         }
         sessions.insert(snapshot.session, at: 0)
-        messagesBySession[snapshot.session.id] = snapshot.messages
+        setMessages(snapshot.messages, for: snapshot.session.id)
         selectedSessionID = snapshot.session.id
         workingDirectory = snapshot.session.projectDir
         recentlyDeletedSession = nil

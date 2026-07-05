@@ -2,7 +2,7 @@ import Foundation
 
 protocol ClaudeEngine: Sendable {
     func startSession(_ request: ClaudeSessionStartRequest, eventSink: @escaping @Sendable (ClaudeEvent) -> Void) throws
-    func sendMessage(sessionID: String, text: String) throws
+    func sendMessage(sessionID: String, content: ClaudeUserMessageContent) throws
     func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String?
     func updateRuntimeConfiguration(sessionID: String, model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) throws
     func isSessionRunning(sessionID: String) -> Bool
@@ -98,13 +98,13 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
         queue.sync { runtimes[request.sessionID] = runtime }
         attachReaders(runtime: runtime, stdout: stdoutPipe.fileHandleForReading, stderr: stderrPipe.fileHandleForReading)
         eventSink(.sessionStarted(sessionID: request.sessionID, cliSessionID: request.resumeSessionID))
-        if !request.prompt.isEmpty {
-            try sendUserJSON(sessionID: request.sessionID, text: request.prompt)
+        if !request.userMessageContent.isEmpty {
+            try sendUserJSON(sessionID: request.sessionID, content: request.userMessageContent)
         }
     }
 
-    func sendMessage(sessionID: String, text: String) throws {
-        try sendUserJSON(sessionID: sessionID, text: text)
+    func sendMessage(sessionID: String, content: ClaudeUserMessageContent) throws {
+        try sendUserJSON(sessionID: sessionID, content: content)
     }
 
     private func sendRaw(sessionID: String, jsonLine: String) throws {
@@ -212,8 +212,8 @@ final class ClaudeCLIEngine: ClaudeEngine, @unchecked Sendable {
         ids.forEach { kill(sessionID: $0) }
     }
 
-    private func sendUserJSON(sessionID: String, text: String) throws {
-        let obj: [String: Any] = ["type": "user", "message": ["role": "user", "content": text]]
+    private func sendUserJSON(sessionID: String, content: ClaudeUserMessageContent) throws {
+        let obj: [String: Any] = ["type": "user", "message": ["role": "user", "content": try content.jsonContent()]]
         let data = try JSONSerialization.data(withJSONObject: obj)
         try sendRaw(sessionID: sessionID, jsonLine: String(data: data, encoding: .utf8) ?? "")
     }
@@ -502,11 +502,16 @@ enum ClaudeControlProtocol {
 
 enum StreamEventParser {
     static func events(from obj: [String: Any], sessionID: String) -> [ClaudeEvent] {
+        if obj["isMeta"] as? Bool == true || obj["isSidechain"] as? Bool == true {
+            return []
+        }
         let type = obj["type"] as? String ?? ""
         if type == "control_request" {
             return controlEvents(from: obj, sessionID: sessionID)
         }
-        if type == "system" {
+        if
+            type == "system",
+            !(obj["subtype"] as? String == "local_command" && claudeControlTranscriptEvent(from: obj["content"]) != nil) {
             let cliSessionID = obj["session_id"] as? String ?? obj["sessionId"] as? String
             return [.sessionStarted(sessionID: sessionID, cliSessionID: cliSessionID)]
         }
@@ -514,13 +519,16 @@ enum StreamEventParser {
             return [.turnCompleted(sessionID: sessionID)]
         }
         var output: [ClaudeEvent] = []
-        if let delta = textDelta(in: obj), !delta.isEmpty {
+        if let started = streamBlockStart(in: obj) {
+            output.append(.streamBlockStarted(sessionID: sessionID, index: started.index, started.block))
+        }
+        if let delta = streamBlockDelta(in: obj), !delta.text.isEmpty {
+            output.append(.streamBlockDelta(sessionID: sessionID, index: delta.index, kind: delta.kind, text: delta.text))
+        } else if let delta = textDelta(in: obj), !delta.isEmpty {
             output.append(.textDelta(sessionID: sessionID, text: delta))
         }
-        if type == "assistant" || type == "user" || type == "human" {
-            if let message = messageFromJSONObject(obj, fallbackID: UUID().uuidString) {
-                output.append(.message(sessionID: sessionID, message))
-            }
+        if let message = messageFromJSONObject(obj, fallbackID: UUID().uuidString) {
+            output.append(.message(sessionID: sessionID, message))
         }
         if let tool = toolCall(in: obj, sessionID: sessionID) {
             output.append(.toolStarted(sessionID: sessionID, tool))
@@ -530,21 +538,75 @@ enum StreamEventParser {
     }
 
     static func messageFromJSONObject(_ obj: [String: Any], fallbackID: String) -> ChatMessage? {
+        if obj["isMeta"] as? Bool == true || obj["isSidechain"] as? Bool == true {
+            return nil
+        }
         let type = obj["type"] as? String ?? ""
+        guard isTranscriptMessageType(type, object: obj) else {
+            return nil
+        }
         let message = obj["message"] as? [String: Any]
         let roleRaw = message?["role"] as? String ?? obj["role"] as? String ?? type
         let role: ChatMessage.Role = (roleRaw == "user" || roleRaw == "human") ? .user : roleRaw == "system" ? .system : roleRaw == "tool" ? .tool : .assistant
         let id = obj["uuid"] as? String ?? obj["id"] as? String ?? fallbackID
         let contentAny = message?["content"] ?? obj["content"]
-        let content = renderContent(contentAny)
+        let raw = (try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])).map { String(data: $0, encoding: .utf8) ?? "" }
+        let parentID = obj["parent_uuid"] as? String ?? obj["parentUuid"] as? String ?? obj["parent_id"] as? String ?? obj["parentId"] as? String
+        let timestamp = SessionJSONLCodec.parseTimestamp(obj["timestamp"]) ?? Date()
+        if let control = claudeControlTranscriptEvent(from: contentAny) {
+            return ChatMessage(
+                id: id,
+                role: .system,
+                content: control.body,
+                timestamp: timestamp,
+                toolName: control.title,
+                rawJSON: raw,
+                parentID: parentID,
+                checkpointUuid: nil,
+                blocks: [ChatContentBlock(kind: .text, text: control.body, rawType: control.kind.rawValue)]
+            )
+        }
+        let rendered = renderMessageContent(contentAny)
+        let content = rendered.text
         let toolName = firstToolName(in: contentAny)
-        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, toolName == nil {
+        if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, toolName == nil, rendered.images.isEmpty, rendered.blocks.isEmpty {
             return nil
         }
-        let raw = (try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])).map { String(data: $0, encoding: .utf8) ?? "" }
         let checkpoint = (role == .user && !containsToolResult(contentAny)) ? id : nil
-        let parentID = obj["parent_uuid"] as? String ?? obj["parentUuid"] as? String ?? obj["parent_id"] as? String ?? obj["parentId"] as? String
-        return ChatMessage(id: id, role: role, content: content, timestamp: Date(), toolName: toolName, rawJSON: raw, parentID: parentID, checkpointUuid: checkpoint)
+        return ChatMessage(
+            id: id,
+            role: role,
+            content: content,
+            timestamp: timestamp,
+            toolName: toolName,
+            rawJSON: raw,
+            parentID: parentID,
+            checkpointUuid: checkpoint,
+            images: rendered.images,
+            blocks: rendered.blocks
+        )
+    }
+
+    private static func isTranscriptMessageType(_ type: String, object: [String: Any]) -> Bool {
+        if type == "assistant" || type == "user" || type == "human" || type == "tool" {
+            return true
+        }
+        if
+            type == "system",
+            object["subtype"] as? String == "local_command",
+            claudeControlTranscriptEvent(from: object["content"]) != nil {
+            return true
+        }
+        guard type.isEmpty else {
+            return false
+        }
+        if object["message"] != nil {
+            return true
+        }
+        if let role = object["role"] as? String {
+            return role == "assistant" || role == "user" || role == "human" || role == "tool"
+        }
+        return false
     }
 
     private static func firstToolName(in value: Any?) -> String? {
@@ -684,11 +746,81 @@ enum StreamEventParser {
         return nil
     }
 
-    private static func toolCall(in obj: [String: Any], sessionID: String) -> ToolCall? {
-        let content = (obj["message"] as? [String: Any])?["content"] ?? obj["content"]
-        guard let items = content as? [[String: Any]] else {
+    private struct StreamingBlockStart {
+        var index: Int?
+        var block: ChatContentBlock
+    }
+
+    private struct StreamingBlockDelta {
+        var index: Int?
+        var kind: ChatContentBlockKind
+        var text: String
+    }
+
+    private static func streamBlockStart(in obj: [String: Any]) -> StreamingBlockStart? {
+        let type = obj["type"] as? String ?? ""
+        guard type == "content_block_start" || type == "agent.tool_use" || type == "agent.thinking" || type == "agent.message" else {
             return nil
         }
+        let index = obj["index"] as? Int ?? obj["content_block_index"] as? Int ?? obj["contentBlockIndex"] as? Int
+        if
+            let contentBlock = obj["content_block"] as? [String: Any] ?? obj["contentBlock"] as? [String: Any],
+            let block = chatContentBlock(from: contentBlock) {
+            return StreamingBlockStart(index: index, block: block)
+        }
+        if type == "agent.thinking" {
+            return StreamingBlockStart(index: index, block: ChatContentBlock(kind: .thinking, text: obj["thinking"] as? String ?? obj["text"] as? String ?? ""))
+        }
+        if type == "agent.message" {
+            return StreamingBlockStart(index: index, block: ChatContentBlock(kind: .text, text: obj["text"] as? String ?? ""))
+        }
+        if type == "agent.tool_use" {
+            let id = obj["id"] as? String ?? obj["tool_use_id"] as? String ?? obj["toolUseId"] as? String ?? UUID().uuidString
+            let name = obj["name"] as? String ?? obj["tool_name"] as? String ?? obj["toolName"] as? String ?? "Tool"
+            return StreamingBlockStart(index: index, block: ChatContentBlock(
+                id: id,
+                kind: .toolUse,
+                toolUseID: id,
+                toolName: name,
+                inputJSON: jsonString(obj["input"] ?? [:]),
+                rawType: type,
+                rawJSON: jsonString(obj)
+            ))
+        }
+        return nil
+    }
+
+    private static func streamBlockDelta(in obj: [String: Any]) -> StreamingBlockDelta? {
+        let type = obj["type"] as? String ?? ""
+        let index = obj["index"] as? Int ?? obj["content_block_index"] as? Int ?? obj["contentBlockIndex"] as? Int
+        if type == "content_block_delta", let delta = obj["delta"] as? [String: Any] {
+            if let text = delta["text"] as? String {
+                return StreamingBlockDelta(index: index, kind: .text, text: text)
+            }
+            if let thinking = delta["thinking"] as? String {
+                return StreamingBlockDelta(index: index, kind: .thinking, text: thinking)
+            }
+            if let partialJSON = delta["partial_json"] as? String ?? delta["partialJson"] as? String {
+                return StreamingBlockDelta(index: index, kind: .toolUse, text: partialJSON)
+            }
+            if let content = delta["content"] as? String {
+                return StreamingBlockDelta(index: index, kind: .toolResult, text: content)
+            }
+        }
+        if type == "text_delta", let text = obj["text"] as? String {
+            return StreamingBlockDelta(index: index, kind: .text, text: text)
+        }
+        if type == "thinking_delta", let thinking = obj["thinking"] as? String ?? obj["text"] as? String {
+            return StreamingBlockDelta(index: index, kind: .thinking, text: thinking)
+        }
+        if type == "input_json_delta", let partialJSON = obj["partial_json"] as? String ?? obj["partialJson"] as? String {
+            return StreamingBlockDelta(index: index, kind: .toolUse, text: partialJSON)
+        }
+        return nil
+    }
+
+    private static func toolCall(in obj: [String: Any], sessionID: String) -> ToolCall? {
+        let items = contentBlocks(in: obj)
         for item in items where item["type"] as? String == "tool_use" {
             let id = item["id"] as? String ?? UUID().uuidString
             let name = item["name"] as? String ?? "Tool"
@@ -698,10 +830,7 @@ enum StreamEventParser {
     }
 
     private static func toolResults(in obj: [String: Any], sessionID: String) -> [ToolCall] {
-        let content = (obj["message"] as? [String: Any])?["content"] ?? obj["content"]
-        guard let items = content as? [[String: Any]] else {
-            return []
-        }
+        let items = contentBlocks(in: obj)
         return items.compactMap { item -> ToolCall? in
             guard item["type"] as? String == "tool_result" else {
                 return nil
@@ -721,33 +850,194 @@ enum StreamEventParser {
         }
     }
 
-    private static func renderContent(_ value: Any?) -> String {
-        if let text = value as? String {
-            return text
+    private static func contentBlocks(in obj: [String: Any]) -> [[String: Any]] {
+        if let content = (obj["message"] as? [String: Any])?["content"] as? [[String: Any]] {
+            return content
         }
+        if let content = obj["content"] as? [[String: Any]] {
+            return content
+        }
+        if let block = obj["content_block"] as? [String: Any] {
+            return [block]
+        }
+        if let block = obj["contentBlock"] as? [String: Any] {
+            return [block]
+        }
+        if let type = obj["type"] as? String, type == "tool_use" || type == "tool_result" {
+            return [obj]
+        }
+        return []
+    }
+
+    private static func renderContent(_ value: Any?) -> String {
+        renderMessageContent(value).text
+    }
+
+    private struct RenderedMessageContent {
+        var text: String
+        var images: [MessageImageReference]
+        var blocks: [ChatContentBlock]
+    }
+
+    private static func renderMessageContent(_ value: Any?) -> RenderedMessageContent {
+        if let text = value as? String {
+            let cleaned = cleanedTextAndInlineImages(from: text)
+            var blocks: [ChatContentBlock] = []
+            if !cleaned.text.isEmpty {
+                blocks.append(ChatContentBlock(kind: .text, text: cleaned.text))
+            }
+            blocks.append(contentsOf: cleaned.images.map { ChatContentBlock(kind: .image, image: $0) })
+            return RenderedMessageContent(text: cleaned.text, images: cleaned.images, blocks: blocks)
+        }
+        var images: [MessageImageReference] = []
+        var blocks: [ChatContentBlock] = []
+        var textSegments: [String] = []
         if let arr = value as? [[String: Any]] {
-            return arr.compactMap { item in
+            for item in arr {
                 let type = item["type"] as? String ?? ""
                 if type == "text" {
-                    return item["text"] as? String
+                    if let text = item["text"] as? String {
+                        let cleaned = cleanedTextAndInlineImages(from: text)
+                        images.append(contentsOf: cleaned.images)
+                        if !cleaned.text.isEmpty {
+                            textSegments.append(cleaned.text)
+                            blocks.append(ChatContentBlock(
+                                id: item["id"] as? String ?? UUID().uuidString,
+                                kind: .text,
+                                text: cleaned.text,
+                                rawType: type,
+                                rawJSON: jsonString(item)
+                            ))
+                        }
+                        blocks.append(contentsOf: cleaned.images.map { ChatContentBlock(kind: .image, image: $0, rawType: "image") })
+                    }
+                    continue
+                } else if type == "thinking" {
+                    let thinking = item["thinking"] as? String ?? item["text"] as? String ?? ""
+                    if !thinking.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        blocks.append(ChatContentBlock(
+                            id: item["id"] as? String ?? UUID().uuidString,
+                            kind: .thinking,
+                            text: thinking,
+                            rawType: type,
+                            rawJSON: jsonString(item)
+                        ))
+                    }
+                    continue
+                } else if type == "image" {
+                    if let image = MessageImageReference.fromContentBlock(item) {
+                        images.append(image)
+                        blocks.append(ChatContentBlock(
+                            id: item["id"] as? String ?? image.id,
+                            kind: .image,
+                            image: image,
+                            rawType: type,
+                            rawJSON: jsonString(item)
+                        ))
+                    }
+                    continue
+                } else if type == "tool_use" {
+                    let id = item["id"] as? String ?? UUID().uuidString
+                    let name = item["name"] as? String ?? "Tool"
+                    blocks.append(ChatContentBlock(
+                        id: id,
+                        kind: .toolUse,
+                        toolUseID: id,
+                        toolName: name,
+                        inputJSON: jsonString(item["input"] ?? [:]),
+                        rawType: type,
+                        rawJSON: jsonString(item)
+                    ))
+                    continue
+                } else if type == "tool_result" {
+                    let toolUseID = item["tool_use_id"] as? String ?? item["toolUseId"] as? String ?? item["id"] as? String
+                    let resultText = renderContent(item["content"])
+                    blocks.append(ChatContentBlock(
+                        id: toolUseID ?? UUID().uuidString,
+                        kind: .toolResult,
+                        text: resultText,
+                        toolUseID: toolUseID,
+                        isError: item["is_error"] as? Bool ?? item["isError"] as? Bool ?? false,
+                        rawType: type,
+                        rawJSON: jsonString(item)
+                    ))
+                    continue
                 }
-                if type == "thinking" {
-                    return item["thinking"] as? String
-                }
-                if type == "tool_use" {
-                    return "[tool_use: \(item["name"] as? String ?? "Tool")]\n\(jsonString(item["input"] ?? [:]))"
-                }
-                if type == "tool_result" {
-                    return "[tool_result]\n\(renderContent(item["content"]))"
-                }
-                return nil
             }
-            .joined(separator: "\n")
+            let text = textSegments
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n\n")
+            return RenderedMessageContent(text: text, images: deduplicatedImages(images), blocks: blocks)
         }
         if let value {
-            return jsonString(value)
+            let text = jsonString(value)
+            return RenderedMessageContent(
+                text: text,
+                images: [],
+                blocks: [ChatContentBlock(kind: .unknown, text: text, rawJSON: text)]
+            )
         }
-        return ""
+        return RenderedMessageContent(text: "", images: [], blocks: [])
+    }
+
+    private static func chatContentBlock(from item: [String: Any]) -> ChatContentBlock? {
+        let type = item["type"] as? String ?? ""
+        if type == "text" {
+            let text = item["text"] as? String ?? ""
+            return ChatContentBlock(
+                id: item["id"] as? String ?? UUID().uuidString,
+                kind: .text,
+                text: text,
+                rawType: type,
+                rawJSON: jsonString(item)
+            )
+        }
+        if type == "thinking" {
+            let thinking = item["thinking"] as? String ?? item["text"] as? String ?? ""
+            return ChatContentBlock(
+                id: item["id"] as? String ?? UUID().uuidString,
+                kind: .thinking,
+                text: thinking,
+                rawType: type,
+                rawJSON: jsonString(item)
+            )
+        }
+        if type == "image", let image = MessageImageReference.fromContentBlock(item) {
+            return ChatContentBlock(
+                id: item["id"] as? String ?? image.id,
+                kind: .image,
+                image: image,
+                rawType: type,
+                rawJSON: jsonString(item)
+            )
+        }
+        if type == "tool_use" {
+            let id = item["id"] as? String ?? UUID().uuidString
+            let name = item["name"] as? String ?? "Tool"
+            return ChatContentBlock(
+                id: id,
+                kind: .toolUse,
+                toolUseID: id,
+                toolName: name,
+                inputJSON: jsonString(item["input"] ?? [:]),
+                rawType: type,
+                rawJSON: jsonString(item)
+            )
+        }
+        if type == "tool_result" {
+            let toolUseID = item["tool_use_id"] as? String ?? item["toolUseId"] as? String ?? item["id"] as? String
+            return ChatContentBlock(
+                id: toolUseID ?? UUID().uuidString,
+                kind: .toolResult,
+                text: renderContent(item["content"]),
+                toolUseID: toolUseID,
+                isError: item["is_error"] as? Bool ?? item["isError"] as? Bool ?? false,
+                rawType: type,
+                rawJSON: jsonString(item)
+            )
+        }
+        return nil
     }
 
     private static func jsonString(_ value: Any) -> String {

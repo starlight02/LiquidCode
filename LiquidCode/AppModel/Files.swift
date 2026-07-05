@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import UniformTypeIdentifiers
 
 extension AppModel {
     func reloadFileTree() {
@@ -324,20 +325,113 @@ extension AppModel {
     func attachFiles() {
         let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = true
         if panel.runModal() == .OK {
-            var next = attachments
-            for url in panel.urls {
-                if let id = selectedSessionID {
-                    fileSystem.addGrant(sessionID: id, path: url.path)
-                }
-                let values = try? url.resourceValues(forKeys: [.fileSizeKey])
-                next.append(AttachmentChip(
-                    name: url.lastPathComponent,
-                    path: url.path,
-                    size: Int64(values?.fileSize ?? 0),
-                    isImage: ["png", "jpg", "jpeg", "gif", "webp"].contains(url.pathExtension.lowercased())
-                ))
+            attachURLs(panel.urls)
+        }
+    }
+
+    func attachURLs(_ urls: [URL]) {
+        guard !urls.isEmpty else {
+            return
+        }
+        var next = attachments
+        for url in urls {
+            if let id = selectedSessionID {
+                fileSystem.addGrant(sessionID: id, path: url.path)
             }
-            setAttachments(next)
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+            next.append(AttachmentChip(
+                name: url.lastPathComponent,
+                path: url.path,
+                size: Int64(values?.fileSize ?? 0),
+                isImage: MessageImageReference.isImagePath(url.path)
+            ))
+        }
+        setAttachments(next)
+    }
+
+    func attachImagesFromPasteboard(_ pasteboard: NSPasteboard = .general) -> Bool {
+        if
+            let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
+            let imageURLs = urls.filter { MessageImageReference.isImagePath($0.path) }
+            if !imageURLs.isEmpty {
+                attachURLs(imageURLs)
+                return true
+            }
+        }
+        if
+            let png = pasteboard.data(forType: .png),
+            let url = saveComposerImageData(png, preferredExtension: "png") {
+            attachURLs([url])
+            return true
+        }
+        if
+            let tiff = pasteboard.data(forType: .tiff),
+            let image = NSImage(data: tiff),
+            let png = MessageImageReference.pngData(from: image),
+            let url = saveComposerImageData(png, preferredExtension: "png") {
+            attachURLs([url])
+            return true
+        }
+        if
+            let image = NSImage(pasteboard: pasteboard),
+            let png = MessageImageReference.pngData(from: image),
+            let url = saveComposerImageData(png, preferredExtension: "png") {
+            attachURLs([url])
+            return true
+        }
+        return false
+    }
+
+    func attachDroppedProviders(_ providers: [NSItemProvider]) -> Bool {
+        var handled = false
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                handled = true
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
+                    guard
+                        let data,
+                        let string = String(data: data, encoding: .utf8),
+                        let url = URL(string: string)
+                    else {
+                        return
+                    }
+                    Task { @MainActor in self.attachURLs([url]) }
+                }
+                continue
+            }
+            for type in [UTType.png, UTType.jpeg, UTType.tiff, UTType.gif, UTType.webP] {
+                guard provider.hasItemConformingToTypeIdentifier(type.identifier) else {
+                    continue
+                }
+                handled = true
+                provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
+                    guard let data else {
+                        return
+                    }
+                    let ext = type.preferredFilenameExtension ?? "png"
+                    Task { @MainActor in
+                        if let url = self.saveComposerImageData(data, preferredExtension: ext) {
+                            self.attachURLs([url])
+                        }
+                    }
+                }
+                break
+            }
+        }
+        return handled
+    }
+
+    private func saveComposerImageData(_ data: Data, preferredExtension: String) -> URL? {
+        let directory = AppPaths.shared.appSupport.appendingPathComponent("ComposerImages", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let cleanExt = preferredExtension.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).isEmpty ? "png" : preferredExtension
+            let url = directory.appendingPathComponent("image-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8)).\(cleanExt)")
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            toastWarning("Image unavailable", error.localizedDescription)
+            return nil
         }
     }
 

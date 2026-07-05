@@ -64,15 +64,16 @@ extension AppModel {
         guard let index = (messagesBySession[sessionID] ?? []).lastIndex(where: { $0.id == messageID }) else {
             return
         }
-        messagesBySession[sessionID] = Array((messagesBySession[sessionID] ?? []).prefix(index + 1))
+        setMessages(Array((messagesBySession[sessionID] ?? []).prefix(index + 1)), for: sessionID)
         streamingTextBySession[sessionID] = ""
+        streamingMessagesBySession.removeValue(forKey: sessionID)
         pendingUserMessagesBySession[sessionID] = []
         pendingPermissions.removeAll { $0.sessionID == sessionID }
         toolCallsBySession[sessionID] = []
         activeTurnSnapshots.removeValue(forKey: sessionID)
         engine.kill(sessionID: sessionID)
         if let sessionIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
-            sessions[sessionIndex].preview = messagesBySession[sessionID]?.last?.content ?? sessions[sessionIndex].preview
+            sessions[sessionIndex].preview = messagesBySession[sessionID]?.last?.transcriptPreview ?? sessions[sessionIndex].preview
             sessions[sessionIndex].modifiedAt = Date()
             sessions[sessionIndex].isDraft = false
         }

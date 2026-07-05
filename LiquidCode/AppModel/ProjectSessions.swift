@@ -52,6 +52,7 @@ extension AppModel {
 
     func selectSession(_ id: String?) {
         snapshotComposerState(for: selectedSessionID)
+        snapshotComposerConfiguration(for: selectedSessionID)
         selectedSessionID = id
         guard let id, let session = sessions.first(where: { $0.id == id }) else {
             workingDirectory = ""
@@ -63,15 +64,29 @@ extension AppModel {
             resetWorkspaceChangeState()
             directoryWatcher.unwatchAll()
             restoreComposerState(for: nil)
+            restoreComposerConfiguration(for: nil)
             reloadMCPAndSkills()
             return
         }
         restoreComposerState(for: id)
-        resetWorkspaceChangeState()
-        if messagesBySession[id] == nil, let path = session.path {
-            let loadedMessages = sessionIndex.loadMessages(path: path)
-            messagesBySession[id] = loadedMessages
-            toolCallsBySession[id] = AgentActivityBuilder.toolCalls(from: loadedMessages, sessionID: id)
+        restoreComposerConfiguration(for: id)
+        let previousProjectDir = existingDirectoryPath(workingDirectory) ?? workingDirectory
+        if messagesBySession[id] == nil, let path = session.path, !loadingMessageSessionIDs.contains(id) {
+            loadingMessageSessionIDs.insert(id)
+            let index = sessionIndex
+            Task.detached(priority: .userInitiated) {
+                let loadedMessages = index.loadMessages(path: path)
+                let toolCalls = AgentActivityBuilder.toolCalls(from: loadedMessages, sessionID: id)
+                let displayItems = TranscriptDisplayBuilder.displayItems(messages: loadedMessages)
+                await MainActor.run {
+                    self.loadingMessageSessionIDs.remove(id)
+                    guard self.sessions.contains(where: { $0.id == id && $0.path == path }) else {
+                        return
+                    }
+                    self.setMessages(loadedMessages, for: id, displayItems: displayItems)
+                    self.toolCallsBySession[id] = toolCalls
+                }
+            }
         }
         guard let projectDir = existingDirectoryPath(session.projectDir) else {
             workingDirectory = session.projectDir
@@ -85,11 +100,22 @@ extension AppModel {
             reloadMCPAndSkills()
             return
         }
+        let projectChanged = previousProjectDir.isEmpty || PathAccessManager.canonicalPath(previousProjectDir) != projectDir
         workingDirectory = projectDir
         fileSystem.registerWorkspace(projectDir)
-        startWatchingWorkspace()
-        reloadFileTree()
-        reloadMCPAndSkills()
+        if projectChanged {
+            resetWorkspaceChangeState()
+            startWatchingWorkspace()
+            reloadFileTree()
+            reloadMCPAndSkills()
+        } else {
+            if fileTree.isEmpty {
+                reloadFileTree()
+            }
+            if skills.isEmpty && mcpServers.isEmpty {
+                reloadMCPAndSkills()
+            }
+        }
     }
 
     func selectNextSession() {
@@ -121,12 +147,14 @@ extension AppModel {
             let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
             let session = SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: L("New chat"), cliResumeID: nil, isDraft: true)
             sessions.insert(session, at: 0)
-            messagesBySession[id] = []
+            setMessages([], for: id, displayItems: [])
             snapshotComposerState(for: selectedSessionID)
+            snapshotComposerConfiguration(for: selectedSessionID)
             selectedSessionID = id
             composerTextBySession[id] = ""
             attachmentsBySession[id] = []
             restoreComposerState(for: id)
+            restoreComposerConfiguration(for: id)
             workingDirectory = projectDir
             resetWorkspaceChangeState()
             fileSystem.registerWorkspace(projectDir)
@@ -146,10 +174,13 @@ extension AppModel {
         let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
         sessions.insert(SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: L("New chat"), isDraft: true), at: 0)
         snapshotComposerState(for: selectedSessionID)
+        snapshotComposerConfiguration(for: selectedSessionID)
         selectedSessionID = id
+        setMessages([], for: id, displayItems: [])
         composerTextBySession[id] = ""
         attachmentsBySession[id] = []
         restoreComposerState(for: id)
+        restoreComposerConfiguration(for: id)
         workingDirectory = projectDir
         resetWorkspaceChangeState()
         fileSystem.registerWorkspace(projectDir)
@@ -191,8 +222,10 @@ extension AppModel {
         let preservedText = composerText
         let preservedAttachments = attachments
         snapshotComposerState(for: selectedSessionID)
+        snapshotComposerConfiguration(for: selectedSessionID)
         selectedSessionID = nil
         restoreComposerState(for: nil)
+        restoreComposerConfiguration(for: nil)
         composerText = preservedText
         attachments = preservedAttachments
         workingDirectory = ""
@@ -233,8 +266,10 @@ extension AppModel {
         let preservedText = composerText
         let preservedAttachments = attachments
         snapshotComposerState(for: selectedSessionID)
+        snapshotComposerConfiguration(for: selectedSessionID)
         selectedSessionID = nil
         restoreComposerState(for: nil)
+        restoreComposerConfiguration(for: nil)
         composerText = preservedText
         attachments = preservedAttachments
         workingDirectory = projectDir

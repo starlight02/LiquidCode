@@ -227,6 +227,7 @@ struct AppSettings: Codable, Sendable {
     var secondaryWidth: Double = 390
     var locale: String = Locale.current.identifier
     var lastSeenVersion: String = ""
+    var sessionConfigurations: [String: ComposerSendConfiguration] = [:]
 }
 
 struct SessionRecord: Identifiable, Codable, Hashable, Sendable {
@@ -314,6 +315,52 @@ struct CLIActionResult: Codable, Equatable, Sendable {
     var message: String
 }
 
+enum ChatContentBlockKind: String, Codable, Sendable {
+    case text
+    case thinking
+    case toolUse
+    case toolResult
+    case image
+    case unknown
+}
+
+struct ChatContentBlock: Identifiable, Codable, Equatable, Sendable {
+    var id: String
+    var kind: ChatContentBlockKind
+    var text: String
+    var toolUseID: String?
+    var toolName: String?
+    var inputJSON: String?
+    var isError: Bool
+    var image: MessageImageReference?
+    var rawType: String?
+    var rawJSON: String?
+
+    init(
+        id: String = UUID().uuidString,
+        kind: ChatContentBlockKind,
+        text: String = "",
+        toolUseID: String? = nil,
+        toolName: String? = nil,
+        inputJSON: String? = nil,
+        isError: Bool = false,
+        image: MessageImageReference? = nil,
+        rawType: String? = nil,
+        rawJSON: String? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.toolUseID = toolUseID
+        self.toolName = toolName
+        self.inputJSON = inputJSON
+        self.isError = isError
+        self.image = image
+        self.rawType = rawType
+        self.rawJSON = rawJSON
+    }
+}
+
 struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     enum Role: String, Codable, Sendable { case user, assistant, system, tool, error, thinking }
     var id: String
@@ -325,6 +372,8 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var parentID: String?
     var checkpointUuid: String?
     var attachments: [AttachmentChip]
+    var images: [MessageImageReference]
+    var blocks: [ChatContentBlock]
 
     init(
         id: String = UUID().uuidString,
@@ -335,7 +384,9 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         rawJSON: String? = nil,
         parentID: String? = nil,
         checkpointUuid: String? = nil,
-        attachments: [AttachmentChip] = []
+        attachments: [AttachmentChip] = [],
+        images: [MessageImageReference] = [],
+        blocks: [ChatContentBlock] = []
     ) {
         self.id = id
         self.role = role
@@ -346,6 +397,8 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         self.parentID = parentID
         self.checkpointUuid = checkpointUuid
         self.attachments = attachments
+        self.images = images
+        self.blocks = blocks
     }
 
     enum CodingKeys: String, CodingKey {
@@ -358,6 +411,8 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         case parentID
         case checkpointUuid
         case attachments
+        case images
+        case blocks
     }
 
     init(from decoder: Decoder) throws {
@@ -371,6 +426,8 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         parentID = try container.decodeIfPresent(String.self, forKey: .parentID)
         checkpointUuid = try container.decodeIfPresent(String.self, forKey: .checkpointUuid)
         attachments = try container.decodeIfPresent([AttachmentChip].self, forKey: .attachments) ?? []
+        images = try container.decodeIfPresent([MessageImageReference].self, forKey: .images) ?? []
+        blocks = try container.decodeIfPresent([ChatContentBlock].self, forKey: .blocks) ?? []
     }
 }
 
@@ -473,6 +530,7 @@ struct RecentProject: Identifiable, Codable, Hashable, Sendable {
 
 struct ClaudeSessionStartRequest: Sendable {
     var prompt: String
+    var content: ClaudeUserMessageContent = .empty
     var cwd: String
     var model: String?
     var sessionID: String
@@ -481,11 +539,17 @@ struct ClaudeSessionStartRequest: Sendable {
     var mode: SessionMode
     var provider: ProviderRecord?
     var providerAPIKey: String?
+
+    var userMessageContent: ClaudeUserMessageContent {
+        content.isEmpty ? ClaudeUserMessageContent(text: prompt) : content
+    }
 }
 
 enum ClaudeEvent: Sendable {
     case sessionStarted(sessionID: String, cliSessionID: String?)
     case textDelta(sessionID: String, text: String)
+    case streamBlockStarted(sessionID: String, index: Int?, ChatContentBlock)
+    case streamBlockDelta(sessionID: String, index: Int?, kind: ChatContentBlockKind, text: String)
     case message(sessionID: String, ChatMessage)
     case toolStarted(sessionID: String, ToolCall)
     case toolUpdated(sessionID: String, ToolCall)

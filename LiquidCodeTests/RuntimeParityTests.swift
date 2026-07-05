@@ -3,6 +3,8 @@ import CryptoKit
 import XCTest
 
 final class RuntimeParityTests: XCTestCase {
+    private static let tinyPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+
     func testPathAccessFixedRootGrantAndRevocation() throws {
         let root = try temporaryDirectory(prefix: "lc-root")
         let outside = try temporaryDirectory(prefix: "lc-outside")
@@ -552,6 +554,93 @@ final class RuntimeParityTests: XCTestCase {
         XCTAssertTrue(try String(contentsOf: mdOut, encoding: .utf8).contains("**Tool: Read**"))
         let exported = try JSONSerialization.jsonObject(with: Data(contentsOf: jsonOut)) as? [[String: Any]]
         XCTAssertEqual(exported?.count, 3)
+    }
+
+    func testSessionIndexLoadsImageHistoryAsStructuredImages() throws {
+        let home = try temporaryDirectory(prefix: "lc-home-images")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let project = home.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = home.appendingPathComponent(".claude/projects").appendingPathComponent(encodeClaudeProjectPath(project.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        let sessionID = "123e4567-e89b-12d3-a456-426614174999"
+        let file = store.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
+        let jsonl = [
+            #"{"type":"system","cwd":"\#(project.path)"}"#,
+            #"{"type":"human","uuid":"cp-image","message":{"role":"user","content":[{"type":"text","text":"describe it"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"\#(Self.tinyPNGBase64)"}}]}}"#
+        ].joined(separator: "\n") + "\n"
+        try jsonl.write(to: file, atomically: true, encoding: .utf8)
+
+        let messages = SessionIndexService(home: home).loadMessages(path: file.path)
+        let message = try XCTUnwrap(messages.first)
+        XCTAssertEqual(message.content, "describe it")
+        XCTAssertEqual(message.images.count, 1)
+        XCTAssertEqual(message.images.first?.mimeType, "image/png")
+        XCTAssertNotNil(message.images.first?.imageData)
+    }
+
+    func testSessionIndexSkipsClaudeQueueOperationPromptMetadata() throws {
+        let home = try temporaryDirectory(prefix: "lc-home-queue-meta")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let project = home.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = home.appendingPathComponent(".claude/projects").appendingPathComponent(encodeClaudeProjectPath(project.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        let sessionID = "123e4567-e89b-12d3-a456-426614174998"
+        let file = store.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
+        let jsonl = [
+            #"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-07-04T13:29:02.708Z","sessionId":"\#(sessionID)","content":"你好？"}"#,
+            #"{"type":"user","uuid":"user-hello","message":{"role":"user","content":"你好？"}}"#,
+            #"{"type":"assistant","uuid":"assistant-reply","message":{"role":"assistant","content":[{"type":"text","text":"你好呀"}]}}"#,
+            #"{"type":"last-prompt","lastPrompt":"你好？","leafUuid":"assistant-reply","sessionId":"\#(sessionID)"}"#
+        ].joined(separator: "\n") + "\n"
+        try jsonl.write(to: file, atomically: true, encoding: .utf8)
+
+        let messages = SessionIndexService(home: home).loadMessages(path: file.path)
+
+        XCTAssertEqual(messages.map(\.role), [.user, .assistant])
+        XCTAssertEqual(messages.map(\.content), ["你好？", "你好呀"])
+        XCTAssertFalse(messages.contains { $0.role == .assistant && $0.content == "你好？" })
+    }
+
+    func testSessionIndexTurnsClaudeControlProtocolIntoReadableEventsAndSkipsPreview() throws {
+        let home = try temporaryDirectory(prefix: "lc-home-control-protocol")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let project = home.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = home.appendingPathComponent(".claude/projects").appendingPathComponent(encodeClaudeProjectPath(project.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        let sessionID = "123e4567-e89b-12d3-a456-426614174997"
+        let file = store.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
+        let command = #"<command-name>/clear</command-name>\n            <command-message>clear</command-message>\n            <command-args></command-args>"#
+        let jsonl = [
+            #"{"type":"system","timestamp":"2026-07-03T10:51:31.000Z","cwd":"\#(project.path)"}"#,
+            #"{"type":"user","uuid":"command-clear","message":{"role":"user","content":"\#(command)"}}"#,
+            #"{"type":"user","uuid":"real-user","message":{"role":"user","content":"继续审查！"}}"#,
+            #"{"type":"user","uuid":"interrupt","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#
+        ].joined(separator: "\n") + "\n"
+        try jsonl.write(to: file, atomically: true, encoding: .utf8)
+
+        let index = SessionIndexService(home: home)
+        let messages = index.loadMessages(path: file.path)
+
+        XCTAssertEqual(messages.map(\.role), [.system, .user, .system])
+        XCTAssertEqual(messages[0].toolName, "Claude Code Command")
+        XCTAssertEqual(messages[0].content, "`/clear`")
+        XCTAssertEqual(messages[1].content, "继续审查！")
+        XCTAssertEqual(messages[2].toolName, "Interrupted")
+        XCTAssertEqual(messages[2].content, "User interrupted the request.")
+        XCTAssertFalse(messages.contains { $0.content.contains("<command-name>") || $0.content.contains("[Request interrupted") })
+
+        let info = SessionJSONLCodec.extractSessionInfo(file)
+        XCTAssertEqual(info.preview, "继续审查！")
+
+        let mdOut = home.appendingPathComponent("control.md")
+        try index.exportMarkdown(path: file.path, outputPath: mdOut.path)
+        let markdown = try String(contentsOf: mdOut, encoding: .utf8)
+        XCTAssertTrue(markdown.contains("继续审查！"))
+        XCTAssertFalse(markdown.contains("<command-name>"))
+        XCTAssertFalse(markdown.contains("[Request interrupted"))
     }
 
     func testClaudeRecentProjectPrefersHistoryAndSessionCreatedAtComesFromJSONL() throws {

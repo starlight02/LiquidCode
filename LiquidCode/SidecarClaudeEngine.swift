@@ -25,8 +25,8 @@ final class HybridClaudeEngine: ClaudeEngine, @unchecked Sendable {
         }
     }
 
-    func sendMessage(sessionID: String, text: String) throws {
-        try backend(for: sessionID).sendMessage(sessionID: sessionID, text: text)
+    func sendMessage(sessionID: String, content: ClaudeUserMessageContent) throws {
+        try backend(for: sessionID).sendMessage(sessionID: sessionID, content: content)
     }
 
     func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String? {
@@ -175,7 +175,7 @@ final class SidecarClaudeEngine: ClaudeEngine, @unchecked Sendable {
             "includePartialMessages": envPlan.capabilities.supportsPartialMessages,
             "enableFileCheckpointing": envPlan.capabilities.isNativeAnthropic,
             "preferSDK": true,
-            "initialMessage": ["content": request.prompt]
+            "initialMessage": ["content": try request.userMessageContent.jsonContent()]
         ]
         if let scratchPath = scratch?.path {
             params["mcpConfigPath"] = scratchPath
@@ -198,8 +198,8 @@ final class SidecarClaudeEngine: ClaudeEngine, @unchecked Sendable {
         }
     }
 
-    func sendMessage(sessionID: String, text: String) throws {
-        _ = try rpc(method: "session.send", params: ["sessionId": sessionID, "message": ["role": "user", "content": text]])
+    func sendMessage(sessionID: String, content: ClaudeUserMessageContent) throws {
+        _ = try rpc(method: "session.send", params: ["sessionId": sessionID, "message": ["role": "user", "content": try content.jsonContent()]])
     }
 
     func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String? {

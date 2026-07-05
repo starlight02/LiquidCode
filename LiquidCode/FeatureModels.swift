@@ -99,6 +99,8 @@ struct TranscriptToolItem: Identifiable, Equatable, Sendable {
     let kind: Kind
     let toolName: String
     let content: String
+    var toolUseID: String?
+    var isError: Bool = false
     var summaryName: String {
         guard kind == .use else {
             return L("Tool result")
@@ -126,9 +128,18 @@ struct TranscriptToolItem: Identifiable, Equatable, Sendable {
     }
 }
 
+struct TranscriptQuestionItem: Identifiable, Equatable, Sendable {
+    let id: String
+    let sourceMessage: ChatMessage
+    let toolUseID: String?
+    let inputJSON: String
+    var isPending: Bool = false
+}
+
 enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
     case message(ChatMessage)
     case interaction(PermissionRequest)
+    case question(TranscriptQuestionItem)
     case tool(TranscriptToolItem)
     case toolRun([TranscriptToolItem])
 
@@ -136,6 +147,7 @@ enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
         switch self {
         case .message(let message): message.id
         case .interaction(let permission): "interaction_\(permission.id)"
+        case .question(let question): question.id
         case .tool(let item): item.id
         case .toolRun(let items): "toolrun_" + items.map(\.id).joined(separator: "_")
         }
@@ -144,13 +156,36 @@ enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
 
 enum TranscriptDisplayBuilder {
     static func displayItems(messages: [ChatMessage], pendingPermissions: [PermissionRequest] = []) -> [TranscriptDisplayItem] {
-        let rawItems = messages.flatMap(items)
+        let pending = deduplicatedPendingPermissions(pendingPermissions)
+        let pendingQuestionToolIDs = Set(pending.compactMap { permission -> String? in
+            guard InteractionAdapter(permission: permission).kind == .question else {
+                return nil
+            }
+            return permission.toolUseID ?? permission.requestID
+        })
+        let pendingQuestionSignatures = Set(pending.compactMap { permission -> String? in
+            guard InteractionAdapter(permission: permission).kind == .question else {
+                return nil
+            }
+            let signature = questionSignature(inputJSON: permission.inputJSON, fallback: permission.summary)
+            return signature.isEmpty ? nil : signature
+        })
+        let rawItems = messages.flatMap {
+            items(
+                for: $0,
+                suppressedQuestionToolIDs: pendingQuestionToolIDs,
+                suppressedQuestionSignatures: pendingQuestionSignatures
+            )
+        }
         var output: [TranscriptDisplayItem] = []
         var index = 0
         while index < rawItems.count {
             switch rawItems[index] {
             case .message(let message):
                 output.append(.message(message))
+                index += 1
+            case .question(let question):
+                output.append(.question(question))
                 index += 1
             case .tool(let first):
                 var run = [first]
@@ -170,11 +205,170 @@ enum TranscriptDisplayBuilder {
                 }
             }
         }
-        output.append(contentsOf: pendingPermissions.map(TranscriptDisplayItem.interaction))
+        output.append(contentsOf: pending.map(TranscriptDisplayItem.interaction))
         return output
     }
 
-    private static func items(for message: ChatMessage) -> [RawTranscriptDisplayItem] {
+    private static func deduplicatedPendingPermissions(_ permissions: [PermissionRequest]) -> [PermissionRequest] {
+        var seen = Set<String>()
+        var output: [PermissionRequest] = []
+        for permission in permissions {
+            let key = permission.toolUseID ?? permission.requestID
+            guard seen.insert(key).inserted else {
+                continue
+            }
+            output.append(permission)
+        }
+        return output
+    }
+
+    private static func items(
+        for message: ChatMessage,
+        suppressedQuestionToolIDs: Set<String>,
+        suppressedQuestionSignatures: Set<String>
+    ) -> [RawTranscriptDisplayItem] {
+        if !message.blocks.isEmpty {
+            return structuredItems(
+                for: message,
+                suppressedQuestionToolIDs: suppressedQuestionToolIDs,
+                suppressedQuestionSignatures: suppressedQuestionSignatures
+            )
+        }
+        return legacyItems(
+            for: message,
+            suppressedQuestionToolIDs: suppressedQuestionToolIDs,
+            suppressedQuestionSignatures: suppressedQuestionSignatures
+        )
+    }
+
+    private static func structuredItems(
+        for message: ChatMessage,
+        suppressedQuestionToolIDs: Set<String>,
+        suppressedQuestionSignatures: Set<String>
+    ) -> [RawTranscriptDisplayItem] {
+        let hasStructuralBlocks = message.blocks.contains { block in
+            switch block.kind {
+            case .text, .image:
+                return false
+            case .thinking, .toolUse, .toolResult, .unknown:
+                return true
+            }
+        }
+        if !hasStructuralBlocks {
+            return [.message(message)]
+        }
+
+        var output: [RawTranscriptDisplayItem] = []
+        var textSegments: [String] = []
+        var imageSegments: [MessageImageReference] = []
+        var ordinal = 0
+        var emittedQuestionKeys = Set<String>()
+
+        func appendMessageSegment() {
+            let text = textSegments.joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            let images = deduplicatedImages(imageSegments)
+            guard !text.isEmpty || !images.isEmpty else {
+                textSegments.removeAll()
+                imageSegments.removeAll()
+                return
+            }
+            var copy = message
+            copy.id = "\(message.id)_content_\(ordinal)"
+            copy.content = text
+            copy.toolName = nil
+            copy.images = images
+            copy.blocks = []
+            output.append(.message(copy))
+            ordinal += 1
+            textSegments.removeAll()
+            imageSegments.removeAll()
+        }
+
+        for block in message.blocks {
+            switch block.kind {
+            case .text:
+                if !block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    textSegments.append(block.text)
+                }
+            case .image:
+                if let image = block.image {
+                    imageSegments.append(image)
+                }
+            case .thinking:
+                appendMessageSegment()
+                let text = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else {
+                    continue
+                }
+                var thinking = message
+                thinking.id = "\(message.id)_thinking_\(ordinal)"
+                thinking.role = .thinking
+                thinking.content = text
+                thinking.images = []
+                thinking.toolName = nil
+                thinking.blocks = [block]
+                output.append(.message(thinking))
+                ordinal += 1
+            case .toolUse:
+                appendMessageSegment()
+                let toolName = block.toolName ?? "Tool"
+                let toolUseID = block.toolUseID ?? block.id
+                let signature = questionSignature(inputJSON: block.inputJSON ?? "{}", fallback: "")
+                let questionKey = signature.isEmpty ? toolUseID : signature
+                if
+                    isAskUserQuestion(toolName),
+                    !suppressedQuestionToolIDs.contains(toolUseID),
+                    signature.isEmpty || !suppressedQuestionSignatures.contains(signature),
+                    emittedQuestionKeys.insert(questionKey).inserted {
+                    output.append(.question(TranscriptQuestionItem(
+                        id: "\(message.id)_question_\(block.id)",
+                        sourceMessage: message,
+                        toolUseID: toolUseID,
+                        inputJSON: block.inputJSON ?? "{}"
+                    )))
+                } else if !isAskUserQuestion(toolName) {
+                    output.append(.tool(TranscriptToolItem(
+                        id: "\(message.id)_tool_\(ordinal)_\(block.id)",
+                        sourceMessage: message,
+                        kind: .use,
+                        toolName: toolName,
+                        content: block.inputJSON ?? "",
+                        toolUseID: block.toolUseID ?? block.id
+                    )))
+                }
+                ordinal += 1
+            case .toolResult:
+                appendMessageSegment()
+                let content = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                output.append(.tool(TranscriptToolItem(
+                    id: "\(message.id)_tool_result_\(ordinal)_\(block.toolUseID ?? block.id)",
+                    sourceMessage: message,
+                    kind: .result,
+                    toolName: L("Tool result"),
+                    content: content,
+                    toolUseID: block.toolUseID,
+                    isError: block.isError
+                )))
+                ordinal += 1
+            case .unknown:
+                if !block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    textSegments.append(block.text)
+                }
+            }
+        }
+        appendMessageSegment()
+        if output.isEmpty {
+            let hasVisibleFallback = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !message.displayImages.isEmpty
+            return hasVisibleFallback ? [.message(message)] : []
+        }
+        return output
+    }
+
+    private static func legacyItems(
+        for message: ChatMessage,
+        suppressedQuestionToolIDs: Set<String>,
+        suppressedQuestionSignatures: Set<String>
+    ) -> [RawTranscriptDisplayItem] {
         guard message.content.contains("[tool_use:") || message.content.contains("[tool_result") else {
             if message.role == .tool || message.toolName != nil {
                 return [.tool(TranscriptToolItem(id: message.id + "_tool", sourceMessage: message, kind: .result, toolName: message.derivedToolName, content: message.content))]
@@ -237,7 +431,32 @@ enum TranscriptDisplayBuilder {
         }
         appendTool()
         appendText()
-        return output.isEmpty ? [.message(message)] : output
+        var emittedQuestionKeys = Set<String>()
+        let converted = output.compactMap { item -> RawTranscriptDisplayItem? in
+            if case .tool(let tool) = item, tool.kind == .use, isAskUserQuestion(tool.toolName) {
+                let payload = cleanToolPayload(tool.content)
+                let signature = questionSignature(inputJSON: payload, fallback: tool.content)
+                let questionKey = signature.isEmpty ? (tool.toolUseID ?? tool.id) : signature
+                guard
+                    !suppressedQuestionToolIDs.contains(tool.toolUseID ?? tool.id),
+                    signature.isEmpty || !suppressedQuestionSignatures.contains(signature),
+                    emittedQuestionKeys.insert(questionKey).inserted
+                else {
+                    return nil
+                }
+                return .question(TranscriptQuestionItem(
+                    id: "\(message.id)_question_legacy_\(tool.id)",
+                    sourceMessage: message,
+                    toolUseID: tool.toolUseID,
+                    inputJSON: payload
+                ))
+            }
+            return item
+        }
+        if converted.isEmpty, output.isEmpty {
+            return [.message(message)]
+        }
+        return converted
     }
 
     private static func toolUseName(from line: String) -> String? {
@@ -254,10 +473,37 @@ enum TranscriptDisplayBuilder {
     private static func isToolResultMarker(_ line: String) -> Bool {
         line.trimmingCharacters(in: .whitespaces).hasPrefix("[tool_result")
     }
+
+    private static func isAskUserQuestion(_ toolName: String) -> Bool {
+        let lower = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return lower == "askuserquestion" || lower == "ask_user_question" || lower.contains("askuserquestion")
+    }
+
+    private static func questionSignature(inputJSON: String, fallback: String) -> String {
+        let prompts = questionPrompts(from: inputJSON, fallback: fallback)
+        if !prompts.isEmpty {
+            return prompts.map { prompt in
+                ([prompt.header, prompt.question] + prompt.options.flatMap { [$0.label, $0.description] })
+                    .map(normalizedSignatureText)
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "|")
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: "||")
+        }
+        return normalizedSignatureText(inputJSON.isEmpty ? fallback : inputJSON)
+    }
+
+    private static func normalizedSignatureText(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .lowercased()
+    }
 }
 
 private enum RawTranscriptDisplayItem {
     case message(ChatMessage)
+    case question(TranscriptQuestionItem)
     case tool(TranscriptToolItem)
 }
 
@@ -279,19 +525,24 @@ enum AgentActivityBuilder {
             case .tool(let tool): [tool]
             case .toolRun(let tools): tools
             case .message,
+                 .question,
                  .interaction: []
             }
         }
         var toolNamesByMessageID: [String: String] = [:]
+        var toolNamesByToolUseID: [String: String] = [:]
         for item in items where item.kind == .use {
             toolNamesByMessageID[item.sourceMessage.id] = item.summaryName
+            if let toolUseID = item.toolUseID {
+                toolNamesByToolUseID[toolUseID] = item.summaryName
+            }
         }
         return items.enumerated().map { index, item in
             let resolvedName = item.kind == .result
-                ? (item.sourceMessage.parentID.flatMap { toolNamesByMessageID[$0] } ?? item.toolName)
+                ? (item.toolUseID.flatMap { toolNamesByToolUseID[$0] } ?? item.sourceMessage.parentID.flatMap { toolNamesByMessageID[$0] } ?? item.toolName)
                 : item.summaryName
             let call = ToolCall(
-                id: "\(item.sourceMessage.id)_agent_\(index)",
+                id: item.toolUseID ?? "\(item.sourceMessage.id)_agent_\(index)",
                 sessionID: sessionID,
                 name: resolvedName,
                 inputPreview: item.kind == .use ? item.content : "",

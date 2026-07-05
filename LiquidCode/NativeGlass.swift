@@ -402,12 +402,114 @@ struct WindowAccessor: NSViewRepresentable {
     }
 }
 
+private final class WindowDragRegionView: NSView {
+    private var dragStartWindowOrigin: NSPoint?
+    private var dragStartMouseLocation: NSPoint?
+    var excludedLeadingWidth: CGFloat = 0
+    var excludedTrailingWidth: CGFloat = 0
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    override var mouseDownCanMoveWindow: Bool {
+        true
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard
+            bounds.contains(point),
+            point.x >= excludedLeadingWidth,
+            point.x <= bounds.width - excludedTrailingWidth,
+            !isHidden,
+            alphaValue > 0.01
+        else {
+            return nil
+        }
+        return self
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStartWindowOrigin = window?.frame.origin
+        dragStartMouseLocation = NSEvent.mouseLocation
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard
+            let window,
+            let dragStartWindowOrigin,
+            let dragStartMouseLocation
+        else {
+            return
+        }
+        let currentLocation = NSEvent.mouseLocation
+        let deltaX = currentLocation.x - dragStartMouseLocation.x
+        let deltaY = currentLocation.y - dragStartMouseLocation.y
+        window.setFrameOrigin(NSPoint(
+            x: dragStartWindowOrigin.x + deltaX,
+            y: dragStartWindowOrigin.y + deltaY
+        ))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragStartWindowOrigin = nil
+        dragStartMouseLocation = nil
+    }
+}
+
 @MainActor func configureLiquidWindow(_ window: NSWindow) {
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
     window.toolbarStyle = .unifiedCompact
-    window.isMovableByWindowBackground = true
+    window.isMovableByWindowBackground = false
     window.backgroundColor = .clear
     window.isOpaque = false
     window.tabbingMode = .preferred
+    installWindowDragStrip(in: window)
+    DispatchQueue.main.async { [weak window] in
+        guard let window else {
+            return
+        }
+        MainActor.assumeIsolated {
+            installWindowDragStrip(in: window)
+        }
+    }
+}
+
+@MainActor private func installWindowDragStrip(in window: NSWindow) {
+    guard let contentView = window.contentView else {
+        return
+    }
+    let identifier = NSUserInterfaceItemIdentifier("LiquidCodeWindowDragStrip")
+    let container = contentView.superview ?? contentView
+    if container.subviews.contains(where: { $0.identifier == identifier }) {
+        return
+    }
+    contentView.subviews
+        .filter { $0.identifier == identifier }
+        .forEach { $0.removeFromSuperview() }
+    let height: CGFloat = 38
+    let dragView = WindowDragRegionView(frame: NSRect(
+        x: 0,
+        y: max(0, container.bounds.height - height),
+        width: container.bounds.width,
+        height: height
+    ))
+    dragView.identifier = identifier
+    dragView.excludedLeadingWidth = 96
+    dragView.excludedTrailingWidth = 96
+    dragView.autoresizingMask = [.width, .minYMargin]
+    container.addSubview(dragView, positioned: .above, relativeTo: nil)
 }

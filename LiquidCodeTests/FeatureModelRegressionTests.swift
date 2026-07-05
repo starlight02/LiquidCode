@@ -3,7 +3,10 @@ import SwiftUI
 import XCTest
 
 @MainActor
+// swiftlint:disable:next type_body_length
 final class FeatureModelRegressionTests: XCTestCase {
+    private static let tinyPNGData = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=") ?? Data()
+
     func testChatFindOccurrenceRangesAreCaseDiacriticInsensitive() {
         let text = "Résumé resume RESUME resumé"
 
@@ -241,6 +244,29 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertNil(markdownImageReference(from: "![Architecture diagram](   )"))
     }
 
+    func testComposerImageContentBuildsClaudeImageBlockWithoutPathText() throws {
+        let root = try temporaryDirectory(prefix: "lc-image-content")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let imageURL = root.appendingPathComponent("diagram.png")
+        try Self.tinyPNGData.write(to: imageURL)
+        let attachment = AttachmentChip(name: "diagram.png", path: imageURL.path, size: Int64(Self.tinyPNGData.count), isImage: true)
+
+        let payload = try composerUserMessageContent("inspect this", attachments: [attachment])
+        XCTAssertEqual(payload.text, "inspect this")
+        XCTAssertFalse(payload.text.contains(imageURL.path))
+
+        let blocks = try XCTUnwrap(try payload.jsonContent() as? [[String: Any]])
+        XCTAssertEqual(blocks.count, 2)
+        XCTAssertEqual(blocks.first?["type"] as? String, "text")
+        XCTAssertEqual(blocks.first?["text"] as? String, "inspect this")
+        let imageBlock = try XCTUnwrap(blocks.last)
+        XCTAssertEqual(imageBlock["type"] as? String, "image")
+        let source = try XCTUnwrap(imageBlock["source"] as? [String: Any])
+        XCTAssertEqual(source["type"] as? String, "base64")
+        XCTAssertEqual(source["media_type"] as? String, "image/png")
+        XCTAssertFalse((source["data"] as? String ?? "").isEmpty)
+    }
+
     func testMarkdownParserPreservesGFMTasksTablesRulesAndFencedCode() {
         let blocks = parseMarkdown("""
         # Plan
@@ -268,6 +294,25 @@ final class FeatureModelRegressionTests: XCTestCase {
             .horizontalRule,
             .code("swift", #"print("ok")"#)
         ])
+    }
+
+    func testToolResultPreviewIsCappedAtFiveLinesBeforeScrolling() {
+        XCTAssertEqual(toolPreviewVisibleLineLimit, 5)
+        XCTAssertEqual(toolPreviewLineCount("one"), 1)
+        XCTAssertFalse(toolPreviewNeedsScroll("1\n2\n3\n4\n5"))
+        XCTAssertTrue(toolPreviewNeedsScroll("1\n2\n3\n4\n5\n6"))
+    }
+
+    func testCodeEditingToolPayloadRendersUnifiedDiffPreview() throws {
+        let payload = #"{"file_path":"Sources/App.swift","old_string":"let old = true\nprint(old)","new_string":"let new = true\nprint(new)"}"#
+
+        let diff = try XCTUnwrap(toolPayloadDiff(payload, toolName: "Edit"))
+
+        XCTAssertTrue(diff.contains("--- Sources/App.swift"))
+        XCTAssertTrue(diff.contains("+++ Sources/App.swift"))
+        XCTAssertTrue(diff.contains("-let old = true"))
+        XCTAssertTrue(diff.contains("+let new = true"))
+        XCTAssertNil(toolPayloadDiff(#"{"file_path":"README.md"}"#, toolName: "Read"))
     }
 
     func testSelectingSessionsRestoresComposerAndAttachmentDraftsPerSession() throws {
@@ -473,6 +518,181 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(model.sendConfigurationBySession["alpha"], ComposerSendConfiguration(model: "claude-opus-4-6[1m]", mode: .plan, thinkingLevel: .max))
     }
 
+    func testComposerConfigurationRestoresPerSessionWhenSwitchingConversations() throws {
+        let root = try temporaryDirectory(prefix: "lc-session-config")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = AppModel()
+        model.sessions = [
+            SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: root.path, modifiedAt: Date(), preview: "Alpha", isDraft: true),
+            SessionRecord(id: "beta", path: nil, project: "Beta", projectDir: root.path, modifiedAt: Date(), preview: "Beta", isDraft: true)
+        ]
+
+        try withPreservedFile(AppPaths.shared.settingsFile) {
+            model.selectSession("alpha")
+            model.setComposerModel("claude-opus-4-6[1m]")
+            model.setComposerMode(.plan)
+            model.setComposerThinkingLevel(.max)
+
+            model.selectSession("beta")
+            model.setComposerModel("claude-sonnet-4-6")
+            model.setComposerMode(.ask)
+            model.setComposerThinkingLevel(.low)
+
+            model.selectSession("alpha")
+            XCTAssertEqual(model.settings.selectedModel, "claude-opus-4-6[1m]")
+            XCTAssertEqual(model.settings.sessionMode, .plan)
+            XCTAssertEqual(model.settings.thinkingLevel, .max)
+
+            model.selectSession("beta")
+            XCTAssertEqual(model.settings.selectedModel, "claude-sonnet-4-6")
+            XCTAssertEqual(model.settings.sessionMode, .ask)
+            XCTAssertEqual(model.settings.thinkingLevel, .low)
+        }
+    }
+
+    func testSelectingUnconfiguredConversationRestoresDefaultComposerConfiguration() throws {
+        let root = try temporaryDirectory(prefix: "lc-session-config-default")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = AppModel()
+        model.defaultComposerConfiguration = ComposerSendConfiguration(model: "sonnet", mode: .ask, thinkingLevel: .high)
+        model.settings.selectedModel = "sonnet"
+        model.settings.sessionMode = .ask
+        model.settings.thinkingLevel = .high
+        model.sessions = [
+            SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: root.path, modifiedAt: Date(), preview: "Alpha", isDraft: true),
+            SessionRecord(id: "beta", path: nil, project: "Beta", projectDir: root.path, modifiedAt: Date(), preview: "Beta", isDraft: true)
+        ]
+
+        try withPreservedFile(AppPaths.shared.settingsFile) {
+            model.selectSession("alpha")
+            model.setComposerModel("opus")
+            model.setComposerMode(.plan)
+            model.setComposerThinkingLevel(.max)
+
+            model.selectSession("beta")
+
+            XCTAssertEqual(model.settings.selectedModel, "sonnet")
+            XCTAssertEqual(model.settings.sessionMode, .ask)
+            XCTAssertEqual(model.settings.thinkingLevel, .high)
+        }
+    }
+
+    func testConversationSwitchSnapshotsDirectConfigurationMutations() throws {
+        let root = try temporaryDirectory(prefix: "lc-session-config-snapshot")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = AppModel()
+        model.defaultComposerConfiguration = ComposerSendConfiguration(model: "sonnet", mode: .ask, thinkingLevel: .high)
+        model.settings.selectedModel = "sonnet"
+        model.settings.sessionMode = .ask
+        model.settings.thinkingLevel = .high
+        model.sessions = [
+            SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: root.path, modifiedAt: Date(), preview: "Alpha", isDraft: true),
+            SessionRecord(id: "beta", path: nil, project: "Beta", projectDir: root.path, modifiedAt: Date(), preview: "Beta", isDraft: true)
+        ]
+
+        try withPreservedFile(AppPaths.shared.settingsFile) {
+            model.selectSession("alpha")
+            model.settings.selectedModel = "opus"
+            model.settings.sessionMode = .plan
+            model.settings.thinkingLevel = .max
+
+            model.selectSession("beta")
+
+            XCTAssertEqual(model.sendConfigurationBySession["alpha"], ComposerSendConfiguration(model: "opus", mode: .plan, thinkingLevel: .max))
+            XCTAssertEqual(model.settings.selectedModel, "sonnet")
+            XCTAssertEqual(model.settings.sessionMode, .ask)
+            XCTAssertEqual(model.settings.thinkingLevel, .high)
+
+            model.selectSession("alpha")
+            XCTAssertEqual(model.settings.selectedModel, "opus")
+            XCTAssertEqual(model.settings.sessionMode, .plan)
+            XCTAssertEqual(model.settings.thinkingLevel, .max)
+        }
+    }
+
+    func testSessionLoadCachesMessagesEvenWhenSwitchingAwayBeforeLoadCompletes() async throws {
+        let root = try temporaryDirectory(prefix: "lc-session-load-cache")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let alphaLog = root.appendingPathComponent("alpha.jsonl")
+        let betaLog = root.appendingPathComponent("beta.jsonl")
+        try #"{"type":"user","uuid":"alpha-user","timestamp":"2026-07-05T00:00:00Z","message":{"role":"user","content":"alpha cached while away"}}"#
+            .write(to: alphaLog, atomically: true, encoding: .utf8)
+        try #"{"type":"user","uuid":"beta-user","timestamp":"2026-07-05T00:00:01Z","message":{"role":"user","content":"beta selected"}}"#
+            .write(to: betaLog, atomically: true, encoding: .utf8)
+        let model = AppModel()
+        model.sessions = [
+            SessionRecord(id: "alpha", path: alphaLog.path, project: "Alpha", projectDir: root.path, modifiedAt: Date(), preview: "Alpha"),
+            SessionRecord(id: "beta", path: betaLog.path, project: "Beta", projectDir: root.path, modifiedAt: Date(), preview: "Beta")
+        ]
+
+        model.selectSession("alpha")
+        model.selectSession("beta")
+
+        try await waitUntilAsync(timeout: 4) {
+            model.messagesBySession["alpha"]?.first?.content == "alpha cached while away"
+        }
+        XCTAssertEqual(model.selectedSessionID, "beta")
+        XCTAssertEqual(model.displayItemsBySession["alpha"]?.count, 1)
+        XCTAssertEqual(model.loadingMessageSessionIDs.contains("alpha"), false)
+    }
+
+    func testImageOnlyComposerCanStartSessionWithImageContent() throws {
+        let root = try temporaryDirectory(prefix: "lc-image-only")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let imageURL = root.appendingPathComponent("only.png")
+        try Self.tinyPNGData.write(to: imageURL)
+        let engine = RecordingEngine()
+        let model = AppModel(engine: engine)
+        model.sessions = [
+            SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: root.path, modifiedAt: Date(), preview: "Alpha", isDraft: true)
+        ]
+        model.selectSession("alpha")
+        model.attachments = [AttachmentChip(name: "only.png", path: imageURL.path, size: Int64(Self.tinyPNGData.count), isImage: true)]
+
+        model.sendComposer()
+
+        let request = try XCTUnwrap(engine.startRequests.first)
+        XCTAssertEqual(request.prompt, "")
+        let blocks = try XCTUnwrap(try request.userMessageContent.jsonContent() as? [[String: Any]])
+        XCTAssertEqual(blocks.count, 1)
+        XCTAssertEqual(blocks.first?["type"] as? String, "image")
+        XCTAssertEqual(model.messagesBySession["alpha"]?.first?.images.count, 1)
+        XCTAssertEqual(model.attachments, [])
+    }
+
+    func testLegacyImageMarkersAreParsedAsImagesAndRemovedFromVisibleText() throws {
+        let root = try temporaryDirectory(prefix: "lc-image-marker")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = root.appendingPathComponent("first.png")
+        let second = root.appendingPathComponent("second.png")
+        try Self.tinyPNGData.write(to: first)
+        try Self.tinyPNGData.write(to: second)
+
+        let object: [String: Any] = [
+            "type": "human",
+            "uuid": "u-images",
+            "message": [
+                "role": "user",
+                "content": """
+                [Image: source: \(first.path)]
+                please compare
+
+                Attached files:
+                \(second.path)
+                """
+            ]
+        ]
+
+        let message = try XCTUnwrap(StreamEventParser.messageFromJSONObject(object, fallbackID: "fallback"))
+        XCTAssertEqual(message.role, .user)
+        XCTAssertEqual(message.images.count, 2)
+        XCTAssertEqual(message.content, "please compare")
+        XCTAssertFalse(message.content.contains("[Image: source:"))
+        XCTAssertFalse(message.content.contains("Attached files:"))
+        XCTAssertFalse(message.content.contains(first.path))
+        XCTAssertFalse(message.content.contains(second.path))
+    }
+
     func testDownloadedClaudeCodeCLIPathSendsApprovesPermissionAndRendersToolResult() async throws {
         let root = try temporaryDirectory(prefix: "lc-sidecar-app")
         let home = try temporaryDirectory(prefix: "lc-sidecar-home")
@@ -585,6 +805,68 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertTrue(model.selectedMessages.contains { $0.role == .assistant && $0.content.contains("I will run a command.") })
     }
 
+    func testSidecarSendsImageContentBlocksToClaudeCLI() async throws {
+        let home = try temporaryDirectory(prefix: "lc-sidecar-image-home")
+        let root = try temporaryDirectory(prefix: "lc-sidecar-image-root")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: home)
+        }
+        let fakeTrace = home.appendingPathComponent("fake-claude-image-trace.log")
+        let fakeClaude = home.appendingPathComponent("claude")
+        try makeExecutablePythonScript(at: fakeClaude, body: #"""
+        import json
+        import os
+        import sys
+
+        first = sys.stdin.readline()
+        with open(os.environ["LC_FAKE_CLAUDE_TRACE"], "w", encoding="utf-8") as handle:
+            handle.write(first.strip() + "\n")
+        print(json.dumps({"type": "result", "subtype": "success"}), flush=True)
+        """#)
+
+        var env = ProcessInfo.processInfo.environment
+        env["HOME"] = home.path
+        env["PATH"] = "\(home.path):\(env["PATH"] ?? "/usr/bin:/bin")"
+        env["LIQUIDCODE_CLAUDE_EXECUTABLE"] = fakeClaude.path
+        env["LIQUIDCODE_FORCE_CLI_SIDECAR"] = "1"
+        env["LC_FAKE_CLAUDE_TRACE"] = fakeTrace.path
+        let sidecar = try XCTUnwrap(SidecarClaudeEngine.locateSidecarScript())
+        let engine = SidecarClaudeEngine(home: home, environment: env, sidecarScript: sidecar)
+        defer { engine.killAll() }
+
+        let content = ClaudeUserMessageContent(images: [
+            MessageImageReference(data: Self.tinyPNGData, mimeType: "image/png", displayName: "tiny.png", size: Int64(Self.tinyPNGData.count))
+        ])
+        try engine.startSession(ClaudeSessionStartRequest(
+            prompt: "",
+            content: content,
+            cwd: root.path,
+            model: nil,
+            sessionID: "image-wire",
+            resumeSessionID: nil,
+            thinkingLevel: .off,
+            mode: .ask,
+            provider: nil,
+            providerAPIKey: nil
+        ), eventSink: { _ in })
+
+        try await waitUntilAsync(timeout: 4) {
+            FileManager.default.fileExists(atPath: fakeTrace.path)
+        }
+        let line = try String(contentsOf: fakeTrace, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        let message = try XCTUnwrap(object["message"] as? [String: Any])
+        let blocks = try XCTUnwrap(message["content"] as? [[String: Any]])
+        XCTAssertEqual(blocks.count, 1)
+        XCTAssertEqual(blocks.first?["type"] as? String, "image")
+        let source = try XCTUnwrap(blocks.first?["source"] as? [String: Any])
+        XCTAssertEqual(source["media_type"] as? String, "image/png")
+        XCTAssertFalse((source["data"] as? String ?? "").isEmpty)
+        XCTAssertFalse(line.contains("Attached files:"))
+        XCTAssertFalse(line.contains("/tiny.png"))
+    }
+
     func testRewindRestoreAllRestoresCodeCheckpointAndTruncatesConversation() throws {
         let root = try temporaryDirectory(prefix: "lc-rewind-all")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -602,6 +884,11 @@ final class FeatureModelRegressionTests: XCTestCase {
             ChatMessage(id: "a2", role: .assistant, content: "second answer")
         ]
         model.streamingTextBySession["alpha"] = "still streaming"
+        model.streamingMessagesBySession["alpha"] = ChatMessage(
+            role: .assistant,
+            content: "still streaming",
+            blocks: [ChatContentBlock(kind: .text, text: "still streaming")]
+        )
         model.activeTurnSnapshots["alpha"] = ActiveTurnSnapshot(messageID: "a2", content: "second answer", attachments: [])
         engine.runningSessionIDs.insert("alpha")
 
@@ -612,6 +899,7 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(engine.rewindCalls.first?.cwd, root.path)
         XCTAssertEqual(model.messagesBySession["alpha"]?.map(\.id), ["u1", "a1", "u2"])
         XCTAssertEqual(model.streamingTextBySession["alpha"], "")
+        XCTAssertNil(model.streamingMessagesBySession["alpha"])
         XCTAssertNil(model.activeTurnSnapshots["alpha"])
         XCTAssertFalse(engine.runningSessionIDs.contains("alpha"))
     }
@@ -877,6 +1165,170 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(displayedPermission.risk, .readOnly)
     }
 
+    func testTranscriptDisplayBuilderUsesStructuredToolBlocksWithoutRawMarkers() throws {
+        let message = ChatMessage(
+            id: "assistant-structured",
+            role: .assistant,
+            content: "I will inspect the file.",
+            blocks: [
+                ChatContentBlock(kind: .text, text: "I will inspect the file."),
+                ChatContentBlock(kind: .toolUse, toolUseID: "tool-read", toolName: "Read", inputJSON: #"{"file_path":"README.md"}"#),
+                ChatContentBlock(kind: .toolResult, text: "README contents", toolUseID: "tool-read")
+            ]
+        )
+
+        let items = TranscriptDisplayBuilder.displayItems(messages: [message])
+
+        XCTAssertEqual(items.count, 2)
+        guard case .message(let textMessage) = items.first else {
+            return XCTFail("expected assistant text before tool cards")
+        }
+        XCTAssertEqual(textMessage.content, "I will inspect the file.")
+        XCTAssertFalse(textMessage.content.contains("[tool_use:"))
+        guard case .toolRun(let runItems) = items.last else {
+            return XCTFail("expected structured tool use/result to group into one run")
+        }
+        XCTAssertEqual(runItems.map(\.kind), [.use, .result])
+        XCTAssertEqual(runItems.first?.toolUseID, "tool-read")
+        XCTAssertEqual(runItems.first?.toolName, "Read")
+        XCTAssertTrue(runItems.first?.content.contains("README.md") == true)
+        XCTAssertEqual(runItems.last?.content, "README contents")
+    }
+
+    func testRuntimeStreamsThinkingToolInputAndQuestionThroughTranscript() throws {
+        let model = AppModel()
+        model.selectedSessionID = "session-1"
+
+        model.handle(.streamBlockDelta(sessionID: "session-1", index: 0, kind: .thinking, text: "Need to ask a clarifying question."))
+        model.handle(.streamBlockStarted(
+            sessionID: "session-1",
+            index: 1,
+            ChatContentBlock(kind: .toolUse, toolUseID: "ask-stream-1", toolName: "AskUserQuestion", inputJSON: "")
+        ))
+        model.handle(.streamBlockDelta(
+            sessionID: "session-1",
+            index: 1,
+            kind: .toolUse,
+            text: #"{"questions":[{"header":"范围","question":"要先处理哪一块？","options":[{"label":"渲染","description":"先修消息渲染"},{"label":"性能","description":"先修切换卡顿"}]}]}"#
+        ))
+
+        let streaming = try XCTUnwrap(model.selectedStreamingMessage)
+        XCTAssertEqual(streaming.blocks.map(\.kind), [.thinking, .toolUse])
+        XCTAssertEqual(model.selectedToolCalls.first?.id, "ask-stream-1")
+        XCTAssertEqual(model.selectedToolCalls.first?.status, .streamingInput)
+        XCTAssertTrue(model.selectedToolCalls.first?.inputPreview.contains("要先处理哪一块") == true)
+
+        let items = TranscriptDisplayBuilder.displayItems(messages: [streaming])
+        XCTAssertEqual(items.count, 2)
+        guard case .message(let thinking) = items.first else {
+            return XCTFail("expected streaming thinking to render through transcript")
+        }
+        XCTAssertEqual(thinking.role, .thinking)
+        XCTAssertEqual(thinking.content, "Need to ask a clarifying question.")
+        guard case .question(let question) = items.last else {
+            return XCTFail("expected streaming AskUserQuestion to render as question card")
+        }
+        XCTAssertEqual(question.toolUseID, "ask-stream-1")
+        XCTAssertTrue(question.inputJSON.contains("先修消息渲染"))
+    }
+
+    func testSelectedTranscriptDisplayItemsUseCacheUntilPendingPermissionRequiresMerge() throws {
+        let model = AppModel()
+        model.selectedSessionID = "session-1"
+        let source = ChatMessage(id: "source", role: .assistant, content: "source")
+        let cached = ChatMessage(id: "cached-display", role: .assistant, content: "cached")
+        model.setMessages([source], for: "session-1", displayItems: [.message(cached)])
+
+        XCTAssertEqual(model.selectedTranscriptDisplayItems.map(\.id), ["cached-display"])
+
+        model.pendingPermissions = [
+            PermissionRequest(
+                id: "permission-1",
+                sessionID: "session-1",
+                requestID: "request-1",
+                toolName: "Read",
+                title: "Read",
+                summary: "Read a file",
+                inputJSON: #"{"file_path":"README.md"}"#,
+                toolUseID: "tool-1",
+                parentToolUseID: nil,
+                agentID: nil,
+                risk: .readOnly
+            )
+        ]
+
+        XCTAssertEqual(model.selectedTranscriptDisplayItems.map(\.id), ["source", "interaction_permission-1"])
+    }
+
+    func testTranscriptDisplayBuilderDeduplicatesAskUserQuestionAgainstPendingPermission() throws {
+        let input = #"{"questions":[{"header":"下一步","question":"接下来你想让我做什么？","options":[{"label":"说明任务","description":"告诉我目标"},{"label":"先聊一下","description":"不动代码"}]}]}"#
+        let message = ChatMessage(
+            id: "assistant-question",
+            role: .assistant,
+            content: "",
+            toolName: "AskUserQuestion",
+            blocks: [
+                ChatContentBlock(kind: .toolUse, toolUseID: "ask-1", toolName: "AskUserQuestion", inputJSON: input)
+            ]
+        )
+        let permission = PermissionRequest(
+            id: "permission-1",
+            sessionID: "session-1",
+            requestID: "request-1",
+            toolName: "AskUserQuestion",
+            title: "Claude asks",
+            summary: "接下来你想让我做什么？",
+            inputJSON: input,
+            toolUseID: "ask-1",
+            parentToolUseID: nil,
+            agentID: nil,
+            risk: .readOnly
+        )
+
+        let items = TranscriptDisplayBuilder.displayItems(messages: [message], pendingPermissions: [permission, permission])
+
+        XCTAssertEqual(items.count, 1)
+        guard case .interaction(let displayedPermission) = items.first else {
+            return XCTFail("expected one active question interaction, not raw tool card plus duplicates")
+        }
+        XCTAssertEqual(displayedPermission.toolUseID, "ask-1")
+        XCTAssertEqual(displayedPermission.toolName, "AskUserQuestion")
+    }
+
+    func testTranscriptDisplayBuilderDeduplicatesAskUserQuestionByPromptSignatureWhenIDsDiffer() throws {
+        let input = #"{"questions":[{"header":"下一步","question":"接下来你想让我做什么？","options":[{"label":"说明任务","description":"告诉我目标"},{"label":"先聊一下","description":"不动代码"}]}]}"#
+        let message = ChatMessage(
+            id: "assistant-question",
+            role: .assistant,
+            content: "",
+            toolName: "AskUserQuestion",
+            blocks: [
+                ChatContentBlock(kind: .toolUse, toolUseID: "history-tool-id", toolName: "AskUserQuestion", inputJSON: input)
+            ]
+        )
+        let permission = PermissionRequest(
+            id: "permission-1",
+            sessionID: "session-1",
+            requestID: "runtime-request-id",
+            toolName: "AskUserQuestion",
+            title: "Claude asks",
+            summary: "接下来你想让我做什么？",
+            inputJSON: input,
+            toolUseID: "runtime-tool-id",
+            parentToolUseID: nil,
+            agentID: nil,
+            risk: .readOnly
+        )
+
+        let items = TranscriptDisplayBuilder.displayItems(messages: [message], pendingPermissions: [permission])
+
+        XCTAssertEqual(items.count, 1)
+        guard case .interaction(let displayedPermission) = items.first else {
+            return XCTFail("expected active question only when history and pending runtime IDs differ")
+        }
+        XCTAssertEqual(displayedPermission.toolUseID, "runtime-tool-id")
+    }
+
     func testTranscriptDisplayBuilderGroupsSingleToolUseWithResult() throws {
         let message = ChatMessage(
             id: "assistant-task",
@@ -1066,7 +1518,7 @@ final class FeatureModelRegressionTests: XCTestCase {
 
     private final class RecordingEngine: ClaudeEngine, @unchecked Sendable {
         var startRequests: [ClaudeSessionStartRequest] = []
-        var sentMessages: [(sessionID: String, text: String)] = []
+        var sentMessages: [(sessionID: String, content: ClaudeUserMessageContent)] = []
         var rewindCalls: [RewindCall] = []
         var runtimeUpdates: [RuntimeUpdate] = []
         var rewindOutput: String?
@@ -1077,8 +1529,8 @@ final class FeatureModelRegressionTests: XCTestCase {
             runningSessionIDs.insert(request.sessionID)
         }
 
-        func sendMessage(sessionID: String, text: String) throws {
-            sentMessages.append((sessionID, text))
+        func sendMessage(sessionID: String, content: ClaudeUserMessageContent) throws {
+            sentMessages.append((sessionID, content))
         }
 
         func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String? {

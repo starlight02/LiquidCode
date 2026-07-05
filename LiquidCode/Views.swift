@@ -29,7 +29,7 @@ struct AppShellView: View {
             let previewPaneWidth = resolvedPreviewWidth(containerWidth: geometry.size.width)
             let secondaryPaneWidth = resolvedSecondaryWidth(containerWidth: geometry.size.width)
 
-            ZStack {
+            ZStack(alignment: .top) {
                 HStack(spacing: LiquidGlassToken.panelSpacing) {
                     if sidebarOpen {
                         SidebarView(onCollapse: { sidebarOpen = false })
