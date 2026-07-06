@@ -235,10 +235,15 @@ final class CursorRegressionTests: XCTestCase {
             row.contains("let onTogglePin: () -> Void") && row.contains("let onDelete: () -> Void"),
             "Sidebar row actions must remain explicit after removing the environment object."
         )
-        let togglesSelection = taskGroups.contains("""
-        if model.sessionSelectionMode {
-                                model.toggleSessionSelection(session)
-        """)
+        // Collapse whitespace so the assertion checks the control-flow shape, not the
+        // exact indentation (which SwiftFormat owns and can reflow at any nesting depth).
+        let normalizedTaskGroups = taskGroups.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        )
+        let togglesSelection = normalizedTaskGroups
+            .contains("if model.sessionSelectionMode { model.toggleSessionSelection(session)")
         XCTAssertTrue(
             togglesSelection && taskGroups.contains("model.removeSession(session, from: group)"),
             "Task-group session rows must toggle batch selection instead of opening the conversation while selection mode is active."
