@@ -506,6 +506,21 @@ enum StreamEventParser {
             return []
         }
         let type = obj["type"] as? String ?? ""
+        // Claude Code wraps partial-message records in a `stream_event` envelope
+        // (`{"type":"stream_event","event":{"type":"content_block_delta",...}}`) when
+        // launched with --include-partial-messages. The block start/delta matchers key
+        // off the top-level `type`, so without unwrapping they never see the inner
+        // `content_block_*` events and tool-use input never streams — the whole tool
+        // card only appears once the completed `.message` lands. (Assistant text streams
+        // regardless only because `textDelta` recurses into the envelope by luck.) Lift
+        // the inner event to the top level, preserving envelope keys it lacks, and reparse.
+        if type == "stream_event", let inner = obj["event"] as? [String: Any] {
+            var merged = inner
+            for (key, value) in obj where key != "event" && key != "type" && merged[key] == nil {
+                merged[key] = value
+            }
+            return events(from: merged, sessionID: sessionID)
+        }
         if type == "control_request" {
             return controlEvents(from: obj, sessionID: sessionID)
         }

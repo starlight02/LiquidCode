@@ -296,6 +296,78 @@ final class StreamEventParserTests: XCTestCase {
         XCTAssertEqual(thinking, "I should inspect the project.")
     }
 
+    func testStreamEventEnvelopeUnwrapsToStreamingToolBlocks() throws {
+        // Claude Code with --include-partial-messages wraps partial records in a
+        // `stream_event` envelope. The parser must unwrap it so tool-use input streams
+        // incrementally instead of the whole tool card popping in with the final message.
+        let startEnvelope: [String: Any] = [
+            "type": "stream_event",
+            "session_id": "cli-session-1",
+            "event": [
+                "type": "content_block_start",
+                "index": 1,
+                "content_block": [
+                    "type": "tool_use",
+                    "id": "tool-env-1",
+                    "name": "Bash",
+                    "input": [:]
+                ]
+            ]
+        ]
+        let deltaEnvelope: [String: Any] = [
+            "type": "stream_event",
+            "event": [
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": [
+                    "type": "input_json_delta",
+                    "partial_json": #"{"command":"echo hi"}"#
+                ]
+            ]
+        ]
+
+        let startEvents = StreamEventParser.events(from: startEnvelope, sessionID: "session-1")
+        guard case .streamBlockStarted("session-1", .some(1), let block) = try XCTUnwrap(startEvents.first) else {
+            return XCTFail("expected the envelope to unwrap into a structured stream block start")
+        }
+        XCTAssertEqual(block.kind, .toolUse)
+        XCTAssertEqual(block.toolUseID, "tool-env-1")
+        XCTAssertEqual(block.toolName, "Bash")
+
+        let deltaEvents = StreamEventParser.events(from: deltaEnvelope, sessionID: "session-1")
+        guard case .streamBlockDelta("session-1", .some(1), .toolUse, let partialJSON) = try XCTUnwrap(deltaEvents.first) else {
+            return XCTFail("expected the envelope to unwrap into a tool input stream delta")
+        }
+        XCTAssertEqual(partialJSON, #"{"command":"echo hi"}"#)
+    }
+
+    func testStreamEventEnvelopeTextDeltaStreamsOnce() throws {
+        // Text already streamed before unwrapping (textDelta recurses), so guard against
+        // the envelope now producing a duplicate text event from both paths.
+        let textEnvelope: [String: Any] = [
+            "type": "stream_event",
+            "event": [
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": [
+                    "type": "text_delta",
+                    "text": "Hello"
+                ]
+            ]
+        ]
+        let events = StreamEventParser.events(from: textEnvelope, sessionID: "session-1")
+        let textPayloads = events.compactMap { event -> String? in
+            if case .streamBlockDelta("session-1", .some(0), .text, let text) = event {
+                return text
+            }
+            if case .textDelta("session-1", let text) = event {
+                return text
+            }
+            return nil
+        }
+        XCTAssertEqual(textPayloads, ["Hello"], "text should stream exactly once, not duplicate across the delta paths")
+    }
+
     @MainActor
     func testStreamingToolUseWithEmptyInputAppendsDeltaWithoutSyntheticObjectPrefix() throws {
         let start: [String: Any] = [
