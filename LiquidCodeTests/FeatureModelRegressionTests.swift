@@ -233,6 +233,185 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(calls[1].parentID, "assistant-tool")
     }
 
+    func testAgentActivityBuilderDisplayItemPathMatchesMessagePathForToolRuns() throws {
+        let timestamp = Date(timeIntervalSince1970: 1_234)
+        let messages = [
+            ChatMessage(
+                id: "assistant-structured",
+                role: .assistant,
+                content: "",
+                timestamp: timestamp,
+                blocks: [
+                    ChatContentBlock(
+                        id: "tool-use-1",
+                        kind: .toolUse,
+                        toolUseID: "tool-use-1",
+                        toolName: "Task",
+                        inputJSON: #"{"description":"Review perf regression","subagent_type":"perf-reviewer"}"#
+                    )
+                ]
+            ),
+            ChatMessage(
+                id: "structured-result",
+                role: .assistant,
+                content: "",
+                timestamp: timestamp.addingTimeInterval(1),
+                parentID: "assistant-structured",
+                blocks: [
+                    ChatContentBlock(
+                        id: "result-1",
+                        kind: .toolResult,
+                        text: "Perf review finished",
+                        toolUseID: "tool-use-1"
+                    )
+                ]
+            ),
+            ChatMessage(id: "legacy-tool", role: .assistant, content: """
+            [tool_use: Bash]
+            {"command":"xcodebuild test"}
+            """, timestamp: timestamp.addingTimeInterval(2)),
+            ChatMessage(id: "legacy-result", role: .tool, content: "Tests passed", timestamp: timestamp.addingTimeInterval(3), toolName: "Bash", parentID: "legacy-tool")
+        ]
+        let displayItems = TranscriptDisplayBuilder.displayItems(messages: messages)
+
+        let fromMessages = AgentActivityBuilder.toolCalls(from: messages, sessionID: "session")
+        let fromDisplayItems = AgentActivityBuilder.toolCalls(fromDisplayItems: displayItems, sessionID: "session")
+
+        XCTAssertEqual(fromDisplayItems, fromMessages)
+        XCTAssertEqual(fromDisplayItems.map(\.id), ["tool-use-1", "tool-use-1", "legacy-tool_agent_2", "legacy-result_agent_3"])
+        XCTAssertEqual(fromDisplayItems.map(\.name), ["perf-reviewer", "perf-reviewer", "Bash", "Bash"])
+        XCTAssertEqual(
+            fromDisplayItems.map(\.inputPreview),
+            [
+                #"{"description":"Review perf regression","subagent_type":"perf-reviewer"}"#,
+                "",
+                "[tool_use: Bash]\n{\"command\":\"xcodebuild test\"}",
+                ""
+            ]
+        )
+        XCTAssertEqual(fromDisplayItems.map(\.resultPreview), ["", "Perf review finished", "", "Tests passed"])
+        XCTAssertEqual(fromDisplayItems.map(\.parentID), [nil, "assistant-structured", nil, "legacy-tool"])
+    }
+
+    func testTranscriptAutoScrollTokenTracksOnlyLightweightTranscriptBoundaries() {
+        let first = ChatMessage(id: "first", role: .user, content: "first")
+        let middle = ChatMessage(id: "middle", role: .assistant, content: "middle")
+        let alternateMiddle = ChatMessage(id: "alternate-middle", role: .assistant, content: "alternate")
+        let last = ChatMessage(id: "last", role: .assistant, content: "last")
+        let nextLast = ChatMessage(id: "next-last", role: .assistant, content: "next")
+        let stream = ChatMessage(id: "stream", role: .assistant, content: "stream")
+        let nextStream = ChatMessage(id: "next-stream", role: .assistant, content: "next stream")
+        let pending = PendingUserMessage(id: "pending", content: "queued")
+        let nextPending = PendingUserMessage(id: "next-pending", content: "queued next")
+        let base = TranscriptAutoScrollToken(
+            sessionID: "session-a",
+            displayItems: [.message(first), .message(middle), .message(last)],
+            streamingDisplayItems: [.message(stream)],
+            streamingText: "abc",
+            pendingMessages: [pending]
+        )
+
+        XCTAssertEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-a",
+                displayItems: [.message(first), .message(alternateMiddle), .message(last)],
+                streamingDisplayItems: [.message(stream)],
+                streamingText: "xyz",
+                pendingMessages: [pending]
+            ),
+            base,
+            "Middle item IDs and same-length streaming text should not participate in the lightweight scroll token."
+        )
+        XCTAssertNotEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-b",
+                displayItems: [.message(first), .message(middle), .message(last)],
+                streamingDisplayItems: [.message(stream)],
+                streamingText: "abc",
+                pendingMessages: [pending]
+            ),
+            base,
+            "Switching sessions must scroll to that session's transcript end."
+        )
+        XCTAssertNotEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-a",
+                displayItems: [.message(first), .message(middle), .message(last), .message(nextLast)],
+                streamingDisplayItems: [.message(stream)],
+                streamingText: "abc",
+                pendingMessages: [pending]
+            ),
+            base,
+            "Appending a displayed transcript item must scroll."
+        )
+        XCTAssertNotEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-a",
+                displayItems: [.message(first), .message(middle), .message(nextLast)],
+                streamingDisplayItems: [.message(stream)],
+                streamingText: "abc",
+                pendingMessages: [pending]
+            ),
+            base,
+            "Replacing the last displayed transcript item must scroll."
+        )
+        XCTAssertNotEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-a",
+                displayItems: [.message(first), .message(middle), .message(last)],
+                streamingDisplayItems: [.message(stream), .message(nextStream)],
+                streamingText: "abc",
+                pendingMessages: [pending]
+            ),
+            base,
+            "Appending a streaming display item must scroll."
+        )
+        XCTAssertNotEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-a",
+                displayItems: [.message(first), .message(middle), .message(last)],
+                streamingDisplayItems: [.message(nextStream)],
+                streamingText: "abc",
+                pendingMessages: [pending]
+            ),
+            base,
+            "Replacing the last streaming display item must scroll."
+        )
+        XCTAssertNotEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-a",
+                displayItems: [.message(first), .message(middle), .message(last)],
+                streamingDisplayItems: [.message(stream)],
+                streamingText: "abcd",
+                pendingMessages: [pending]
+            ),
+            base,
+            "Growing streamed text must scroll even when the display item id is stable."
+        )
+        XCTAssertNotEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-a",
+                displayItems: [.message(first), .message(middle), .message(last)],
+                streamingDisplayItems: [.message(stream)],
+                streamingText: "abc",
+                pendingMessages: [pending, nextPending]
+            ),
+            base,
+            "Queuing another pending user message must scroll."
+        )
+        XCTAssertNotEqual(
+            TranscriptAutoScrollToken(
+                sessionID: "session-a",
+                displayItems: [.message(first), .message(middle), .message(last)],
+                streamingDisplayItems: [.message(stream)],
+                streamingText: "abc",
+                pendingMessages: [nextPending]
+            ),
+            base,
+            "Changing the pending tail message must scroll."
+        )
+    }
+
     func testMarkdownImageReferenceParsesImageLinesAndRejectsNonImagesOrEmptySources() {
         XCTAssertEqual(
             markdownImageReference(from: "  ![Architecture diagram]( images/flow chart.png )  "),
@@ -431,6 +610,61 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(model.modelToolbarDisplayName("opus", compact: false), "Opus · claude-opus-4-8")
         XCTAssertTrue(model.isComposerModelSelected("opus"))
         XCTAssertFalse(model.isComposerModelSelected("fable"))
+    }
+
+    func testBootstrapPreservesPerSessionComposerConfigurationsWhenSyncingClaudeDefaults() throws {
+        let home = try temporaryDirectory(prefix: "lc-bootstrap-session-config")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let service = ClaudeUserSettingsService(home: home)
+        let claudeSettingsURL = service.settingsURL
+        try FileManager.default.createDirectory(at: claudeSettingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        {
+          "model": "sonnet",
+          "permissions": { "defaultMode": "bypassPermissions" },
+          "env": { "CLAUDE_CODE_EFFORT_LEVEL": "low" }
+        }
+        """.write(to: claudeSettingsURL, atomically: true, encoding: .utf8)
+
+        let preservedConfigurations = [
+            "alpha": ComposerSendConfiguration(model: "opus", mode: .plan, thinkingLevel: .max),
+            "beta": ComposerSendConfiguration(model: "haiku", mode: .ask, thinkingLevel: .off)
+        ]
+        var storedSettings = AppSettings()
+        storedSettings.selectedModel = "old-default"
+        storedSettings.sessionMode = .ask
+        storedSettings.thinkingLevel = .high
+        storedSettings.sessionConfigurations = preservedConfigurations
+
+        try withPreservedFile(AppPaths.shared.settingsFile) {
+            try withPreservedRecentProjects {
+                try? FileManager.default.removeItem(at: AppPaths.shared.recentProjectsFile)
+                try JSONFile.save(storedSettings, to: AppPaths.shared.settingsFile)
+
+                let model = AppModel(engine: RecordingEngine(), claudeUserSettings: service)
+                model.bootstrap()
+
+                XCTAssertEqual(model.defaultComposerConfiguration, ComposerSendConfiguration(model: "sonnet", mode: .bypass, thinkingLevel: .low))
+                XCTAssertEqual(model.sendConfigurationBySession, preservedConfigurations)
+                let savedSettings = try XCTUnwrap(JSONFile.load(AppSettings.self, from: AppPaths.shared.settingsFile))
+                XCTAssertEqual(savedSettings.sessionConfigurations, preservedConfigurations)
+
+                model.sessions = [
+                    SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: home.path, modifiedAt: Date(), preview: "Alpha", isDraft: true),
+                    SessionRecord(id: "beta", path: nil, project: "Beta", projectDir: home.path, modifiedAt: Date(), preview: "Beta", isDraft: true)
+                ]
+
+                model.selectSession("alpha")
+                XCTAssertEqual(model.settings.selectedModel, "opus")
+                XCTAssertEqual(model.settings.sessionMode, .plan)
+                XCTAssertEqual(model.settings.thinkingLevel, .max)
+
+                model.selectSession("beta")
+                XCTAssertEqual(model.settings.selectedModel, "haiku")
+                XCTAssertEqual(model.settings.sessionMode, .ask)
+                XCTAssertEqual(model.settings.thinkingLevel, .off)
+            }
+        }
     }
 
     func testComposerControlChangesWriteClaudeDefaultsOnlyOnStartScreenAndRuntimeOnlyInChat() throws {
@@ -636,6 +870,147 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(model.loadingMessageSessionIDs.contains("alpha"), false)
     }
 
+    func testDeferredWorkspaceReloadsDoNotPublishStaleProjectResultsAfterSessionSwitch() async throws {
+        let alphaRoot = try temporaryDirectory(prefix: "lc-stale-alpha")
+        let betaRoot = try temporaryDirectory(prefix: "lc-stale-beta")
+        defer {
+            try? FileManager.default.removeItem(at: alphaRoot)
+            try? FileManager.default.removeItem(at: betaRoot)
+        }
+        try writeWorkspaceReloadFixtures(
+            root: alphaRoot,
+            fileName: "alpha-only.txt",
+            skillName: "alpha-skill",
+            mcpName: "alpha-server"
+        )
+        try writeWorkspaceReloadFixtures(
+            root: betaRoot,
+            fileName: "beta-only.txt",
+            skillName: "beta-skill",
+            mcpName: "beta-server"
+        )
+        let model = AppModel()
+        model.sessions = [
+            SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: alphaRoot.path, modifiedAt: Date(), preview: "Alpha", isDraft: true),
+            SessionRecord(id: "beta", path: nil, project: "Beta", projectDir: betaRoot.path, modifiedAt: Date(), preview: "Beta", isDraft: true)
+        ]
+
+        model.selectSession("alpha")
+        model.reloadFileTreeDeferred(debounceNanoseconds: 250_000_000)
+        model.reloadMCPAndSkillsDeferred(debounceNanoseconds: 250_000_000)
+        model.selectSession("beta")
+        model.reloadFileTreeDeferred()
+        model.reloadMCPAndSkillsDeferred()
+
+        try await waitUntilAsync(timeout: 4) {
+            model.fileTree.contains { $0.name == "beta-only.txt" }
+                && model.skills.contains { $0.name == "beta-skill" }
+                && model.mcpServers.contains { $0.name == "beta-server" }
+        }
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(model.selectedSessionID, "beta")
+        XCTAssertEqual(model.workingDirectory, PathAccessManager.canonicalPath(betaRoot.path))
+        XCTAssertTrue(model.fileTree.contains { $0.name == "beta-only.txt" })
+        XCTAssertTrue(model.skills.contains { $0.name == "beta-skill" })
+        XCTAssertTrue(model.mcpServers.contains { $0.name == "beta-server" })
+        XCTAssertFalse(model.fileTree.contains { $0.name == "alpha-only.txt" })
+        XCTAssertFalse(model.skills.contains { $0.name == "alpha-skill" })
+        XCTAssertFalse(model.mcpServers.contains { $0.name == "alpha-server" })
+    }
+
+    func testWorkspaceWatcherIgnoresOldRootEventsAfterSessionSwitch() async throws {
+        let alphaRoot = try temporaryDirectory(prefix: "lc-watch-alpha")
+        let betaRoot = try temporaryDirectory(prefix: "lc-watch-beta")
+        let model = AppModel()
+        defer {
+            model.cancelDeferredWorkspaceWatch()
+            try? FileManager.default.removeItem(at: alphaRoot)
+            try? FileManager.default.removeItem(at: betaRoot)
+        }
+        model.sessions = [
+            SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: alphaRoot.path, modifiedAt: Date(), preview: "Alpha", isDraft: true),
+            SessionRecord(id: "beta", path: nil, project: "Beta", projectDir: betaRoot.path, modifiedAt: Date(), preview: "Beta", isDraft: true)
+        ]
+
+        model.selectSession("alpha")
+        model.selectSession("beta")
+
+        let betaWatchMessage = watcherStateMessage(
+            model: model,
+            root: betaRoot.path,
+            expectation: "Expected beta workspace watcher to become active after session switch"
+        )
+        try await waitUntilAsync(timeout: 4, message: betaWatchMessage) {
+            model.directoryWatcher.isWatching(betaRoot.path)
+        }
+
+        let alphaLate = alphaRoot.appendingPathComponent("alpha-late.txt")
+        let betaLate = betaRoot.appendingPathComponent("beta-late.txt")
+        let alphaPath = PathAccessManager.canonicalPath(alphaLate.path)
+        let betaPath = PathAccessManager.canonicalPath(betaLate.path)
+        try "stale alpha".write(to: alphaLate, atomically: true, encoding: .utf8)
+        try "current beta".write(to: betaLate, atomically: true, encoding: .utf8)
+
+        let betaChangeMessage = watcherStateMessage(
+            model: model,
+            root: betaRoot.path,
+            expectation: "Expected beta file change to be delivered by active workspace watcher"
+        )
+        try await waitUntilAsync(timeout: 4, message: betaChangeMessage) {
+            model.changedFiles.contains(betaPath)
+        }
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertEqual(model.selectedSessionID, "beta")
+        XCTAssertEqual(model.workingDirectory, PathAccessManager.canonicalPath(betaRoot.path))
+        XCTAssertTrue(model.changedFiles.contains(betaPath))
+        XCTAssertFalse(
+            model.changedFiles.contains(alphaPath),
+            "A stale watcher startup or late old-root event must not mark the active workspace dirty after switching sessions."
+        )
+        XCTAssertNil(model.fileChangeBadges[alphaPath])
+    }
+
+    func testCancelledWorkspaceWatcherStartupCannotPublishOldRootEvents() async throws {
+        let alphaRoot = try temporaryDirectory(prefix: "lc-cancel-watch-alpha")
+        let betaRoot = try temporaryDirectory(prefix: "lc-cancel-watch-beta")
+        let watcher = DirectoryWatchManager()
+        let alphaEvents = PathEventRecorder()
+        let betaEvents = PathEventRecorder()
+        defer {
+            watcher.unwatchAll()
+            try? FileManager.default.removeItem(at: alphaRoot)
+            try? FileManager.default.removeItem(at: betaRoot)
+        }
+        let alphaToken = DirectoryWatchManager.WatchToken()
+        let betaToken = DirectoryWatchManager.WatchToken()
+        watcher.requestWatchDirectory(alphaRoot.path, token: alphaToken)
+        watcher.requestWatchDirectory(betaRoot.path, token: betaToken)
+
+        let staleStarted = try watcher.watchRequestedDirectory(alphaRoot.path, token: alphaToken) { paths in
+            alphaEvents.append(paths)
+        }
+        XCTAssertFalse(staleStarted)
+        XCTAssertTrue(try watcher.watchRequestedDirectory(betaRoot.path, token: betaToken) { paths in
+            betaEvents.append(paths)
+        })
+
+        let alphaLate = alphaRoot.appendingPathComponent("alpha-late.txt")
+        let betaLate = betaRoot.appendingPathComponent("beta-late.txt")
+        let betaPath = PathAccessManager.canonicalPath(betaLate.path)
+        try "stale alpha".write(to: alphaLate, atomically: true, encoding: .utf8)
+        try "current beta".write(to: betaLate, atomically: true, encoding: .utf8)
+
+        try await waitUntilAsync(timeout: 4) {
+            betaEvents.values.flatMap { $0 }.contains(betaPath)
+        }
+        try await Task.sleep(nanoseconds: 350_000_000)
+        XCTAssertTrue(betaEvents.values.flatMap { $0 }.contains(betaPath))
+        XCTAssertTrue(
+            alphaEvents.values.isEmpty,
+            "A cancelled watcher startup must not install an old-root stream that can publish stale file changes."
+        )
+    }
+
     func testImageOnlyComposerCanStartSessionWithImageContent() throws {
         let root = try temporaryDirectory(prefix: "lc-image-only")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -658,6 +1033,67 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(blocks.first?["type"] as? String, "image")
         XCTAssertEqual(model.messagesBySession["alpha"]?.first?.images.count, 1)
         XCTAssertEqual(model.attachments, [])
+    }
+
+    func testFirstComposerSendWithoutSelectedSessionCreatesSessionWithImageAttachmentAndRestoresDraft() throws {
+        try withPreservedFile(AppPaths.shared.settingsFile) {
+            try withPreservedRecentProjects {
+                let root = try temporaryDirectory(prefix: "lc-first-send-root")
+                let otherRoot = try temporaryDirectory(prefix: "lc-first-send-other")
+                defer {
+                    try? FileManager.default.removeItem(at: root)
+                    try? FileManager.default.removeItem(at: otherRoot)
+                }
+                let imageURL = root.appendingPathComponent("first.png")
+                try Self.tinyPNGData.write(to: imageURL)
+                let attachment = AttachmentChip(id: "first-image", name: "first.png", path: imageURL.path, size: Int64(Self.tinyPNGData.count), isImage: true)
+                let engine = RecordingEngine()
+                let model = AppModel(engine: engine)
+                defer { model.cancelDeferredWorkspaceWatch() }
+                model.workingDirectory = root.path
+                model.updateComposerText("  describe this image  ")
+                model.attachments = [attachment]
+
+                XCTAssertNil(model.selectedSessionID)
+                model.sendComposer()
+                model.cancelDeferredWorkspaceWatch()
+
+                let sessionID = try XCTUnwrap(model.selectedSessionID)
+                XCTAssertEqual(model.sessions.count, 1)
+                XCTAssertEqual(model.sessions.first?.id, sessionID)
+                XCTAssertEqual(model.sessions.first?.projectDir, root.path)
+                XCTAssertEqual(engine.startRequests.count, 1)
+                let request = try XCTUnwrap(engine.startRequests.first)
+                XCTAssertEqual(request.sessionID, sessionID)
+                XCTAssertEqual(request.prompt, "describe this image")
+                XCTAssertEqual(request.cwd, PathAccessManager.canonicalPath(root.path))
+                let blocks = try XCTUnwrap(try request.userMessageContent.jsonContent() as? [[String: Any]])
+                XCTAssertEqual(blocks.count, 2)
+                XCTAssertEqual(blocks.first?["type"] as? String, "text")
+                XCTAssertEqual(blocks.first?["text"] as? String, "describe this image")
+                XCTAssertEqual(blocks.last?["type"] as? String, "image")
+                XCTAssertEqual(model.messagesBySession[sessionID]?.first?.content, "describe this image")
+                XCTAssertEqual(model.messagesBySession[sessionID]?.first?.attachments, [attachment])
+                XCTAssertEqual(model.messagesBySession[sessionID]?.first?.images.count, 1)
+                XCTAssertEqual(model.composerText, "")
+                XCTAssertEqual(model.composerTextBySession[sessionID], "")
+                XCTAssertEqual(model.attachments, [])
+                XCTAssertEqual(model.attachmentsBySession[sessionID], [])
+
+                model.sessions.append(SessionRecord(id: "other", path: nil, project: "Other", projectDir: otherRoot.path, modifiedAt: Date(), preview: "Other", isDraft: true))
+                model.updateComposerText("follow-up draft")
+                model.attachments = [attachment]
+                model.selectSession("other")
+                model.cancelDeferredWorkspaceWatch()
+                XCTAssertEqual(model.composerText, "")
+                XCTAssertEqual(model.attachments, [])
+
+                model.selectSession(sessionID)
+                model.cancelDeferredWorkspaceWatch()
+                XCTAssertEqual(model.composerText, "follow-up draft")
+                XCTAssertEqual(model.attachments, [attachment])
+            }
+        }
     }
 
     func testLegacyImageMarkersAreParsedAsImagesAndRemovedFromVisibleText() throws {
@@ -973,51 +1409,183 @@ final class FeatureModelRegressionTests: XCTestCase {
         }
     }
 
-    func testOpenFileSelectsPreviewModeByFileType() throws {
-        try withPreservedRecentProjects {
-            let root = try temporaryDirectory(prefix: "lc-file-mode")
-            defer { try? FileManager.default.removeItem(at: root) }
-            let html = root.appendingPathComponent("index.html")
-            let swift = root.appendingPathComponent("Main.swift")
-            let markdown = root.appendingPathComponent("README.md")
-            try "<html><body>Hello</body></html>".write(to: html, atomically: true, encoding: .utf8)
-            try "import SwiftUI\nstruct Main {}".write(to: swift, atomically: true, encoding: .utf8)
-            try "# Readme".write(to: markdown, atomically: true, encoding: .utf8)
+    func testOpenFileSelectsPreviewModeByFileType() async throws {
+        let root = try temporaryDirectory(prefix: "lc-file-mode")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let html = root.appendingPathComponent("index.html")
+        let swift = root.appendingPathComponent("Main.swift")
+        let markdown = root.appendingPathComponent("README.md")
+        let htmlContent = "<html><body>Hello</body></html>"
+        let swiftContent = "import SwiftUI\nstruct Main {}"
+        let markdownContent = "# Readme"
+        try htmlContent.write(to: html, atomically: true, encoding: .utf8)
+        try swiftContent.write(to: swift, atomically: true, encoding: .utf8)
+        try markdownContent.write(to: markdown, atomically: true, encoding: .utf8)
 
-            let model = AppModel()
-            model.loadProject(root.path)
+        let model = AppModel()
 
-            model.openFile(html.path)
-            XCTAssertEqual(model.filePreviewMode, .html)
-            XCTAssertEqual(model.filePreview, "<html><body>Hello</body></html>")
+        model.openFile(html.path)
+        XCTAssertEqual(model.filePreviewMode, .html)
+        try await waitUntilAsync(timeout: 2) { model.filePreview == htmlContent }
 
-            model.openFile(swift.path)
-            XCTAssertEqual(model.filePreviewMode, .source)
+        model.openFile(swift.path)
+        XCTAssertEqual(model.filePreviewMode, .source)
+        try await waitUntilAsync(timeout: 2) { model.filePreview == swiftContent }
 
-            model.openFile(markdown.path)
-            XCTAssertEqual(model.filePreviewMode, .preview)
-        }
+        model.openFile(markdown.path)
+        XCTAssertEqual(model.filePreviewMode, .preview)
+        try await waitUntilAsync(timeout: 2) { model.filePreview == markdownContent }
     }
 
-    func testReloadSelectedFileRereadsCurrentPathInsteadOfSamePathNoop() throws {
-        try withPreservedRecentProjects {
-            let root = try temporaryDirectory(prefix: "lc-file-reload")
-            defer { try? FileManager.default.removeItem(at: root) }
-            let file = root.appendingPathComponent("Main.swift")
-            try "let value = 1\n".write(to: file, atomically: true, encoding: .utf8)
+    func testRequestOpenFileImmediatelySelectsPathBeforeAsyncPreviewContent() async throws {
+        let root = try temporaryDirectory(prefix: "lc-file-open-immediate")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("Main.swift")
+        let content = "let value = 1"
+        try content.write(to: file, atomically: true, encoding: .utf8)
 
-            let model = AppModel()
-            model.loadProject(root.path)
-            model.openFile(file.path)
-            XCTAssertEqual(model.filePreview, "let value = 1\n")
+        let model = AppModel()
 
-            try "let value = 2\n".write(to: file, atomically: true, encoding: .utf8)
-            model.reloadSelectedFile()
+        let opened = model.requestOpenFile(file.path)
 
-            XCTAssertEqual(model.selectedFilePath, file.path)
-            XCTAssertEqual(model.filePreview, "let value = 2\n")
-            XCTAssertFalse(model.fileEditDirty)
-        }
+        XCTAssertTrue(opened)
+        XCTAssertEqual(model.selectedFilePath, file.path)
+        XCTAssertEqual(model.secondaryTab, .files)
+        XCTAssertEqual(model.filePreview, "")
+        XCTAssertEqual(model.filePreviewCleanContent, "")
+        XCTAssertFalse(model.fileEditDirty)
+
+        try await waitUntilAsync(timeout: 2) { model.filePreview == content }
+        XCTAssertEqual(model.filePreviewCleanContent, content)
+        XCTAssertFalse(model.fileEditDirty)
+    }
+
+    func testRequestInsertFileContentReadsTargetPathWithoutChangingSelection() throws {
+        let root = try temporaryDirectory(prefix: "lc-file-insert-request")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let selected = root.appendingPathComponent("Selected.md")
+        let target = root.appendingPathComponent("Notes.md")
+        let selectedPreview = "already open preview"
+        let targetContent = "line one\nline two"
+        try selectedPreview.write(to: selected, atomically: true, encoding: .utf8)
+        try targetContent.write(to: target, atomically: true, encoding: .utf8)
+
+        let model = AppModel()
+        model.selectedFilePath = selected.path
+        model.filePreview = selectedPreview
+        model.filePreviewCleanContent = selectedPreview
+        model.updateComposerText("Before")
+
+        model.requestInsertFileContent(target.path)
+
+        XCTAssertEqual(model.selectedFilePath, selected.path)
+        XCTAssertEqual(model.filePreview, selectedPreview)
+        XCTAssertEqual(model.composerText, "Before\n\n```\n\(targetContent)\n```")
+    }
+
+    func testToolbarInsertSelectedContentReadsRealContentWhenPreviewIsLoading() throws {
+        let root = try temporaryDirectory(prefix: "lc-file-insert-toolbar")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("Notes.md")
+        let content = "toolbar line one\ntoolbar line two"
+        try content.write(to: file, atomically: true, encoding: .utf8)
+
+        let model = AppModel()
+        model.selectedFilePath = file.path
+        model.filePreview = ""
+        model.filePreviewCleanContent = ""
+        model.filePreviewLoadingPath = file.path
+        model.fileEditDirty = false
+        model.updateComposerText("Before")
+
+        model.insertSelectedContentIntoChat()
+
+        XCTAssertEqual(model.selectedFilePath, file.path)
+        XCTAssertEqual(model.composerText, "Before\n\n```\n\(content)\n```")
+        XCTAssertEqual(model.filePreview, "")
+        XCTAssertEqual(model.filePreviewCleanContent, "")
+        XCTAssertFalse(model.fileEditDirty)
+    }
+
+    func testToolbarInsertSelectedContentUsesDirtyPreviewInsteadOfDiskDuringPreviewLoading() throws {
+        let root = try temporaryDirectory(prefix: "lc-file-insert-dirty-toolbar")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("Notes.md")
+        try "disk content".write(to: file, atomically: true, encoding: .utf8)
+
+        let model = AppModel()
+        model.selectedFilePath = file.path
+        model.filePreview = "unsaved preview draft"
+        model.filePreviewCleanContent = ""
+        model.filePreviewLoadingPath = file.path
+        model.markFilePreviewEdited()
+        model.updateComposerText("Before")
+
+        model.insertSelectedContentIntoChat()
+
+        XCTAssertTrue(model.fileEditDirty)
+        XCTAssertEqual(model.composerText, "Before\n\n```\nunsaved preview draft\n```")
+    }
+
+    func testSaveSelectedFileWithoutOwnedPreviewContentDoesNotTruncateSelection() throws {
+        let root = try temporaryDirectory(prefix: "lc-file-save-unowned")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("Notes.md")
+        let original = "must survive selection-only preview"
+        try original.write(to: file, atomically: true, encoding: .utf8)
+
+        let model = AppModel()
+        XCTAssertTrue(model.requestSelectFilePath(file.path))
+        XCTAssertEqual(model.selectedFilePath, file.path)
+        XCTAssertEqual(model.filePreview, "")
+        XCTAssertNil(model.filePreviewContentPath)
+
+        model.saveSelectedFile()
+
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), original)
+        XCTAssertFalse(model.changedFiles.contains(file.path))
+    }
+
+    func testLoadedEmptyFileCanBecomeDirtyAndSave() async throws {
+        let root = try temporaryDirectory(prefix: "lc-file-save-empty-owned")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("Empty.md")
+        try "".write(to: file, atomically: true, encoding: .utf8)
+
+        let model = AppModel()
+        model.openFile(file.path)
+        try await waitUntilAsync(timeout: 2) { model.sameFilePath(model.filePreviewContentPath, file.path) }
+        XCTAssertEqual(model.filePreview, "")
+        XCTAssertFalse(model.fileEditDirty)
+        XCTAssertTrue(model.selectedFilePreviewCanSave)
+
+        model.filePreview = "new content"
+        model.markFilePreviewEdited()
+        XCTAssertTrue(model.fileEditDirty)
+
+        model.saveSelectedFile()
+
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "new content")
+        XCTAssertFalse(model.fileEditDirty)
+        XCTAssertTrue(model.sameFilePath(model.filePreviewContentPath, file.path))
+    }
+
+    func testReloadSelectedFileRereadsCurrentPathInsteadOfSamePathNoop() async throws {
+        let root = try temporaryDirectory(prefix: "lc-file-reload")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("Main.swift")
+        try "let value = 1\n".write(to: file, atomically: true, encoding: .utf8)
+
+        let model = AppModel()
+        model.openFile(file.path)
+        try await waitUntilAsync(timeout: 2) { model.filePreview == "let value = 1\n" }
+
+        try "let value = 2\n".write(to: file, atomically: true, encoding: .utf8)
+        model.reloadSelectedFile()
+
+        XCTAssertEqual(model.selectedFilePath, file.path)
+        try await waitUntilAsync(timeout: 2) { model.filePreview == "let value = 2\n" }
+        XCTAssertFalse(model.fileEditDirty)
     }
 
     func testLoadProjectClearsStaleWorkspaceChangeBadges() throws {
@@ -1380,29 +1948,6 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertTrue(TranscriptToolRunCompletion.isComplete(runItems))
     }
 
-    func testTranscriptToolRunCompletionReturnsFalseWhenAGroupedRunLacksAResult() throws {
-        let message = ChatMessage(
-            id: "assistant-incomplete-tools",
-            role: .assistant,
-            content: """
-            [tool_use: Read]
-            {"file_path":"README.md"}
-            [tool_use: Bash]
-            {"command":"xcodebuild test -project LiquidCode.xcodeproj -scheme LiquidCode"}
-            [tool_result]
-            read ok
-            """
-        )
-
-        let items = TranscriptDisplayBuilder.displayItems(messages: [message])
-
-        guard case .toolRun(let runItems) = items.first else {
-            return XCTFail("expected two tool uses to remain represented as a grouped run")
-        }
-        XCTAssertEqual(runItems.map(\.kind), [.use, .use, .result])
-        XCTAssertFalse(TranscriptToolRunCompletion.isComplete(runItems))
-    }
-
     func testToolPayloadKeyValuesRenderScalarJSONValuesWithoutCrashing() {
         let values = toolPayloadKeyValues("""
         {
@@ -1447,13 +1992,51 @@ final class FeatureModelRegressionTests: XCTestCase {
         }
     }
 
+    private func writeWorkspaceReloadFixtures(root: URL, fileName: String, skillName: String, mcpName: String) throws {
+        try "workspace marker".write(to: root.appendingPathComponent(fileName), atomically: true, encoding: .utf8)
+        let skillDirectory = root.appendingPathComponent(".claude/skills/\(skillName)", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillDirectory, withIntermediateDirectories: true)
+        try """
+        ---
+        name: \(skillName)
+        description: Project-scoped stale reload sentinel.
+        ---
+
+        # \(skillName)
+        """.write(to: skillDirectory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        let mcpDirectory = root.appendingPathComponent(".liquidcode", isDirectory: true)
+        try FileManager.default.createDirectory(at: mcpDirectory, withIntermediateDirectories: true)
+        try """
+        {"mcpServers":{"\(mcpName)":{"command":"\(mcpName)"}}}
+        """.write(to: mcpDirectory.appendingPathComponent("mcp.json"), atomically: true, encoding: .utf8)
+    }
+
     private func temporaryDirectory(prefix: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
 
-    private func waitUntilAsync(timeout: TimeInterval, interval: UInt64 = 25_000_000, _ condition: @MainActor @escaping () -> Bool) async throws {
+    private func watcherStateMessage(model: AppModel, root: String, expectation: String) -> String {
+        let canonicalRoot = PathAccessManager.canonicalPath(root)
+        let error = "\(model.currentError?.title ?? "<none>") \(model.currentError?.message ?? "")"
+        return [
+            expectation,
+            "workingDirectory=\(model.workingDirectory)",
+            "generation=\(model.workspaceWatchGeneration)",
+            "isWatching=\(model.directoryWatcher.isWatching(canonicalRoot))",
+            "currentError=\(error)"
+        ].joined(separator: "; ")
+    }
+
+    private func waitUntilAsync(
+        timeout: TimeInterval,
+        interval: UInt64 = 25_000_000,
+        message: @autoclosure () -> String = "Timed out waiting for async condition",
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: @MainActor @escaping () -> Bool
+    ) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if condition() {
@@ -1461,7 +2044,7 @@ final class FeatureModelRegressionTests: XCTestCase {
             }
             try await Task.sleep(nanoseconds: interval)
         }
-        XCTAssertTrue(condition())
+        XCTAssertTrue(condition(), message(), file: file, line: line)
     }
 
     private func debugState(model: AppModel, traceFile: URL) -> String {
@@ -1500,6 +2083,18 @@ final class FeatureModelRegressionTests: XCTestCase {
             }
         }
         try body()
+    }
+
+    private final class PathEventRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [[String]] = []
+        var values: [[String]] {
+            lock.lock(); defer { lock.unlock() }; return storage
+        }
+
+        func append(_ paths: [String]) {
+            lock.lock(); storage.append(paths); lock.unlock()
+        }
     }
 
     private struct RewindCall {

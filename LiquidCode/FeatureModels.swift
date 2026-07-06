@@ -154,6 +154,62 @@ enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
     }
 }
 
+struct TranscriptToolExpansionState: Equatable, Sendable {
+    var expandedDisplayItemID: String?
+    var expandedToolItemID: String?
+
+    static let collapsed = TranscriptToolExpansionState(expandedDisplayItemID: nil, expandedToolItemID: nil)
+}
+
+enum TranscriptAutoExpansionPolicy {
+    static func state(for displayItems: [TranscriptDisplayItem], isStreaming: Bool) -> TranscriptToolExpansionState {
+        guard isStreaming, let item = displayItems.last else {
+            return .collapsed
+        }
+        switch item {
+        case .tool(let tool):
+            return TranscriptToolExpansionState(expandedDisplayItemID: item.id, expandedToolItemID: tool.id)
+        case .toolRun(let tools):
+            guard let tool = tools.last else {
+                return .collapsed
+            }
+            return TranscriptToolExpansionState(expandedDisplayItemID: item.id, expandedToolItemID: tool.id)
+        case .message,
+             .interaction,
+             .question:
+            return .collapsed
+        }
+    }
+}
+
+struct TranscriptAutoScrollToken: Equatable, Sendable {
+    let sessionID: String?
+    let displayItemCount: Int
+    let lastDisplayItemID: String?
+    let streamingItemCount: Int
+    let lastStreamingItemID: String?
+    let streamingTextLength: Int
+    let pendingMessageCount: Int
+    let lastPendingMessageID: String?
+
+    init(
+        sessionID: String?,
+        displayItems: [TranscriptDisplayItem],
+        streamingDisplayItems: [TranscriptDisplayItem],
+        streamingText: String,
+        pendingMessages: [PendingUserMessage]
+    ) {
+        self.sessionID = sessionID
+        displayItemCount = displayItems.count
+        lastDisplayItemID = displayItems.last?.id
+        streamingItemCount = streamingDisplayItems.count
+        lastStreamingItemID = streamingDisplayItems.last?.id
+        streamingTextLength = streamingText.count
+        pendingMessageCount = pendingMessages.count
+        lastPendingMessageID = pendingMessages.last?.id
+    }
+}
+
 enum TranscriptDisplayBuilder {
     static func displayItems(messages: [ChatMessage], pendingPermissions: [PermissionRequest] = []) -> [TranscriptDisplayItem] {
         let pending = deduplicatedPendingPermissions(pendingPermissions)
@@ -520,7 +576,11 @@ enum TranscriptToolRunCompletion {
 
 enum AgentActivityBuilder {
     static func toolCalls(from messages: [ChatMessage], sessionID: String) -> [ToolCall] {
-        let items = TranscriptDisplayBuilder.displayItems(messages: messages).flatMap { item -> [TranscriptToolItem] in
+        toolCalls(fromDisplayItems: TranscriptDisplayBuilder.displayItems(messages: messages), sessionID: sessionID)
+    }
+
+    static func toolCalls(fromDisplayItems displayItems: [TranscriptDisplayItem], sessionID: String) -> [ToolCall] {
+        let items = displayItems.flatMap { item -> [TranscriptToolItem] in
             switch item {
             case .tool(let tool): [tool]
             case .toolRun(let tools): tools
@@ -573,7 +633,10 @@ extension ChatMessage {
 }
 
 func chatFindTargets(in messages: [ChatMessage], query: String) -> [ChatFindTarget] {
-    messages.flatMap { message in
+    guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return []
+    }
+    return messages.flatMap { message in
         chatFindOccurrenceRanges(in: message.content, query: query).indices.map { occurrence in
             ChatFindTarget(itemID: message.id, occurrenceIndex: occurrence)
         }

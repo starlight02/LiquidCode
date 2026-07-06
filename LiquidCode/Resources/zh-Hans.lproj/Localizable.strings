@@ -136,6 +136,8 @@
 "Duplicated skill" = "已复制技能";
 "Edit MCP server" = "编辑 MCP 服务器";
 "Edit" = "编辑";
+"Loading file..." = "正在加载文件...";
+"File content is not loaded yet" = "文件内容尚未加载";
 "Empty project" = "项目为空";
 "Enable skill" = "启用技能";
 "Enable" = "启用";

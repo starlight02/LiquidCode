@@ -3,8 +3,55 @@ import Foundation
 
 extension AppModel {
     func reloadMCPAndSkills() {
+        cancelDeferredMCPAndSkillsReload()
         mcpServers = mcpService.loadServers(projectPath: workingDirectory.isEmpty ? nil : workingDirectory)
         skills = skillService.loadSkills(projectPath: workingDirectory.isEmpty ? nil : workingDirectory)
+    }
+
+    func reloadMCPAndSkillsDeferred(debounceNanoseconds: UInt64 = 0) {
+        let projectPath = workingDirectory.isEmpty ? nil : workingDirectory
+        mcpSkillsReloadGeneration &+= 1
+        let generation = mcpSkillsReloadGeneration
+        mcpSkillsReloadTask?.cancel()
+        mcpSkillsReloadTask = Task.detached(priority: .utility) {
+            if debounceNanoseconds > 0 {
+                do { try await Task.sleep(nanoseconds: debounceNanoseconds) } catch { return }
+            }
+            guard !Task.isCancelled else {
+                return
+            }
+            let servers = MCPService().loadServers(projectPath: projectPath)
+            let loadedSkills = SkillService().loadSkills(projectPath: projectPath)
+            guard !Task.isCancelled else {
+                return
+            }
+            await MainActor.run {
+                guard
+                    generation == self.mcpSkillsReloadGeneration,
+                    self.deferredReloadProjectKey == Self.projectKey(projectPath) else {
+                    return
+                }
+                self.mcpServers = servers
+                self.skills = loadedSkills
+            }
+        }
+    }
+
+    private func cancelDeferredMCPAndSkillsReload() {
+        mcpSkillsReloadGeneration &+= 1
+        mcpSkillsReloadTask?.cancel()
+        mcpSkillsReloadTask = nil
+    }
+
+    var deferredReloadProjectKey: String? {
+        Self.projectKey(workingDirectory.isEmpty ? nil : workingDirectory)
+    }
+
+    static func projectKey(_ path: String?) -> String? {
+        guard let path, !path.isEmpty else {
+            return nil
+        }
+        return PathAccessManager.canonicalPath(path)
     }
 
     func useSkillInComposer(_ skill: SkillInfo) {
@@ -93,14 +140,18 @@ extension AppModel {
             return
         }
         skill.disabled.toggle()
-        let source = sameFilePath(selectedFilePath, skill.path) ? filePreview : skill.content
+        let previewMatchesSkill = sameFilePath(selectedFilePath, skill.path)
+        let previewContentMatchesSkill = filePreviewContentPath.map { sameFilePath($0, skill.path) } == true
+        let source = previewMatchesSkill && (fileEditDirty || previewContentMatchesSkill) ? filePreview : skill.content
         skill.content = skillContent(source, settingDisabled: skill.disabled)
 
         do {
             try skillService.writeSkill(skill)
             if sameFilePath(selectedFilePath, skill.path) {
+                cancelFilePreviewLoad()
                 filePreview = skill.content
                 filePreviewCleanContent = skill.content
+                filePreviewContentPath = skill.path
                 fileEditDirty = false
             }
             selectedSkill = skill

@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
     @Published var fileTree: [FileNode] = []
     @Published var selectedFilePath: String?
     @Published var filePreview: String = ""
+    @Published var filePreviewLoadingPath: String?
+    @Published var filePreviewContentPath: String?
     @Published var changedFiles: Set<String> = []
     @Published var fileChangeBadges: [String: String] = [:]
     @Published var skills: [SkillInfo] = []
@@ -68,6 +70,14 @@ final class AppModel: ObservableObject {
     let sessionIndex = SessionIndexService()
     var reloadSessionsGeneration = 0
     var loadingMessageSessionIDs: Set<String> = []
+    var fileTreeReloadGeneration = 0
+    var mcpSkillsReloadGeneration = 0
+    var workspaceWatchGeneration = 0
+    var filePreviewLoadGeneration = 0
+    var fileTreeReloadTask: Task<Void, Never>?
+    var mcpSkillsReloadTask: Task<Void, Never>?
+    var workspaceWatchTask: Task<Void, Never>?
+    var filePreviewLoadTask: Task<Void, Never>?
     var defaultComposerConfiguration = ComposerSendConfiguration(
         model: AppSettings().selectedModel,
         mode: AppSettings().sessionMode,
@@ -87,5 +97,12 @@ final class AppModel: ObservableObject {
         self.claudeUserSettings = claudeUserSettings
     }
 
-    deinit { directoryWatcher.unwatchAll(); engine.killAll() }
+    deinit {
+        fileTreeReloadTask?.cancel()
+        mcpSkillsReloadTask?.cancel()
+        workspaceWatchTask?.cancel()
+        filePreviewLoadTask?.cancel()
+        directoryWatcher.unwatchAll()
+        engine.killAll()
+    }
 }

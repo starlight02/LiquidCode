@@ -621,6 +621,36 @@ struct FilePreviewShellView: View {
         !isImage
     }
 
+    private var selectedFilePreviewIsLoading: Bool {
+        model.filePreviewLoadingPath.map { model.sameFilePath($0, model.selectedFilePath) } == true
+    }
+
+    private var selectedFilePreviewOwnsLoadedContent: Bool {
+        model.filePreviewContentPath.map { model.sameFilePath($0, model.selectedFilePath) } == true
+    }
+
+    private var canEditSelectedFilePreview: Bool {
+        model.fileEditDirty || selectedFilePreviewOwnsLoadedContent
+    }
+
+    private var selectedFilePreviewAwaitingInitialContent: Bool {
+        selectedFilePreviewIsLoading && !canEditSelectedFilePreview
+    }
+
+    @ViewBuilder
+    private func unloadedFilePreviewPlaceholder(isLoading: Bool) -> some View {
+        VStack(spacing: 10) {
+            if isLoading {
+                ProgressView()
+            }
+            Text(L(isLoading ? "Loading file..." : "File content is not loaded yet"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.46))
+    }
+
     private var availableModes: [FilePreviewMode] {
         if ["html", "htm", "xhtml"].contains(fileExtension) {
             return [.html, .source, .edit]
@@ -676,7 +706,8 @@ struct FilePreviewShellView: View {
                     }
                     HStack(spacing: 3) {
                         ForEach(availableModes) { mode in
-                            FilePreviewModeButton(mode: mode, active: model.filePreviewMode == mode) {
+                            let disabled = mode == .edit && !canEditSelectedFilePreview
+                            FilePreviewModeButton(mode: mode, active: model.filePreviewMode == mode, disabled: disabled) {
                                 model.filePreviewMode = mode
                             }
                         }
@@ -698,7 +729,7 @@ struct FilePreviewShellView: View {
                     ToolbarIconButton(systemImage: "curlybraces.square", help: "Open in VS Code") { model.openSelectedInVSCode() }
                     ToolbarIconButton(systemImage: "link", help: "Copy path") { model.copySelectedPath() }
                     ToolbarIconButton(systemImage: "text.insert", help: "Insert path into chat") { model.insertSelectedPathIntoChat() }
-                    ToolbarIconButton(systemImage: "doc.on.clipboard", help: "Insert file content into chat", disabled: model.filePreview.isEmpty) {
+                    ToolbarIconButton(systemImage: "doc.on.clipboard", help: "Insert file content into chat", disabled: model.selectedFilePath == nil) {
                         model.insertSelectedContentIntoChat() }
                     Spacer()
                     Button(L("Delete")) { model.requestDeleteSelectedFile() }
@@ -709,28 +740,36 @@ struct FilePreviewShellView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 Divider()
-                switch model.filePreviewMode {
-                case .preview:
-                    if isImage, let path = model.selectedFilePath {
-                        ImageFilePreview(path: path)
-                    } else {
-                        ScrollView {
-                            MarkdownRendererView(content: model.filePreview)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(18)
+                if selectedFilePreviewAwaitingInitialContent {
+                    unloadedFilePreviewPlaceholder(isLoading: true)
+                } else if !canEditSelectedFilePreview {
+                    unloadedFilePreviewPlaceholder(isLoading: false)
+                } else {
+                    switch model.filePreviewMode {
+                    case .preview:
+                        if isImage, let path = model.selectedFilePath {
+                            ImageFilePreview(path: path)
+                        } else {
+                            ScrollView {
+                                MarkdownRendererView(content: model.filePreview)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(18)
+                            }
                         }
-                    }
-                case .html:
-                    HTMLPreviewView(html: model.filePreview, basePath: model.selectedFilePath)
-                case .source:
-                    CodeSourceView(text: model.filePreview)
-                case .edit:
-                    if isTextEditable {
-                        CodeEditorWithLineNumbers(text: $model.filePreview)
-                            .onChange(of: model.filePreview) { _, _ in model.markFilePreviewEdited() }
-                    } else {
-                        ImageFilePreview(path: model.selectedFilePath ?? "")
+                    case .html:
+                        HTMLPreviewView(html: model.filePreview, basePath: model.selectedFilePath)
+                    case .source:
+                        CodeSourceView(text: model.filePreview)
+                    case .edit:
+                        if isTextEditable && canEditSelectedFilePreview {
+                            CodeEditorWithLineNumbers(text: $model.filePreview)
+                                .onChange(of: model.filePreview) { _, _ in model.markFilePreviewEdited() }
+                        } else if isImage, let path = model.selectedFilePath {
+                            ImageFilePreview(path: path)
+                        } else {
+                            CodeSourceView(text: model.filePreview)
+                        }
                     }
                 }
             }
@@ -746,6 +785,7 @@ struct FilePreviewShellView: View {
 struct FilePreviewModeButton: View {
     let mode: FilePreviewMode
     let active: Bool
+    var disabled = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -754,26 +794,29 @@ struct FilePreviewModeButton: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(active ? Color(nsColor: .controlBackgroundColor).opacity(0.92) : Color.clear)
-                .foregroundStyle(active ? Color.primary : Color.secondary)
+                .foregroundStyle(disabled ? Color.secondary.opacity(0.55) : (active ? Color.primary : Color.secondary))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
-        .pointingHandCursor()
-        .help(mode == .html ? L("Preview") : mode.label)
+        .pointingHandCursor(enabled: !disabled)
+        .help(disabled ? L("File content is not loaded yet") : (mode == .html ? L("Preview") : mode.label))
+        .disabled(disabled)
     }
 }
 
 struct CodeSourceView: View {
     let text: String
+
     private var lines: [String] {
         text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
     }
 
     var body: some View {
+        let displayLines = lines
         ScrollView([.vertical, .horizontal]) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .trailing, spacing: 0) {
-                    ForEach(lines.indices, id: \.self) { index in
+                    ForEach(displayLines.indices, id: \.self) { index in
                         Text("\(index + 1)")
                             .font(.system(size: 13, design: .monospaced))
                             .foregroundStyle(.tertiary)
@@ -784,7 +827,7 @@ struct CodeSourceView: View {
                 .padding(.top, 10)
                 .frame(minWidth: 38)
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    ForEach(Array(displayLines.enumerated()), id: \.offset) { _, line in
                         Text(highlightCodeLine(line))
                             .font(.system(size: 14, design: .monospaced))
                             .frame(height: 22, alignment: .leading)
@@ -850,31 +893,33 @@ struct ImageFilePreview: View {
     }
 }
 
+private let codeHighlightKeywordsByLanguage: [String: [String]] = [
+    "swift": ["import", "func", "struct", "class", "enum", "let", "var", "return", "if", "else", "switch", "case", "for", "while", "guard", "try", "catch", "async", "await"],
+    "python": ["def", "class", "import", "from", "return", "if", "else", "elif", "for", "while", "try", "except", "async", "await", "True", "False"],
+    "typescript": ["export", "import", "const", "let", "var", "function", "return", "if", "else", "switch", "case", "for", "while", "async", "await", "from", "true", "false"],
+    "javascript": ["export", "import", "const", "let", "var", "function", "return", "if", "else", "switch", "case", "for", "while", "async", "await", "from", "true", "false"],
+    "rust": ["fn", "let", "mut", "pub", "struct", "enum", "impl", "trait", "use", "mod", "match", "true", "false"],
+    "go": ["func", "var", "const", "type", "struct", "interface", "package", "import", "return", "defer", "go"],
+    "java": ["public", "private", "protected", "class", "interface", "static", "final", "void", "return", "new"],
+    "c++": ["std", "auto", "class", "struct", "template", "typename", "const", "return", "true", "false"],
+    "cpp": ["std", "auto", "class", "struct", "template", "typename", "const", "return", "true", "false"],
+    "sql": ["SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "JOIN", "TRUE", "FALSE", "NULL"],
+    "markdown": ["#", "##", "###", "-", "*", "`"],
+    "json": ["true", "false", "null"],
+    "yaml": ["true", "false", "null", "enabled"],
+    "html": ["section", "div", "span", "html", "body", "class", "id"],
+    "css": ["color", "background", "display", "grid", "flex", "font", "margin", "padding"],
+    "xml": ["note", "xml", "version"]
+]
+
+private let codeHighlightLanguageAliases = ["js": "javascript", "jsx": "javascript", "ts": "typescript", "tsx": "typescript", "cc": "c++", "cxx": "c++"]
+private let codeHighlightFallbackKeywords = codeHighlightKeywordsByLanguage.values.flatMap { $0 }
+
 func highlightCodeLine(_ line: String, language: String = "") -> AttributedString {
     var attributed = AttributedString(line.isEmpty ? " " : line)
-    let keywordsByLanguage: [String: [String]] = [
-        "swift": ["import", "func", "struct", "class", "enum", "let", "var", "return", "if", "else", "switch", "case", "for", "while", "guard", "try", "catch", "async", "await"],
-        "python": ["def", "class", "import", "from", "return", "if", "else", "elif", "for", "while", "try", "except", "async", "await", "True", "False"],
-        "typescript": ["export", "import", "const", "let", "var", "function", "return", "if", "else", "switch", "case", "for", "while", "async", "await", "from", "true", "false"],
-        "javascript": ["export", "import", "const", "let", "var", "function", "return", "if", "else", "switch", "case", "for", "while", "async", "await", "from", "true", "false"],
-        "rust": ["fn", "let", "mut", "pub", "struct", "enum", "impl", "trait", "use", "mod", "match", "true", "false"],
-        "go": ["func", "var", "const", "type", "struct", "interface", "package", "import", "return", "defer", "go"],
-        "java": ["public", "private", "protected", "class", "interface", "static", "final", "void", "return", "new"],
-        "c++": ["std", "auto", "class", "struct", "template", "typename", "const", "return", "true", "false"],
-        "cpp": ["std", "auto", "class", "struct", "template", "typename", "const", "return", "true", "false"],
-        "sql": ["SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "JOIN", "TRUE", "FALSE", "NULL"],
-        "markdown": ["#", "##", "###", "-", "*", "`"],
-        "json": ["true", "false", "null"],
-        "yaml": ["true", "false", "null", "enabled"],
-        "html": ["section", "div", "span", "html", "body", "class", "id"],
-        "css": ["color", "background", "display", "grid", "flex", "font", "margin", "padding"],
-        "xml": ["note", "xml", "version"]
-    ]
     let normalizedLanguage = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    let aliases = ["js": "javascript", "jsx": "javascript", "ts": "typescript", "tsx": "typescript", "cc": "c++", "cxx": "c++"]
-    let languageKey = aliases[normalizedLanguage] ?? normalizedLanguage
-    let fallbackKeywords = keywordsByLanguage.values.flatMap { $0 }
-    let keywords = keywordsByLanguage[languageKey] ?? fallbackKeywords
+    let languageKey = codeHighlightLanguageAliases[normalizedLanguage] ?? normalizedLanguage
+    let keywords = codeHighlightKeywordsByLanguage[languageKey] ?? codeHighlightFallbackKeywords
     for keyword in keywords {
         if let range = attributed.range(of: keyword) {
             attributed[range].foregroundColor = .blue
@@ -890,6 +935,111 @@ func highlightCodeLine(_ line: String, language: String = "") -> AttributedStrin
     return attributed
 }
 
+struct SidebarSessionPlan {
+    var pinned: [SessionRecord] = []
+    var archived: [SessionRecord] = []
+    var projectGroups: [ProjectSessionGroup] = []
+    var taskGroups: [SessionTaskGroup] = []
+    var taskGroupSessions: [String: [SessionRecord]] = [:]
+    var projectGroupsByPath: [String: [SessionTaskGroup]] = [:]
+    var selectedSession: SessionRecord?
+}
+
+struct ProjectSessionGroup: Identifiable {
+    let path: String
+    let sessions: [SessionRecord]
+    let latest: Date
+    let firstConversationAt: Date
+    var id: String { path }
+    var name: String { path.isEmpty ? L("Unknown Project") : URL(fileURLWithPath: path).lastPathComponent }
+}
+
+// swiftlint:disable:next function_parameter_count
+func buildSidebarSessionPlan(
+    sessions: [SessionRecord],
+    sessionGroups: [SessionTaskGroup],
+    searchText: String,
+    showRunningSessionsOnly: Bool,
+    activeSessionIDs: Set<String>,
+    workingDirectory: String,
+    selectedSessionID: String?
+) -> SidebarSessionPlan {
+    var plan = SidebarSessionPlan()
+    let hasSearch = !searchText.isEmpty
+    var activeProjectPaths: [String] = []
+    var activeProjectSessions: [String: [SessionRecord]] = [:]
+    var taskGroupProjectByID: [String: String] = [:]
+    var taskGroupIDsBySessionID: [String: [String]] = [:]
+
+    for group in sessionGroups {
+        plan.projectGroupsByPath[group.projectPath, default: []].append(group)
+        guard !workingDirectory.isEmpty, group.projectPath == workingDirectory else {
+            continue
+        }
+        plan.taskGroups.append(group)
+        plan.taskGroupSessions[group.id] = []
+        taskGroupProjectByID[group.id] = group.projectPath
+        var seenSessionIDs = Set<String>()
+        for sessionID in group.sessionIDs where seenSessionIDs.insert(sessionID).inserted {
+            taskGroupIDsBySessionID[sessionID, default: []].append(group.id)
+        }
+    }
+
+    for session in sessions {
+        if session.id == selectedSessionID {
+            plan.selectedSession = session
+        }
+        if let groupIDs = taskGroupIDsBySessionID[session.id] {
+            for groupID in groupIDs {
+                guard taskGroupProjectByID[groupID] == session.projectDir else {
+                    continue
+                }
+                plan.taskGroupSessions[groupID, default: []].append(session)
+            }
+        }
+
+        let matchesSearch = !hasSearch || session.title.localizedCaseInsensitiveContains(searchText) || session.project
+            .localizedCaseInsensitiveContains(searchText)
+        let matchesRunning = !showRunningSessionsOnly || activeSessionIDs.contains(session.id)
+        guard matchesSearch && matchesRunning else {
+            continue
+        }
+        if session.archived {
+            plan.archived.append(session)
+        } else if session.pinned {
+            plan.pinned.append(session)
+        } else {
+            if activeProjectSessions[session.projectDir] == nil {
+                activeProjectPaths.append(session.projectDir)
+            }
+            activeProjectSessions[session.projectDir, default: []].append(session)
+        }
+    }
+
+    plan.projectGroups = activeProjectPaths.compactMap { path in
+        guard let records = activeProjectSessions[path] else {
+            return nil
+        }
+        let sorted = records.sorted { $0.modifiedAt > $1.modifiedAt }
+        return ProjectSessionGroup(
+            path: path,
+            sessions: sorted,
+            latest: sorted.first?.modifiedAt ?? .distantPast,
+            firstConversationAt: sorted.reduce(Date.distantFuture) { partial, session in
+                min(partial, session.createdAt ?? session.modifiedAt)
+            }
+        )
+    }
+    .sorted { lhs, rhs in
+        if lhs.firstConversationAt != rhs.firstConversationAt {
+            return lhs.firstConversationAt > rhs.firstConversationAt
+        }
+        return lhs.latest > rhs.latest
+    }
+
+    return plan
+}
+
 struct SidebarView: View {
     var onCollapse: () -> Void = {}
     @EnvironmentObject var model: AppModel
@@ -897,28 +1047,17 @@ struct SidebarView: View {
     @State private var renameText = ""
     @State private var projectExpansion: [String: Bool] = [:]
 
-    private var searchedSessions: [SessionRecord] {
-        model.sessions.filter { session in
-            let matchesSearch = model.searchText.isEmpty || session.title.localizedCaseInsensitiveContains(model.searchText) || session.project
-                .localizedCaseInsensitiveContains(model.searchText)
-            let matchesRunning = !model.showRunningSessionsOnly || model.hasActiveTurn(for: session.id)
-            return matchesSearch && matchesRunning
-        }
-    }
-
-    private var pinnedSessions: [SessionRecord] {
-        searchedSessions.filter { $0.pinned && !$0.archived }
-    }
-
-    private var activeSessions: [SessionRecord] {
-        searchedSessions.filter { !$0.pinned && !$0.archived }
-    }
-
-    private var archivedSessions: [SessionRecord] {
-        searchedSessions.filter { $0.archived }
-    }
-
     var body: some View {
+        let activeSessionIDs = model.activeSessionIDs
+        let plan = buildSidebarSessionPlan(
+            sessions: model.sessions,
+            sessionGroups: model.sessionGroups,
+            searchText: model.searchText,
+            showRunningSessionsOnly: model.showRunningSessionsOnly,
+            activeSessionIDs: activeSessionIDs,
+            workingDirectory: model.workingDirectory,
+            selectedSessionID: model.selectedSessionID
+        )
         GlassPanel(role: .sidebar, prominence: .regular, cornerRadius: LiquidGlassToken.panelRadius) {
             VStack(spacing: 0) {
                 sidebarHeader
@@ -929,11 +1068,23 @@ struct SidebarView: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         taskGroupsHeader
-                        taskGroups
-                        sessionSection("Pinned", pinnedSessions, trailing: pinnedSessions.isEmpty ? nil : "\(pinnedSessions.count)")
-                        projectSessionSections(activeSessions)
+                        taskGroups(plan: plan, activeSessionIDs: activeSessionIDs)
+                        sessionSection(
+                            "Pinned",
+                            plan.pinned,
+                            activeSessionIDs: activeSessionIDs,
+                            projectGroupsByPath: plan.projectGroupsByPath,
+                            trailing: plan.pinned.isEmpty ? nil : "\(plan.pinned.count)"
+                        )
+                        projectSessionSections(plan.projectGroups, activeSessionIDs: activeSessionIDs, projectGroupsByPath: plan.projectGroupsByPath)
                         if model.showArchivedSessions {
-                            sessionSection("Archived", archivedSessions, trailing: archivedSessions.isEmpty ? nil : "\(archivedSessions.count)")
+                            sessionSection(
+                                "Archived",
+                                plan.archived,
+                                activeSessionIDs: activeSessionIDs,
+                                projectGroupsByPath: plan.projectGroupsByPath,
+                                trailing: plan.archived.isEmpty ? nil : "\(plan.archived.count)"
+                            )
                         }
                     }
                     .padding(.horizontal, 12)
@@ -1081,15 +1232,29 @@ struct SidebarView: View {
         }
     }
 
-    @ViewBuilder private var taskGroups: some View {
+    @ViewBuilder private func taskGroups(plan: SidebarSessionPlan, activeSessionIDs: Set<String>) -> some View {
         if !model.workingDirectory.isEmpty {
-            ForEach(model.sessionGroups.filter { $0.projectPath == model.workingDirectory }) { group in
-                let scopedSessions = model.sessions.filter { group.sessionIDs.contains($0.id) && $0.projectDir == group.projectPath }
+            ForEach(plan.taskGroups) { group in
+                let scopedSessions = plan.taskGroupSessions[group.id] ?? []
                 DisclosureGroup {
                     ForEach(scopedSessions) { session in
-                        SessionRowView(session: session)
-                            .onTapGesture { model.selectSession(session.id) }
-                            .contextMenu { Button(L("Remove from Group")) { model.removeSession(session, from: group) } }
+                        SessionRowView(
+                            session: session,
+                            selected: model.selectedSessionID == session.id,
+                            checked: model.selectedSessionIDs.contains(session.id),
+                            running: activeSessionIDs.contains(session.id),
+                            selectionMode: model.sessionSelectionMode,
+                            onTogglePin: { model.togglePin(session) },
+                            onDelete: { model.deleteSession(session) }
+                        )
+                        .onTapGesture {
+                            if model.sessionSelectionMode {
+                                model.toggleSessionSelection(session)
+                            } else {
+                                model.selectSession(session.id)
+                            }
+                        }
+                        .contextMenu { Button(L("Remove from Group")) { model.removeSession(session, from: group) } }
                     }
                 } label: {
                     HStack {
@@ -1101,7 +1266,7 @@ struct SidebarView: View {
                     .liquidGlassRow()
                 }
                 .contextMenu {
-                    if let selected = model.selectedSession, selected.projectDir == group.projectPath {
+                    if let selected = plan.selectedSession, selected.projectDir == group.projectPath {
                         Button(L("Add Current Session")) { model.addSession(selected, to: group) }
                     }
                     Button(L("Delete Group"), role: .destructive) { model.deleteGroup(group) }
@@ -1110,24 +1275,17 @@ struct SidebarView: View {
         }
     }
 
-    @ViewBuilder private func projectSessionSections(_ sessions: [SessionRecord]) -> some View {
-        ForEach(projectGroups(from: sessions)) { group in
-            projectDisclosure(group)
+    @ViewBuilder private func projectSessionSections(
+        _ groups: [ProjectSessionGroup],
+        activeSessionIDs: Set<String>,
+        projectGroupsByPath: [String: [SessionTaskGroup]]
+    ) -> some View {
+        ForEach(groups) { group in
+            projectDisclosure(group, activeSessionIDs: activeSessionIDs, projectGroupsByPath: projectGroupsByPath)
         }
     }
 
-    private func projectGroups(from sessions: [SessionRecord]) -> [ProjectSessionGroup] {
-        Dictionary(grouping: sessions, by: { $0.projectDir })
-            .map { ProjectSessionGroup(path: $0.key, sessions: $0.value.sorted { $0.modifiedAt > $1.modifiedAt }) }
-            .sorted { lhs, rhs in
-                if lhs.firstConversationAt != rhs.firstConversationAt {
-                    return lhs.firstConversationAt > rhs.firstConversationAt
-                }
-                return lhs.latest > rhs.latest
-            }
-    }
-
-    @ViewBuilder private func projectDisclosure(_ group: ProjectSessionGroup) -> some View {
+    @ViewBuilder private func projectDisclosure(_ group: ProjectSessionGroup, activeSessionIDs: Set<String>, projectGroupsByPath: [String: [SessionTaskGroup]]) -> some View {
         let isExpanded = isProjectExpanded(group.path)
         VStack(alignment: .leading, spacing: 2) {
             Button {
@@ -1158,7 +1316,7 @@ struct SidebarView: View {
             .help(group.path)
 
             if isExpanded {
-                ForEach(group.sessions) { session in sessionRow(session) }
+                ForEach(group.sessions) { session in sessionRow(session, activeSessionIDs: activeSessionIDs, projectGroupsByPath: projectGroupsByPath) }
             }
         }
     }
@@ -1168,71 +1326,68 @@ struct SidebarView: View {
         projectExpansion[path] ?? (!path.isEmpty && path == model.workingDirectory)
     }
 
-    private struct ProjectSessionGroup: Identifiable {
-        let path: String
-        let sessions: [SessionRecord]
-        var id: String { path }
-        var name: String { path.isEmpty ? L("Unknown Project") : URL(fileURLWithPath: path).lastPathComponent }
-        var latest: Date { sessions.first?.modifiedAt ?? .distantPast }
-        var firstConversationAt: Date {
-            sessions.map { $0.createdAt ?? $0.modifiedAt }.min() ?? .distantPast
-        }
-    }
-
-    @ViewBuilder private func sessionSection(_ title: String, _ sessions: [SessionRecord], trailing: String? = nil) -> some View {
+    @ViewBuilder private func sessionSection(
+        _ title: String,
+        _ sessions: [SessionRecord],
+        activeSessionIDs: Set<String>,
+        projectGroupsByPath: [String: [SessionTaskGroup]],
+        trailing: String? = nil
+    ) -> some View {
         if !sessions.isEmpty {
             SectionCaption(title: title, trailing: trailing)
-            ForEach(sessions) { session in sessionRow(session) }
+            ForEach(sessions) { session in sessionRow(session, activeSessionIDs: activeSessionIDs, projectGroupsByPath: projectGroupsByPath) }
         }
     }
 
-    private func sessionRow(_ session: SessionRecord) -> some View {
-        SessionRowView(session: session)
-            .onTapGesture {
-                if model.sessionSelectionMode {
-                    model.toggleSessionSelection(session)
-                } else {
-                    model.selectSession(session.id)
-                }
+    private func sessionRow(_ session: SessionRecord, activeSessionIDs: Set<String>, projectGroupsByPath: [String: [SessionTaskGroup]]) -> some View {
+        SessionRowView(
+            session: session,
+            selected: model.selectedSessionID == session.id,
+            checked: model.selectedSessionIDs.contains(session.id),
+            running: activeSessionIDs.contains(session.id),
+            selectionMode: model.sessionSelectionMode,
+            onTogglePin: { model.togglePin(session) },
+            onDelete: { model.deleteSession(session) }
+        )
+        .onTapGesture {
+            if model.sessionSelectionMode {
+                model.toggleSessionSelection(session)
+            } else {
+                model.selectSession(session.id)
             }
-            .contextMenu {
-                Button(session.pinned ? L("Unpin") : L("Pin")) { model.togglePin(session) }
-                Button(session.archived ? L("Unarchive") : L("Archive")) { model.toggleArchive(session) }
-                Button(L("Generate Title")) { model.generateSessionTitle(session) }
-                Button(L("Rename")) { renameTarget = session; renameText = session.title }
-                let projectGroups = model.sessionGroups.filter { $0.projectPath == session.projectDir }
-                if !projectGroups.isEmpty {
-                    Menu(L("Add to Group")) { ForEach(projectGroups) { group in Button(group.name) { model.addSession(session, to: group) } } }
-                }
-                Divider()
-                Button(L("Export Markdown")) { model.exportMarkdown(session: session) }
-                Button(L("Export JSON")) { model.exportJSON(session: session) }
-                Divider()
-                Button(L("Delete"), role: .destructive) { model.deleteSession(session) }
+        }
+        .contextMenu {
+            Button(session.pinned ? L("Unpin") : L("Pin")) { model.togglePin(session) }
+            Button(session.archived ? L("Unarchive") : L("Archive")) { model.toggleArchive(session) }
+            Button(L("Generate Title")) { model.generateSessionTitle(session) }
+            Button(L("Rename")) { renameTarget = session; renameText = session.title }
+            let projectGroups = projectGroupsByPath[session.projectDir] ?? []
+            if !projectGroups.isEmpty {
+                Menu(L("Add to Group")) { ForEach(projectGroups) { group in Button(group.name) { model.addSession(session, to: group) } } }
             }
+            Divider()
+            Button(L("Export Markdown")) { model.exportMarkdown(session: session) }
+            Button(L("Export JSON")) { model.exportJSON(session: session) }
+            Divider()
+            Button(L("Delete"), role: .destructive) { model.deleteSession(session) }
+        }
     }
 }
 
 struct SessionRowView: View {
-    @EnvironmentObject var model: AppModel
     let session: SessionRecord
+    let selected: Bool
+    let checked: Bool
+    let running: Bool
+    let selectionMode: Bool
+    let onTogglePin: () -> Void
+    let onDelete: () -> Void
     @State private var isHovered = false
     @State private var pendingDelete = false
-    var selected: Bool {
-        model.selectedSessionID == session.id
-    }
-
-    var checked: Bool {
-        model.selectedSessionIDs.contains(session.id)
-    }
-
-    var running: Bool {
-        model.hasActiveTurn(for: session.id)
-    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            if model.sessionSelectionMode {
+            if selectionMode {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(checked ? Color.primary.opacity(0.78) : .secondary)
             } else {
@@ -1248,7 +1403,7 @@ struct SessionRowView: View {
                     .foregroundStyle(.orange)
             }
             Spacer(minLength: 8)
-            if model.sessionSelectionMode {
+            if selectionMode {
                 if session.archived {
                     Image(systemName: "archivebox.fill")
                         .font(.caption2)
@@ -1319,7 +1474,7 @@ struct SessionRowView: View {
     private var sessionActions: some View {
         HStack(spacing: 5) {
             Button {
-                model.togglePin(session)
+                onTogglePin()
             } label: {
                 Image(systemName: session.pinned ? "pin.fill" : "pin")
                     .font(.system(size: 11, weight: .semibold))
@@ -1340,7 +1495,7 @@ struct SessionRowView: View {
 
             Button {
                 if pendingDelete {
-                    model.deleteSession(session)
+                    onDelete()
                 } else {
                     withAnimation(.easeOut(duration: 0.14)) {
                         pendingDelete = true
@@ -1632,45 +1787,64 @@ struct ChatPanelView: View {
         return TranscriptDisplayBuilder.displayItems(messages: [message])
     }
 
-    private var transcriptAutoScrollToken: String {
-        [
-            model.selectedSessionID ?? "no-session",
-            displayItems.map(\.id).joined(separator: "|"),
-            streamingDisplayItems.map(\.id).joined(separator: "|"),
-            model.selectedStreamingText,
-            model.selectedPendingUserMessages.map(\.id).joined(separator: "|")
-        ].joined(separator: "\u{1f}")
+    private var transcriptAutoScrollToken: TranscriptAutoScrollToken {
+        TranscriptAutoScrollToken(
+            sessionID: model.selectedSessionID,
+            displayItems: displayItems,
+            streamingDisplayItems: streamingDisplayItems,
+            streamingText: model.selectedStreamingText,
+            pendingMessages: model.selectedPendingUserMessages
+        )
     }
 
     @ViewBuilder
-    private func displayItemView(_ item: TranscriptDisplayItem, idPrefix: String = "") -> some View {
+    private func displayItemView(
+        _ item: TranscriptDisplayItem,
+        activeFindTarget: ChatFindTarget?,
+        findMatchedItemIDs: Set<String>,
+        idPrefix: String = "",
+        toolExpansion: TranscriptToolExpansionState = .collapsed
+    ) -> some View {
+        let autoExpandItem = toolExpansion.expandedDisplayItemID == item.id
         switch item {
         case .message(let message):
             MessageBubbleView(
                 message: message,
                 findText: model.chatFindText,
-                activeOccurrenceIndex: model.selectedChatFindTarget?.itemID == message.id ? model.selectedChatFindTarget?.occurrenceIndex : nil
+                hasFindMatch: findMatchedItemIDs.contains(message.id),
+                activeOccurrenceIndex: activeFindTarget?.itemID == message.id ? activeFindTarget?.occurrenceIndex : nil
             ).id(idPrefix + message.id)
         case .interaction(let permission):
             InlineInteractionCardView(permission: permission).id(idPrefix + "interaction_\(permission.id)")
         case .question(let question):
             QuestionTranscriptCardView(question: question).id(idPrefix + question.id)
         case .tool(let item):
-            ToolDisplayItemView(item: item).id(idPrefix + item.id)
+            ToolDisplayItemView(item: item, autoExpanded: autoExpandItem).id(idPrefix + item.id)
         case .toolRun(let items):
-            ToolMessageGroupView(items: items).id(idPrefix + items.map(\.id).joined(separator: "_"))
+            ToolMessageGroupView(items: items, autoExpandedToolItemID: autoExpandItem ? toolExpansion.expandedToolItemID : nil)
+                .id(idPrefix + items.map(\.id).joined(separator: "_"))
         }
     }
 
     private var transcript: some View {
         ScrollViewReader { proxy in
+            let findTargets = model.selectedChatFindTargets
+            let activeFindTarget = findTargets.indices.contains(model.chatFindIndex) ? findTargets[model.chatFindIndex] : nil
+            let findMatchedItemIDs = Set(findTargets.map(\.itemID))
+            let streamingToolExpansion = TranscriptAutoExpansionPolicy.state(for: streamingDisplayItems, isStreaming: true)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(displayItems) { item in
-                        displayItemView(item)
+                        displayItemView(item, activeFindTarget: activeFindTarget, findMatchedItemIDs: findMatchedItemIDs)
                     }
                     ForEach(streamingDisplayItems) { item in
-                        displayItemView(item, idPrefix: "streaming_")
+                        displayItemView(
+                            item,
+                            activeFindTarget: activeFindTarget,
+                            findMatchedItemIDs: findMatchedItemIDs,
+                            idPrefix: "streaming_",
+                            toolExpansion: streamingToolExpansion
+                        )
                     }
                     if !streamingDisplayItems.isEmpty {
                         Color.clear.frame(height: 1).id("streaming")
@@ -1686,10 +1860,11 @@ struct ChatPanelView: View {
             }
             .onAppear { scrollToTranscriptBottom(proxy, animated: false) }
             .onChange(of: transcriptAutoScrollToken) { _, _ in scrollToTranscriptBottom(proxy) }
-            .onChange(of: model.selectedChatFindTarget?.id) { _, _ in
-                if let target = model.selectedChatFindTarget {
+            .onChange(of: activeFindTarget?.id) { _, _ in
+                if let target = activeFindTarget {
                     withAnimation { proxy.scrollTo(target.itemID, anchor: .center) }
-                } }
+                }
+            }
         }
     }
 
@@ -1745,11 +1920,7 @@ struct FindBarView: View {
     @FocusState private var focused: Bool
     let onClose: () -> Void
 
-    private var targets: [ChatFindTarget] {
-        model.selectedChatFindTargets
-    }
-
-    private var status: String {
+    private func status(for targets: [ChatFindTarget]) -> String {
         guard !model.chatFindText.isEmpty else {
             return ""
         }
@@ -1760,25 +1931,27 @@ struct FindBarView: View {
     }
 
     var body: some View {
+        let targets = model.selectedChatFindTargets
+        let hasFindTargets = !model.chatFindText.isEmpty && !targets.isEmpty
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
             TextField(L("Find in conversation"), text: $model.chatFindText)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit { model.searchChatNext(direction: 1) }
-            Text(status)
+            Text(status(for: targets))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 70, alignment: .trailing)
             Button { model.searchChatNext(direction: -1) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.borderless)
-                .pointingHandCursor(enabled: !model.chatFindText.isEmpty && !targets.isEmpty)
-                .disabled(model.chatFindText.isEmpty || targets.isEmpty)
+                .pointingHandCursor(enabled: hasFindTargets)
+                .disabled(!hasFindTargets)
                 .help(L("Previous match"))
             Button { model.searchChatNext(direction: 1) } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.borderless)
-                .pointingHandCursor(enabled: !model.chatFindText.isEmpty && !targets.isEmpty)
-                .disabled(model.chatFindText.isEmpty || targets.isEmpty)
+                .pointingHandCursor(enabled: hasFindTargets)
+                .disabled(!hasFindTargets)
                 .help(L("Next match"))
             Button { model.chatFindText = ""; onClose() } label: { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain)
@@ -1974,8 +2147,8 @@ struct PlanInspectorView: View {
 struct MessageBubbleView: View {
     let message: ChatMessage
     var findText: String = ""
+    var hasFindMatch = false
     var activeOccurrenceIndex: Int?
-
     var body: some View {
         switch message.role {
         case .user:
@@ -2005,7 +2178,7 @@ struct MessageBubbleView: View {
     }
 
     private var isFindMatch: Bool {
-        !findText.isEmpty && !chatFindOccurrenceRanges(in: message.content, query: findText).isEmpty
+        !findText.isEmpty && hasFindMatch
     }
 
     private var assistantMessage: some View {

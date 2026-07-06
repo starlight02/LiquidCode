@@ -194,12 +194,12 @@ final class CursorRegressionTests: XCTestCase {
             "Auto-scroll regression: a bottom sentinel must exist after messages, streaming output, and queued user messages."
         )
         XCTAssertTrue(
-            chatPanel.contains("model.selectedStreamingText"),
-            "Auto-scroll regression: streaming deltas must update the bottom-follow token."
+            chatPanel.contains("streamingText: model.selectedStreamingText"),
+            "Auto-scroll regression: streaming deltas must update the lightweight bottom-follow token."
         )
         XCTAssertTrue(
-            chatPanel.contains("model.selectedPendingUserMessages.map(\\.id)"),
-            "Auto-scroll regression: queued user messages must also force the transcript to the bottom."
+            chatPanel.contains("pendingMessages: model.selectedPendingUserMessages"),
+            "Auto-scroll regression: queued user messages must also force the transcript to the bottom without joining every queued id."
         )
         XCTAssertTrue(
             chatPanel.contains(".onAppear { scrollToTranscriptBottom(proxy, animated: false) }"),
@@ -212,6 +212,36 @@ final class CursorRegressionTests: XCTestCase {
         XCTAssertFalse(
             chatPanel.contains(".onChange(of: model.selectedMessages.count)"),
             "Auto-scroll regression: raw message count misses display-item regrouping and same-count streaming updates."
+        )
+    }
+
+    func testSidebarRowsUseExplicitStateAndTaskGroupsRespectSelectionMode() throws {
+        let source = try Self.source("LiquidCode/ViewComponents.swift")
+        let sidebar = try XCTUnwrap(Self.typeBody(named: "SidebarView", in: source))
+        let row = try XCTUnwrap(Self.typeBody(named: "SessionRowView", in: source))
+        let taskGroupsStart = try XCTUnwrap(sidebar.range(of: "@ViewBuilder private func taskGroups"))
+        let taskGroupsEnd = try XCTUnwrap(sidebar[taskGroupsStart.lowerBound...].range(of: "@ViewBuilder private func projectSessionSections"))
+        let taskGroups = String(sidebar[taskGroupsStart.lowerBound ..< taskGroupsEnd.lowerBound])
+
+        XCTAssertFalse(
+            row.contains("@EnvironmentObject var model: AppModel"),
+            "Sidebar performance regression: every session row must not subscribe to the entire AppModel."
+        )
+        XCTAssertTrue(
+            row.contains("let selectionMode: Bool"),
+            "Sidebar performance regression: row selection rendering should depend on a narrow value."
+        )
+        XCTAssertTrue(
+            row.contains("let onTogglePin: () -> Void") && row.contains("let onDelete: () -> Void"),
+            "Sidebar row actions must remain explicit after removing the environment object."
+        )
+        let togglesSelection = taskGroups.contains("""
+        if model.sessionSelectionMode {
+                                model.toggleSessionSelection(session)
+        """)
+        XCTAssertTrue(
+            togglesSelection && taskGroups.contains("model.removeSession(session, from: group)"),
+            "Task-group session rows must toggle batch selection instead of opening the conversation while selection mode is active."
         )
     }
 

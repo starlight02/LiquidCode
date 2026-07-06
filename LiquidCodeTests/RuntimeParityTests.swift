@@ -556,6 +556,35 @@ final class RuntimeParityTests: XCTestCase {
         XCTAssertEqual(exported?.count, 3)
     }
 
+    func testSessionIndexUsesClaudeGeneratedTitleForSidebarRecords() throws {
+        let home = try temporaryDirectory(prefix: "lc-home-title")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let project = home.appendingPathComponent("work/title-project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = home.appendingPathComponent(".claude/projects").appendingPathComponent(encodeClaudeProjectPath(project.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        let sessionID = "123e4567-e89b-12d3-a456-426614174123"
+        let file = store.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
+        let filler = (0 ..< 140).map { index in
+            "{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"sessionId\":\"\(sessionID)\",\"content\":\"queued \(index)\"}"
+        }
+        let jsonl = ([#"{"type":"system","timestamp":"2026-07-05T00:00:00Z","cwd":"\#(project.path)"}"#] + filler + [
+            #"{"type":"ai-title","sessionId":"\#(sessionID)","aiTitle":"Fix native sidebar session titles"}"#
+        ]).joined(separator: "\n") + "\n"
+        try jsonl.write(to: file, atomically: true, encoding: .utf8)
+        let trackingDirectory = home.appendingPathComponent(".liquidcode", isDirectory: true)
+        try FileManager.default.createDirectory(at: trackingDirectory, withIntermediateDirectories: true)
+        try "\(sessionID)\n".write(to: trackingDirectory.appendingPathComponent("tracked_sessions.txt"), atomically: true, encoding: .utf8)
+
+        let index = SessionIndexService(home: home)
+        let listed = try XCTUnwrap(index.listSessions().first)
+        XCTAssertEqual(listed.preview, "Claude session")
+        XCTAssertEqual(listed.generatedTitle, "Fix native sidebar session titles")
+        XCTAssertEqual(listed.title, "Fix native sidebar session titles")
+        let discovered = try XCTUnwrap(index.discoverAllSessions().first { $0.id == sessionID })
+        XCTAssertEqual(discovered.title, "Fix native sidebar session titles")
+    }
+
     func testSessionIndexLoadsImageHistoryAsStructuredImages() throws {
         let home = try temporaryDirectory(prefix: "lc-home-images")
         defer { try? FileManager.default.removeItem(at: home) }

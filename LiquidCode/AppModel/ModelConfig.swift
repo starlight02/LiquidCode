@@ -142,14 +142,12 @@ extension AppModel {
                 return
             }
             sendConfigurationBySession[sessionID] = configuration
-            persistSettings()
             return
         }
         guard defaultComposerConfiguration != configuration else {
             return
         }
         defaultComposerConfiguration = configuration
-        persistSettings()
     }
 
     func syncComposerDefaultsFromClaudeUserSettings() {
@@ -214,8 +212,18 @@ extension AppModel {
 
     func restoreComposerConfiguration(for sessionID: String?) {
         let configuration = sessionID.flatMap { sendConfigurationBySession[$0] } ?? defaultComposerConfiguration
-        settings.selectedModel = configuration.model
-        settings.sessionMode = configuration.mode
-        settings.thinkingLevel = configuration.thinkingLevel
+        let current = ComposerSendConfiguration(
+            model: settings.selectedModel,
+            mode: settings.sessionMode,
+            thinkingLevel: settings.thinkingLevel
+        )
+        guard current != configuration else {
+            return
+        }
+        var next = settings
+        next.selectedModel = configuration.model
+        next.sessionMode = configuration.mode
+        next.thinkingLevel = configuration.thinkingLevel
+        settings = next
     }
 }

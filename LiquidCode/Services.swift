@@ -385,6 +385,17 @@ final class PathAccessManager: @unchecked Sendable {
 }
 
 final class DirectoryWatchManager: @unchecked Sendable {
+    struct WatchToken: Hashable, Sendable {
+        // periphery:ignore
+        fileprivate let id = UUID()
+        init() {}
+    }
+
+    private struct DesiredWatch: Equatable {
+        let root: String
+        let token: WatchToken
+    }
+
     private struct FileFingerprint: Equatable {
         let isDirectory: Bool
         let size: Int64
@@ -394,37 +405,84 @@ final class DirectoryWatchManager: @unchecked Sendable {
     private final class WatchContext: @unchecked Sendable {
         weak var manager: DirectoryWatchManager?
         let root: String
+        let token: WatchToken
         let onChange: @Sendable ([String]) -> Void
 
-        init(manager: DirectoryWatchManager, root: String, onChange: @escaping @Sendable ([String]) -> Void) {
+        init(manager: DirectoryWatchManager, root: String, token: WatchToken, onChange: @escaping @Sendable ([String]) -> Void) {
             self.manager = manager
             self.root = root
+            self.token = token
             self.onChange = onChange
         }
+    }
+
+    private static let retainWatchContext: CFAllocatorRetainCallBack = { info in
+        guard let info else {
+            return nil
+        }
+        _ = Unmanaged<WatchContext>.fromOpaque(info).retain()
+        return info
+    }
+
+    private static let releaseWatchContext: CFAllocatorReleaseCallBack = { info in
+        guard let info else {
+            return
+        }
+        Unmanaged<WatchContext>.fromOpaque(info).release()
     }
 
     private final class Watch: @unchecked Sendable {
         let stream: FSEventStreamRef
         let context: WatchContext
         let pollTimer: DispatchSourceTimer
+        let token: WatchToken
+        private let teardownLock = NSLock()
+        private var didTearDown = false
 
-        init(stream: FSEventStreamRef, context: WatchContext, pollTimer: DispatchSourceTimer) {
+        init(stream: FSEventStreamRef, context: WatchContext, pollTimer: DispatchSourceTimer, token: WatchToken) {
             self.stream = stream
             self.context = context
             self.pollTimer = pollTimer
+            self.token = token
         }
 
-        deinit {
+        func retire(on queue: DispatchQueue) {
+            queue.async { [self] in
+                tearDown()
+            }
+        }
+
+        private func tearDown() {
+            teardownLock.lock()
+            guard !didTearDown else {
+                teardownLock.unlock()
+                return
+            }
+            didTearDown = true
+            teardownLock.unlock()
+            pollTimer.setEventHandler {}
             pollTimer.cancel()
             FSEventStreamStop(stream)
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
         }
+
+        deinit {
+            tearDown()
+        }
     }
 
+    private let teardownQueue = DispatchQueue(label: "LiquidCode.DirectoryWatchManager.teardown", qos: .utility)
+
     private let queue = DispatchQueue(label: "LiquidCode.DirectoryWatchManager")
+
+    private func retire(_ watches: [String: Watch]) {
+        watches.values.forEach { $0.retire(on: teardownQueue) }
+    }
+
     private var watches: [String: Watch] = [:]
     private var lastFingerprints: [String: [String: FileFingerprint]] = [:]
+    private var desiredWatch: DesiredWatch?
     private let ignoredSegments: Set<String> = [
         ".claude", ".git", "node_modules", ".next", "target", "__pycache__", ".venv", "venv",
         ".DS_Store", "Thumbs.db", ".env", ".artifacts", ".build", ".build-release", ".swiftpm",
@@ -433,19 +491,61 @@ final class DirectoryWatchManager: @unchecked Sendable {
     ]
 
     func watchDirectory(_ path: String, onChange: @escaping @Sendable ([String]) -> Void) throws {
+        let token = WatchToken()
+        requestWatchDirectory(path, token: token)
+        _ = try watchRequestedDirectory(path, token: token, onChange: onChange)
+    }
+
+    @discardableResult
+    func requestWatchDirectory(_ path: String, token: WatchToken) -> String {
+        let root = PathAccessManager.canonicalPath(path)
+        let old = queue.sync { () -> [String: Watch] in
+            desiredWatch = DesiredWatch(root: root, token: token)
+            let old = watches
+            watches.removeAll()
+            lastFingerprints.removeAll()
+            return old
+        }
+        retire(old)
+        return root
+    }
+
+    func cancelRequestedWatch(_ path: String? = nil, token: WatchToken? = nil) {
+        let root = path.map(PathAccessManager.canonicalPath)
+        let old = queue.sync { () -> [String: Watch] in
+            guard let desired = desiredWatch else {
+                return [:]
+            }
+            if let root, desired.root != root {
+                return [:]
+            }
+            if let token, desired.token != token {
+                return [:]
+            }
+            desiredWatch = nil
+            let old = watches
+            watches.removeAll()
+            lastFingerprints.removeAll()
+            return old
+        }
+        retire(old)
+    }
+
+    @discardableResult
+    func watchRequestedDirectory(_ path: String, token: WatchToken, onChange: @escaping @Sendable ([String]) -> Void) throws -> Bool {
         let root = PathAccessManager.canonicalPath(path)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: root, isDirectory: &isDirectory), isDirectory.boolValue else {
+            cancelRequestedWatch(root, token: token)
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(ENOENT), userInfo: [NSLocalizedDescriptionKey: "Failed to watch \(root)"])
         }
-        unwatchDirectory(root)
-
-        let contextBox = WatchContext(manager: self, root: root, onChange: onChange)
+        let initialSnapshot = snapshotFingerprints(root: root)
+        let contextBox = WatchContext(manager: self, root: root, token: token, onChange: onChange)
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passUnretained(contextBox).toOpaque(),
-            retain: nil,
-            release: nil,
+            retain: Self.retainWatchContext,
+            release: Self.releaseWatchContext,
             copyDescription: nil
         )
         let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
@@ -458,7 +558,7 @@ final class DirectoryWatchManager: @unchecked Sendable {
                 return
             }
             let paths = (unsafeBitCast(eventPaths, to: NSArray.self) as? [String]) ?? []
-            manager.handleEvents(root: context.root, eventPaths: Array(paths.prefix(numEvents)), onChange: context.onChange)
+            manager.handleEvents(root: context.root, token: context.token, eventPaths: Array(paths.prefix(numEvents)), onChange: context.onChange)
         }
         guard
             let stream = FSEventStreamCreate(
@@ -473,44 +573,67 @@ final class DirectoryWatchManager: @unchecked Sendable {
             throw NSError(domain: "LiquidCode.DirectoryWatchManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create watcher for \(root)"])
         }
         FSEventStreamSetDispatchQueue(stream, queue)
+        let shouldStart = queue.sync {
+            desiredWatch == DesiredWatch(root: root, token: token)
+        }
+        guard shouldStart else {
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            return false
+        }
         guard FSEventStreamStart(stream) else {
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
             throw NSError(domain: "LiquidCode.DirectoryWatchManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to start watcher for \(root)"])
         }
-        let initialSnapshot = snapshotFingerprints(root: root)
-        let pollTimer = DispatchSource.makeTimerSource(queue: queue)
-        pollTimer.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250), leeway: .milliseconds(100))
-        pollTimer.setEventHandler { [weak self] in
-            self?.pollChanges(root: root, onChange: onChange)
+        var committed = false
+        let old = queue.sync { () -> [String: Watch] in
+            guard desiredWatch == DesiredWatch(root: root, token: token) else {
+                return [:]
+            }
+            let pollTimer = DispatchSource.makeTimerSource(queue: queue)
+            pollTimer.schedule(deadline: .now() + .milliseconds(250), repeating: .milliseconds(250), leeway: .milliseconds(100))
+            pollTimer.setEventHandler { [weak self] in
+                self?.pollChanges(root: root, token: token, onChange: onChange)
+            }
+            let watch = Watch(stream: stream, context: contextBox, pollTimer: pollTimer, token: token)
+            let old = watches
+            watches = [root: watch]
+            lastFingerprints = [root: initialSnapshot]
+            committed = true
+            pollTimer.resume()
+            return old
         }
-        queue.sync {
-            watches[root] = Watch(stream: stream, context: contextBox, pollTimer: pollTimer)
-            lastFingerprints[root] = initialSnapshot
+        retire(old)
+        guard committed else {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            return false
         }
-        pollTimer.resume()
-    }
-
-    func unwatchDirectory(_ path: String) {
-        let root = PathAccessManager.canonicalPath(path)
-        let watch = queue.sync { () -> Watch? in
-            lastFingerprints.removeValue(forKey: root)
-            return watches.removeValue(forKey: root)
-        }
-        _ = watch
+        return true
     }
 
     func unwatchAll() {
         let old = queue.sync { () -> [String: Watch] in
             let old = watches
+            desiredWatch = nil
             watches.removeAll()
             lastFingerprints.removeAll()
             return old
         }
-        _ = old
+        retire(old)
     }
 
-    private func handleEvents(root: String, eventPaths: [String], onChange: @escaping @Sendable ([String]) -> Void) {
+    func isWatching(_ path: String) -> Bool {
+        let root = PathAccessManager.canonicalPath(path)
+        return queue.sync { watches[root] != nil }
+    }
+
+    private func handleEvents(root: String, token: WatchToken, eventPaths: [String], onChange: @escaping @Sendable ([String]) -> Void) {
+        guard watches[root]?.token == token else {
+            return
+        }
         let visibleEvents = eventPaths
             .map { PathAccessManager.canonicalPath($0) }
             .filter { PathAccessManager.path($0, startsWith: root) && !isIgnoredPath($0, root: root) }
@@ -527,8 +650,8 @@ final class DirectoryWatchManager: @unchecked Sendable {
         }
     }
 
-    private func pollChanges(root: String, onChange: @escaping @Sendable ([String]) -> Void) {
-        guard watches[root] != nil else {
+    private func pollChanges(root: String, token: WatchToken, onChange: @escaping @Sendable ([String]) -> Void) {
+        guard watches[root]?.token == token else {
             return
         }
         let previous = lastFingerprints[root] ?? snapshotFingerprints(root: root)
@@ -979,6 +1102,7 @@ enum SessionJSONLCodec {
 
     struct SessionInfo {
         var preview: String
+        var generatedTitle: String
         var cwd: String
         var createdAt: Date?
     }
@@ -1025,9 +1149,10 @@ enum SessionJSONLCodec {
         // first user message is near the top, so we never load whole multi-MB logs.
         let content = readHead(url, maxBytes: headerReadLimit)
         var preview = ""
+        var generatedTitle = ""
         var cwd = ""
         var createdAt: Date?
-        for line in content.split(separator: "\n").prefix(100) {
+        for line in content.split(separator: "\n") {
             guard
                 let data = line.data(using: .utf8),
                 let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -1036,19 +1161,48 @@ enum SessionJSONLCodec {
             if createdAt == nil {
                 createdAt = parseTimestamp(obj["timestamp"])
             }
+            if generatedTitle.isEmpty, let title = cliGeneratedTitle(from: obj) {
+                generatedTitle = title
+            }
             if cwd.isEmpty, let value = obj["cwd"] as? String, !value.isEmpty {
                 cwd = value
             }
             if preview.isEmpty, let match = searchableText(from: obj), match.role == .user {
                 preview = String(match.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
             }
-            if createdAt != nil && !cwd.isEmpty && !preview.isEmpty {
+            if createdAt != nil && !generatedTitle.isEmpty && !cwd.isEmpty && !preview.isEmpty {
                 break
             }
         }
-        let info = SessionInfo(preview: preview, cwd: cwd, createdAt: createdAt)
+        let info = SessionInfo(preview: preview, generatedTitle: generatedTitle, cwd: cwd, createdAt: createdAt)
         headerCache.store(path: url.path, mtime: mtime, info: info)
         return info
+    }
+
+    private static func cliGeneratedTitle(from obj: [String: Any]) -> String? {
+        let containers = [
+            obj,
+            obj["metadata"] as? [String: Any],
+            obj["message"] as? [String: Any]
+        ].compactMap { $0 }
+        for key in ["customTitle", "aiTitle", "summary", "summaryHint"] {
+            for container in containers {
+                if let title = cleanedSessionTitle(container[key]) {
+                    return title
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func cleanedSessionTitle(_ value: Any?) -> String? {
+        guard let text = value as? String else {
+            return nil
+        }
+        let title = text
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? nil : String(title.prefix(120))
     }
 
     private static func readHead(_ url: URL, maxBytes: Int) -> String {
@@ -1359,7 +1513,8 @@ final class SessionIndexService: @unchecked Sendable {
                 createdAt: info.createdAt ?? attrs?.creationDate ?? attrs?.contentModificationDate,
                 modifiedAt: attrs?.contentModificationDate ?? .distantPast,
                 preview: preview,
-                cliResumeID: id
+                cliResumeID: id,
+                generatedTitle: info.generatedTitle.isEmpty ? nil : info.generatedTitle
             )
         }
         return sessions.sorted { lhs, rhs in
@@ -1410,7 +1565,8 @@ final class SessionIndexService: @unchecked Sendable {
                     createdAt: info.createdAt ?? attrs?.creationDate ?? attrs?.contentModificationDate,
                     modifiedAt: attrs?.contentModificationDate ?? .distantPast,
                     preview: info.preview.isEmpty ? "Claude session" : info.preview,
-                    cliResumeID: id
+                    cliResumeID: id,
+                    generatedTitle: info.generatedTitle.isEmpty ? nil : info.generatedTitle
                 ))
             }
         }

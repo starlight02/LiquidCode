@@ -25,7 +25,9 @@ extension AppModel {
         var loaded: [SessionRecord] = []
         for var item in discovered where seen.insert(item.id).inserted {
             if let record = meta[item.id] {
-                item.customTitle = record.customTitle
+                if let customTitle = record.customTitle, !customTitle.isEmpty {
+                    item.customTitle = customTitle
+                }
                 item.pinned = record.pinned
                 item.archived = record.archived
             }
@@ -55,29 +57,34 @@ extension AppModel {
         snapshotComposerConfiguration(for: selectedSessionID)
         selectedSessionID = id
         guard let id, let session = sessions.first(where: { $0.id == id }) else {
+            cancelFilePreviewLoad()
             workingDirectory = ""
             fileTree = []
             selectedFilePath = nil
             filePreview = ""
             filePreviewCleanContent = ""
+            filePreviewContentPath = nil
             fileEditDirty = false
             resetWorkspaceChangeState()
-            directoryWatcher.unwatchAll()
+            cancelDeferredWorkspaceWatch()
             restoreComposerState(for: nil)
             restoreComposerConfiguration(for: nil)
-            reloadMCPAndSkills()
+            mcpServers = []
+            skills = []
+            reloadMCPAndSkillsDeferred()
             return
         }
         restoreComposerState(for: id)
         restoreComposerConfiguration(for: id)
-        let previousProjectDir = existingDirectoryPath(workingDirectory) ?? workingDirectory
+        let sameProjectFastPath = !workingDirectory.isEmpty && workingDirectory == session.projectDir
+        let previousProjectDir = sameProjectFastPath ? workingDirectory : (existingDirectoryPath(workingDirectory) ?? workingDirectory)
         if messagesBySession[id] == nil, let path = session.path, !loadingMessageSessionIDs.contains(id) {
             loadingMessageSessionIDs.insert(id)
             let index = sessionIndex
             Task.detached(priority: .userInitiated) {
                 let loadedMessages = index.loadMessages(path: path)
-                let toolCalls = AgentActivityBuilder.toolCalls(from: loadedMessages, sessionID: id)
                 let displayItems = TranscriptDisplayBuilder.displayItems(messages: loadedMessages)
+                let toolCalls = AgentActivityBuilder.toolCalls(fromDisplayItems: displayItems, sessionID: id)
                 await MainActor.run {
                     self.loadingMessageSessionIDs.remove(id)
                     guard self.sessions.contains(where: { $0.id == id && $0.path == path }) else {
@@ -88,32 +95,51 @@ extension AppModel {
                 }
             }
         }
-        guard let projectDir = existingDirectoryPath(session.projectDir) else {
-            workingDirectory = session.projectDir
+        let projectDir: String
+        if sameProjectFastPath {
+            projectDir = workingDirectory
+        } else {
+            guard let existingProjectDir = existingDirectoryPath(session.projectDir) else {
+                cancelFilePreviewLoad()
+                workingDirectory = session.projectDir
+                fileTree = []
+                selectedFilePath = nil
+                filePreview = ""
+                filePreviewCleanContent = ""
+                filePreviewContentPath = nil
+                fileEditDirty = false
+                cancelDeferredWorkspaceWatch()
+                toastWarning("Project unavailable", LF("%@ no longer exists. Reopen the project folder to continue editing files.", session.projectDir))
+                mcpServers = []
+                skills = []
+                reloadMCPAndSkillsDeferred()
+                return
+            }
+            projectDir = existingProjectDir
+        }
+        let projectChanged = previousProjectDir.isEmpty || previousProjectDir != projectDir
+        workingDirectory = projectDir
+        if projectChanged {
+            cancelFilePreviewLoad()
+            fileSystem.registerWorkspace(projectDir)
             fileTree = []
             selectedFilePath = nil
             filePreview = ""
             filePreviewCleanContent = ""
+            filePreviewContentPath = nil
             fileEditDirty = false
-            directoryWatcher.unwatchAll()
-            toastWarning("Project unavailable", LF("%@ no longer exists. Reopen the project folder to continue editing files.", session.projectDir))
-            reloadMCPAndSkills()
-            return
-        }
-        let projectChanged = previousProjectDir.isEmpty || PathAccessManager.canonicalPath(previousProjectDir) != projectDir
-        workingDirectory = projectDir
-        fileSystem.registerWorkspace(projectDir)
-        if projectChanged {
+            mcpServers = []
+            skills = []
             resetWorkspaceChangeState()
-            startWatchingWorkspace()
-            reloadFileTree()
-            reloadMCPAndSkills()
+            startWatchingWorkspaceDeferred()
+            reloadFileTreeDeferred()
+            reloadMCPAndSkillsDeferred()
         } else {
             if fileTree.isEmpty {
-                reloadFileTree()
+                reloadFileTreeDeferred()
             }
             if skills.isEmpty && mcpServers.isEmpty {
-                reloadMCPAndSkills()
+                reloadMCPAndSkillsDeferred()
             }
         }
     }
@@ -157,11 +183,20 @@ extension AppModel {
             restoreComposerConfiguration(for: id)
             workingDirectory = projectDir
             resetWorkspaceChangeState()
+            cancelFilePreviewLoad()
+            fileTree = []
+            selectedFilePath = nil
+            filePreview = ""
+            filePreviewCleanContent = ""
+            filePreviewContentPath = nil
+            fileEditDirty = false
+            mcpServers = []
+            skills = []
             fileSystem.registerWorkspace(projectDir)
             rememberProject(projectDir)
-            startWatchingWorkspace()
-            reloadFileTree()
-            reloadMCPAndSkills()
+            startWatchingWorkspaceDeferred()
+            reloadFileTreeDeferred()
+            reloadMCPAndSkillsDeferred()
         }
     }
 
@@ -183,11 +218,20 @@ extension AppModel {
         restoreComposerConfiguration(for: id)
         workingDirectory = projectDir
         resetWorkspaceChangeState()
+        cancelFilePreviewLoad()
+        fileTree = []
+        selectedFilePath = nil
+        filePreview = ""
+        filePreviewCleanContent = ""
+        filePreviewContentPath = nil
+        fileEditDirty = false
+        mcpServers = []
+        skills = []
         fileSystem.registerWorkspace(projectDir)
         rememberProject(projectDir)
-        startWatchingWorkspace()
-        reloadFileTree()
-        reloadMCPAndSkills()
+        startWatchingWorkspaceDeferred()
+        reloadFileTreeDeferred()
+        reloadMCPAndSkillsDeferred()
     }
 
     func chooseWorkingDirectory() {
@@ -229,14 +273,18 @@ extension AppModel {
         composerText = preservedText
         attachments = preservedAttachments
         workingDirectory = ""
+        cancelFilePreviewLoad()
         fileTree = []
         selectedFilePath = nil
         filePreview = ""
         filePreviewCleanContent = ""
+        filePreviewContentPath = nil
         fileEditDirty = false
         resetWorkspaceChangeState()
-        directoryWatcher.unwatchAll()
-        reloadMCPAndSkills()
+        cancelDeferredWorkspaceWatch()
+        mcpServers = []
+        skills = []
+        reloadMCPAndSkillsDeferred()
     }
 
     func returnToStartScreen() {
@@ -273,18 +321,23 @@ extension AppModel {
         composerText = preservedText
         attachments = preservedAttachments
         workingDirectory = projectDir
+        cancelFilePreviewLoad()
         selectedFilePath = nil
         filePreview = ""
         filePreviewCleanContent = ""
+        filePreviewContentPath = nil
         fileEditDirty = false
         resetWorkspaceChangeState()
+        fileTree = []
+        mcpServers = []
+        skills = []
         fileSystem.registerWorkspace(projectDir)
         if remember {
             rememberProject(projectDir)
         }
-        startWatchingWorkspace()
-        reloadFileTree()
-        reloadMCPAndSkills()
+        startWatchingWorkspaceDeferred()
+        reloadFileTreeDeferred()
+        reloadMCPAndSkillsDeferred()
         if showToast {
             toastSuccess("Project selected", URL(fileURLWithPath: projectDir).lastPathComponent)
         }

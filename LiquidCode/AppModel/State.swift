@@ -81,19 +81,19 @@ extension AppModel {
         chatFindTargets(in: selectedMessages, query: chatFindText)
     }
 
-    var selectedChatFindTarget: ChatFindTarget? {
-        let targets = selectedChatFindTargets
-        guard !targets.isEmpty else {
-            return nil
-        }
-        return targets[min(max(chatFindIndex, 0), targets.count - 1)]
-    }
-
     func hasActiveTurn(for sessionID: String) -> Bool {
         pendingPermissions.contains { $0.sessionID == sessionID } ||
             !(streamingTextBySession[sessionID] ?? "").isEmpty ||
             streamingMessagesBySession[sessionID] != nil ||
             activeTurnSnapshots[sessionID] != nil
+    }
+
+    var activeSessionIDs: Set<String> {
+        var ids = Set(activeTurnSnapshots.keys)
+        ids.formUnion(streamingMessagesBySession.keys)
+        ids.formUnion(streamingTextBySession.compactMap { id, text in text.isEmpty ? nil : id })
+        ids.formUnion(pendingPermissions.map(\.sessionID))
+        return ids
     }
 
     func rebuildTranscriptDisplayItems(sessionID: String) {

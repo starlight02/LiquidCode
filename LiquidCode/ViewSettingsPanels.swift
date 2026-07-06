@@ -20,8 +20,16 @@ func toolPreviewMaxHeight(fontSize: CGFloat, verticalPadding: CGFloat = 20, visi
 
 struct ToolDisplayItemView: View {
     let item: TranscriptToolItem
-    var compact: Bool = false
-    @State private var expanded = false
+    var compact: Bool
+    var autoExpanded: Bool
+    @State private var expanded: Bool
+
+    init(item: TranscriptToolItem, compact: Bool = false, autoExpanded: Bool = false) {
+        self.item = item
+        self.compact = compact
+        self.autoExpanded = autoExpanded
+        _expanded = State(initialValue: autoExpanded)
+    }
 
     private var payload: String {
         cleanToolPayload(item.content)
@@ -127,6 +135,14 @@ struct ToolDisplayItemView: View {
             Spacer(minLength: compact ? 0 : 60)
         }
         .padding(.vertical, compact ? 0 : 2)
+        .onChange(of: autoExpanded) { _, shouldExpand in
+            withAnimation(.snappy(duration: 0.18)) {
+                expanded = shouldExpand
+            }
+        }
+        .onChange(of: item.id) { _, _ in
+            expanded = autoExpanded
+        }
     }
 
     @ViewBuilder private var toolSummary: some View {
@@ -297,10 +313,13 @@ struct ToolDiffSectionView: View {
 
 struct ToolMessageGroupView: View {
     let items: [TranscriptToolItem]
+    var autoExpandedToolItemID: String?
     @State private var expanded: Bool
-    init(items: [TranscriptToolItem]) {
+
+    init(items: [TranscriptToolItem], autoExpandedToolItemID: String? = nil) {
         self.items = items
-        _expanded = State(initialValue: items.count <= 2 || !TranscriptToolRunCompletion.isComplete(items))
+        self.autoExpandedToolItemID = autoExpandedToolItemID
+        _expanded = State(initialValue: autoExpandedToolItemID != nil)
     }
 
     private var allComplete: Bool {
@@ -345,7 +364,9 @@ struct ToolMessageGroupView: View {
                 .help(expanded ? L("Collapse tool run") : L("Expand tool run"))
                 if expanded {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(items) { ToolDisplayItemView(item: $0, compact: true) }
+                        ForEach(items) { item in
+                            ToolDisplayItemView(item: item, compact: true, autoExpanded: item.id == autoExpandedToolItemID)
+                        }
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -357,6 +378,16 @@ struct ToolMessageGroupView: View {
             Spacer(minLength: 60)
         }
         .padding(.vertical, 2)
+        .onChange(of: autoExpandedToolItemID) { _, itemID in
+            withAnimation(.snappy(duration: 0.18)) {
+                expanded = itemID != nil
+            }
+        }
+        .onChange(of: items.map(\.id).joined(separator: "|")) { _, _ in
+            if autoExpandedToolItemID != nil {
+                expanded = true
+            }
+        }
     }
 }
 
@@ -2192,13 +2223,20 @@ func flattenFileNodes(_ nodes: [FileNode], query: String) -> [FileNode] {
         return []
     }
     var result: [FileNode] = []
+    result.reserveCapacity(min(nodes.count, 128))
+    appendMatchingFileNodes(nodes, needle: needle, into: &result)
+    return result
+}
+
+private func appendMatchingFileNodes(_ nodes: [FileNode], needle: String, into result: inout [FileNode]) {
     for node in nodes {
         if node.name.localizedCaseInsensitiveContains(needle) || node.path.localizedCaseInsensitiveContains(needle) {
             result.append(node)
         }
-        result.append(contentsOf: flattenFileNodes(node.children, query: needle))
+        if !node.children.isEmpty {
+            appendMatchingFileNodes(node.children, needle: needle, into: &result)
+        }
     }
-    return result
 }
 
 struct SkillsPanelView: View {

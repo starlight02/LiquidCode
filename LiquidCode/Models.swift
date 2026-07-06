@@ -241,6 +241,7 @@ struct SessionRecord: Identifiable, Codable, Hashable, Sendable {
     var cliResumeID: String?
     var lastCheckpointUUID: String?
     var customTitle: String?
+    var generatedTitle: String?
     var pinned: Bool = false
     var archived: Bool = false
     var isDraft: Bool = false
@@ -248,6 +249,9 @@ struct SessionRecord: Identifiable, Codable, Hashable, Sendable {
     var title: String {
         if let customTitle, !customTitle.isEmpty {
             return customTitle
+        }
+        if let generatedTitle, !generatedTitle.isEmpty {
+            return generatedTitle
         }
         if !preview.isEmpty {
             return preview

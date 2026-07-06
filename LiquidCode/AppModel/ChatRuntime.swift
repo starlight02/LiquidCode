@@ -56,9 +56,9 @@ extension AppModel {
             if hasExplicitWorkingDirectory {
                 rememberProject(projectDir)
             }
-            startWatchingWorkspace()
-            reloadFileTree()
-            reloadMCPAndSkills()
+            startWatchingWorkspaceDeferred()
+            reloadFileTreeDeferred()
+            reloadMCPAndSkillsDeferred()
         }
 
         guard let id = selectedSessionID else { return }
@@ -232,32 +232,71 @@ extension AppModel {
         }
     }
 
-    func startWatchingWorkspace() {
+    func startWatchingWorkspaceDeferred() {
         guard !workingDirectory.isEmpty else {
+            cancelDeferredWorkspaceWatch()
             return
         }
         guard let root = existingDirectoryPath(workingDirectory) else {
-            directoryWatcher.unwatchAll()
+            cancelDeferredWorkspaceWatch()
             fileTree = []
             toastWarning("Project unavailable", LF("%@ no longer exists. File watching is paused.", workingDirectory))
             return
         }
         workingDirectory = root
-        do {
-            directoryWatcher.unwatchAll()
-            try directoryWatcher.watchDirectory(root) { [weak self] paths in
-                Task { @MainActor in
+        workspaceWatchGeneration &+= 1
+        let generation = workspaceWatchGeneration
+        let token = DirectoryWatchManager.WatchToken()
+        directoryWatcher.requestWatchDirectory(root, token: token)
+        workspaceWatchTask?.cancel()
+        workspaceWatchTask = Task.detached(priority: .utility) { [weak self, directoryWatcher] in
+            guard !Task.isCancelled else {
+                directoryWatcher.cancelRequestedWatch(root, token: token)
+                return
+            }
+            do {
+                try directoryWatcher.watchRequestedDirectory(root, token: token) { [weak self] paths in
+                    Task { @MainActor [weak self] in
+                        self?.handleWorkspaceChange(paths, root: root, generation: generation)
+                    }
+                }
+            } catch {
+                await MainActor.run { [weak self] in
                     guard let self else {
+                        directoryWatcher.cancelRequestedWatch(root, token: token)
                         return
                     }
-                    for path in paths {
-                        self.changedFiles.insert(path)
-                        self.fileChangeBadges[path] = self.fileChangeBadges[path] ?? "M"
+                    guard
+                        generation == workspaceWatchGeneration,
+                        (existingDirectoryPath(workingDirectory) ?? workingDirectory) == root else {
+                        directoryWatcher.cancelRequestedWatch(root, token: token)
+                        return
                     }
-                    self.reloadFileTree()
+                    self.directoryWatcher.cancelRequestedWatch(root, token: token)
+                    showError("Watch failed", error.localizedDescription)
                 }
             }
-        } catch { showError("Watch failed", error.localizedDescription) }
+        }
+    }
+
+    func cancelDeferredWorkspaceWatch() {
+        workspaceWatchGeneration &+= 1
+        workspaceWatchTask?.cancel()
+        workspaceWatchTask = nil
+        directoryWatcher.unwatchAll()
+    }
+
+    private func handleWorkspaceChange(_ paths: [String], root: String, generation: Int) {
+        guard
+            generation == workspaceWatchGeneration,
+            (existingDirectoryPath(workingDirectory) ?? workingDirectory) == root else {
+            return
+        }
+        for path in paths {
+            changedFiles.insert(path)
+            fileChangeBadges[path] = fileChangeBadges[path] ?? "M"
+        }
+        reloadFileTreeDeferred(debounceNanoseconds: 80_000_000)
     }
 
     func resetWorkspaceChangeState() {

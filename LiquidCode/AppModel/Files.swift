@@ -2,8 +2,32 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
+private let filePreviewImageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff"]
+
+private func filePreviewModeForExtension(_ ext: String) -> FilePreviewMode {
+    if ext == "html" || ext == "htm" || ext == "xhtml" {
+        return .html
+    }
+    if ext == "md" || ext == "mdx" {
+        return .preview
+    }
+    return .source
+}
+
+private func filePreviewContentForPath(_ path: String, ext explicitExt: String? = nil, sessionID: String?) throws -> String {
+    let ext = explicitExt ?? URL(fileURLWithPath: path).pathExtension.lowercased()
+    if filePreviewImageExtensions.contains(ext) {
+        let info = try? FileSystemService().imageInfo(path, sessionID: sessionID)
+        let size = info?.size ?? L("unknown size")
+        let dimensions = info?.dimensions ?? L("unknown dimensions")
+        return LF("Image preview\n\nPath: %@\nSize: %@\nDimensions: %@\n\nUse Open or Reveal for the native image viewer.", path, size, dimensions)
+    }
+    return try FileSystemService().readText(path, sessionID: sessionID)
+}
+
 extension AppModel {
     func reloadFileTree() {
+        cancelDeferredFileTreeReload()
         guard !workingDirectory.isEmpty else {
             fileTree = []; return
         }
@@ -16,36 +40,110 @@ extension AppModel {
         ) }
     }
 
-    func openFile(_ path: String) {
-        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
-        if ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff"].contains(ext) {
-            let info = try? fileSystem.imageInfo(path, sessionID: selectedSessionID)
-            let size = info?.size ?? L("unknown size")
-            let dimensions = info?.dimensions ?? L("unknown dimensions")
-            let preview = LF("Image preview\n\nPath: %@\nSize: %@\nDimensions: %@\n\nUse Open or Reveal for the native image viewer.", path, size, dimensions)
-            selectedFilePath = path
-            filePreview = preview
-            filePreviewCleanContent = preview
-            fileEditDirty = false
-            filePreviewMode = .preview
-            secondaryTab = .files
+    func reloadFileTreeDeferred(debounceNanoseconds: UInt64 = 0) {
+        guard !workingDirectory.isEmpty else {
+            cancelDeferredFileTreeReload()
+            fileTree = []
             return
         }
-        do {
-            let text = try fileSystem.readText(path, sessionID: selectedSessionID)
-            selectedFilePath = path
-            filePreview = text
-            filePreviewCleanContent = text
-            fileEditDirty = false
-            if ext == "html" || ext == "htm" || ext == "xhtml" {
-                filePreviewMode = .html
-            } else if ext == "md" || ext == "mdx" {
-                filePreviewMode = .preview
-            } else {
-                filePreviewMode = .source
+        guard let root = existingDirectoryPath(workingDirectory) else {
+            cancelDeferredFileTreeReload()
+            fileTree = []
+            return
+        }
+        fileTreeReloadGeneration &+= 1
+        let generation = fileTreeReloadGeneration
+        fileTreeReloadTask?.cancel()
+        fileTreeReloadTask = Task.detached(priority: .utility) {
+            if debounceNanoseconds > 0 {
+                do { try await Task.sleep(nanoseconds: debounceNanoseconds) } catch { return }
             }
-            secondaryTab = .files
-        } catch { showError("Read file failed", error.localizedDescription) }
+            guard !Task.isCancelled else {
+                return
+            }
+            let loadedTree: [FileNode]
+            let failureMessage: String?
+            do {
+                loadedTree = try FileSystemService().loadTree(root: URL(fileURLWithPath: root), sessionID: nil)
+                failureMessage = nil
+            } catch {
+                loadedTree = []
+                failureMessage = error.localizedDescription
+            }
+            guard !Task.isCancelled else {
+                return
+            }
+            await MainActor.run {
+                guard
+                    generation == self.fileTreeReloadGeneration,
+                    (self.existingDirectoryPath(self.workingDirectory) ?? self.workingDirectory) == root else {
+                    return
+                }
+                if let failureMessage {
+                    self.fileTree = []
+                    self.showError("Load files failed", failureMessage)
+                } else {
+                    self.fileTree = loadedTree
+                }
+            }
+        }
+    }
+
+    private func cancelDeferredFileTreeReload() {
+        fileTreeReloadGeneration &+= 1
+        fileTreeReloadTask?.cancel()
+        fileTreeReloadTask = nil
+    }
+
+    func cancelFilePreviewLoad() {
+        filePreviewLoadGeneration &+= 1
+        filePreviewLoadTask?.cancel()
+        filePreviewLoadTask = nil
+        filePreviewLoadingPath = nil
+    }
+
+    func openFile(_ path: String) {
+        cancelFilePreviewLoad()
+        let generation = filePreviewLoadGeneration
+        let sessionID = selectedSessionID
+        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        selectedFilePath = path
+        filePreview = ""
+        filePreviewCleanContent = ""
+        filePreviewContentPath = nil
+        filePreviewLoadingPath = path
+        fileEditDirty = false
+        filePreviewMode = filePreviewImageExtensions.contains(ext) ? .preview : filePreviewModeForExtension(ext)
+        secondaryTab = .files
+        filePreviewLoadTask = Task.detached(priority: .userInitiated) {
+            let result = Result { try filePreviewContentForPath(path, ext: ext, sessionID: sessionID) }
+            guard !Task.isCancelled else {
+                return
+            }
+            await MainActor.run {
+                guard
+                    generation == self.filePreviewLoadGeneration,
+                    self.selectedFilePath == path,
+                    self.selectedSessionID == sessionID,
+                    self.filePreviewLoadingPath == path,
+                    !self.fileEditDirty,
+                    self.filePreview == self.filePreviewCleanContent else {
+                    return
+                }
+                self.filePreviewLoadingPath = nil
+                switch result {
+                case let .success(content):
+                    self.filePreview = content
+                    self.filePreviewCleanContent = content
+                    self.filePreviewContentPath = path
+                case let .failure(error):
+                    self.filePreview = ""
+                    self.filePreviewCleanContent = ""
+                    self.filePreviewContentPath = nil
+                    self.showError("Read file failed", error.localizedDescription)
+                }
+            }
+        }
     }
 
     func markFilePreviewEdited() {
@@ -55,15 +153,24 @@ extension AppModel {
         fileEditDirty = filePreview != filePreviewCleanContent
     }
 
+    var selectedFilePreviewCanSave: Bool {
+        guard selectedFilePath != nil else {
+            return false
+        }
+        return fileEditDirty || filePreviewContentPath.map { sameFilePath($0, selectedFilePath) } == true
+    }
+
     func saveSelectedFile() {
-        guard let path = selectedFilePath else {
+        guard let path = selectedFilePath, selectedFilePreviewCanSave else {
             return
         }
         do {
             try fileSystem.writeText(path, text: filePreview, sessionID: selectedSessionID)
+            cancelFilePreviewLoad()
             changedFiles.insert(path)
             fileChangeBadges[path] = fileChangeBadges[path] == "A" ? "A" : "M"
             filePreviewCleanContent = filePreview
+            filePreviewContentPath = path
             fileEditDirty = false
             reloadFileTree()
             if URL(fileURLWithPath: path).lastPathComponent == "SKILL.md" {
@@ -109,7 +216,12 @@ extension AppModel {
 
     @discardableResult func requestOpenFile(_ path: String) -> Bool {
         if sameFilePath(selectedFilePath, path) {
-            secondaryTab = .files; return true
+            secondaryTab = .files
+            if fileEditDirty || filePreviewLoadingPath.map({ sameFilePath($0, path) }) == true || filePreviewContentPath.map({ sameFilePath($0, path) }) == true {
+                return true
+            }
+            openFile(path)
+            return sameFilePath(selectedFilePath, path)
         }
         guard resolveDirtyFileChange() else {
             return false
@@ -122,9 +234,11 @@ extension AppModel {
         guard resolveDirtyFileChange() else {
             return
         }
+        cancelFilePreviewLoad()
         selectedFilePath = nil
         filePreview = ""
         filePreviewCleanContent = ""
+        filePreviewContentPath = nil
         fileEditDirty = false
     }
 
@@ -133,9 +247,11 @@ extension AppModel {
             guard resolveDirtyFileChange() else {
                 return false
             }
+            cancelFilePreviewLoad()
             selectedFilePath = path
             filePreview = ""
             filePreviewCleanContent = ""
+            filePreviewContentPath = nil
             fileEditDirty = false
         }
         return true
@@ -205,16 +321,7 @@ extension AppModel {
     }
 
     func requestInsertFileContent(_ path: String) {
-        if !sameFilePath(selectedFilePath, path) {
-            guard resolveDirtyFileChange() else {
-                return
-            }
-            openFile(path)
-        }
-        guard sameFilePath(selectedFilePath, path) else {
-            return
-        }
-        insertSelectedContentIntoChat()
+        insertFileContentIntoChat(path)
     }
 
     func revealSelectedFile() {
@@ -278,26 +385,40 @@ extension AppModel {
             return
         }
         let dest = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent(newName).path
+        let previewBelongsToRenamedFile = fileEditDirty || filePreviewContentPath.map { sameFilePath($0, path) } == true
         do {
-            try fileSystem.rename(path, to: dest, sessionID: selectedSessionID); changedFiles.insert(path); changedFiles
-                .insert(dest); fileChangeBadges[path] = "D"; fileChangeBadges[dest] = "A"; selectedFilePath = dest; filePreviewCleanContent = filePreview; fileEditDirty =
-                false; reloadFileTree(); toastSuccess(
-                    "Renamed",
-                    newName
-                ) } catch { showError("Rename failed", error.localizedDescription) }
+            cancelFilePreviewLoad()
+            try fileSystem.rename(path, to: dest, sessionID: selectedSessionID)
+            changedFiles.insert(path)
+            changedFiles.insert(dest)
+            fileChangeBadges[path] = "D"
+            fileChangeBadges[dest] = "A"
+            selectedFilePath = dest
+            filePreviewCleanContent = filePreview
+            filePreviewContentPath = previewBelongsToRenamedFile ? dest : nil
+            fileEditDirty = false
+            reloadFileTree()
+            toastSuccess("Renamed", newName)
+        } catch { showError("Rename failed", error.localizedDescription) }
     }
 
     func deleteSelectedFile() {
         guard let path = selectedFilePath else {
             return
         }
+        cancelFilePreviewLoad()
         do {
-            try fileSystem.delete(path, sessionID: selectedSessionID); changedFiles
-                .insert(path); fileChangeBadges[path] = "D"; selectedFilePath = nil; filePreview = ""; filePreviewCleanContent = ""; fileEditDirty =
-                false; reloadFileTree(); toastSuccess(
-                    "Deleted",
-                    URL(fileURLWithPath: path).lastPathComponent
-                ) } catch { showError("Delete failed", error.localizedDescription) }
+            try fileSystem.delete(path, sessionID: selectedSessionID)
+            changedFiles.insert(path)
+            fileChangeBadges[path] = "D"
+            selectedFilePath = nil
+            filePreview = ""
+            filePreviewCleanContent = ""
+            filePreviewContentPath = nil
+            fileEditDirty = false
+            reloadFileTree()
+            toastSuccess("Deleted", URL(fileURLWithPath: path).lastPathComponent)
+        } catch { showError("Delete failed", error.localizedDescription) }
     }
 
     func copySelectedPath() {
@@ -313,9 +434,36 @@ extension AppModel {
         } }
 
     func insertSelectedContentIntoChat() {
-        if !filePreview.isEmpty {
+        guard let path = selectedFilePath else {
+            return
+        }
+        if fileEditDirty {
             appendToComposer("\n\n```\n\(filePreview)\n```")
-        } }
+            return
+        }
+        if filePreviewLoadingPath.map({ sameFilePath($0, path) }) == true {
+            insertFileContentIntoChat(path)
+            return
+        }
+        if filePreviewContentPath.map({ sameFilePath($0, path) }) == true {
+            if !filePreview.isEmpty {
+                appendToComposer("\n\n```\n\(filePreview)\n```")
+            }
+            return
+        }
+        insertFileContentIntoChat(path)
+    }
+
+    private func insertFileContentIntoChat(_ path: String) {
+        do {
+            let content = try filePreviewContentForPath(path, sessionID: selectedSessionID)
+            if !content.isEmpty {
+                appendToComposer("\n\n```\n\(content)\n```")
+            }
+        } catch {
+            showError("Read file failed", error.localizedDescription)
+        }
+    }
 
     func shareSelectedFile() {
         if let path = selectedFilePath {
