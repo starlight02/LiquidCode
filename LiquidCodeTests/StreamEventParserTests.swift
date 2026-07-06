@@ -152,6 +152,101 @@ final class StreamEventParserTests: XCTestCase {
         })
     }
 
+    func testToolResultTranscriptMessageDoesNotRenderAsUserInput() throws {
+        let object: [String: Any] = [
+            "type": "user",
+            "uuid": "tool-result-message",
+            "message": [
+                "role": "user",
+                "content": [
+                    ["type": "tool_result", "tool_use_id": "tool-1", "content": "API Error: overloaded_error"]
+                ]
+            ]
+        ]
+
+        let message = try XCTUnwrap(StreamEventParser.messageFromJSONObject(object, fallbackID: "fallback"))
+        XCTAssertEqual(message.role, .tool)
+        XCTAssertNil(message.checkpointUuid)
+
+        let items = TranscriptDisplayBuilder.displayItems(messages: [message])
+        XCTAssertEqual(items.count, 1)
+        guard case .tool(let item) = try XCTUnwrap(items.first) else {
+            return XCTFail("tool_result protocol messages must render as tool output, not as a user bubble")
+        }
+        XCTAssertEqual(item.kind, .result)
+        XCTAssertEqual(item.toolUseID, "tool-1")
+        XCTAssertEqual(item.content, "API Error: overloaded_error")
+    }
+
+    @MainActor
+    func testAssistantProviderErrorRendersAsErrorAndStopsStreaming() throws {
+        let model = AppModel()
+        model.selectedSessionID = "session-1"
+        model.handle(.textDelta(sessionID: "session-1", text: "partial assistant text"))
+        XCTAssertNotNil(model.selectedStreamingMessage)
+
+        let object: [String: Any] = [
+            "type": "assistant",
+            "uuid": "assistant-provider-error",
+            "message": [
+                "role": "assistant",
+                "content": [
+                    ["type": "text", "text": "API Error: 529 overloaded_error\nUpstream provider overloaded."]
+                ]
+            ]
+        ]
+
+        let message = try XCTUnwrap(StreamEventParser.messageFromJSONObject(object, fallbackID: "fallback"))
+        XCTAssertEqual(message.role, .error)
+        XCTAssertNotEqual(message.role, .assistant)
+
+        for event in StreamEventParser.events(from: object, sessionID: "session-1") {
+            model.handle(event)
+        }
+
+        XCTAssertNil(model.selectedStreamingMessage)
+        guard case .message(let item) = try XCTUnwrap(model.selectedTranscriptDisplayItems.first) else {
+            return XCTFail("provider failures must render as error transcript messages")
+        }
+        XCTAssertEqual(item.role, .error)
+        XCTAssertTrue(item.content.contains("overloaded_error"))
+    }
+
+    func testTaskProtocolXMLRendersAsError() throws {
+        let object: [String: Any] = [
+            "type": "user",
+            "uuid": "task-notification-message",
+            "message": [
+                "role": "user",
+                "content": [
+                    ["type": "text", "text": """
+                    <task-notification>
+                    <task-id>a3f942942d1e9a4f8</task-id>
+                    <tool-use-id>call_QCyb3BpwqJQH61FlQoqdxrCk</tool-use-id>
+                    <output-file>/private/tmp/claude/tasks/a3f942942d1e9a4f8.output</output-file>
+                    <status>failed</status>
+                    <summary>Agent \"Explore session core\" failed: API Error: 500 not implemented.</summary>
+                    <note>A task-notification fires each time this agent stops.</note>
+                    </task-notification>
+                    """]
+                ]
+            ]
+        ]
+
+        let message = try XCTUnwrap(StreamEventParser.messageFromJSONObject(object, fallbackID: "fallback"))
+        XCTAssertEqual(message.role, .error)
+        XCTAssertEqual(message.toolName, "Task failed")
+        XCTAssertEqual(message.content, "Agent \"Explore session core\" failed: API Error: 500 not implemented.")
+        XCTAssertFalse(message.content.contains("<task-notification>"))
+        XCTAssertFalse(message.content.contains("/private/tmp/claude"))
+        XCTAssertNil(message.checkpointUuid)
+
+        guard case .message(let item) = try XCTUnwrap(TranscriptDisplayBuilder.displayItems(messages: [message]).first) else {
+            return XCTFail("task-notification protocol messages must render as an error, not as a user bubble")
+        }
+        XCTAssertEqual(item.role, .error)
+    }
+
     func testContentBlockStreamingEventsExposeStructuredBlocks() throws {
         let start: [String: Any] = [
             "type": "content_block_start",
@@ -199,6 +294,48 @@ final class StreamEventParserTests: XCTestCase {
             return XCTFail("expected thinking stream delta")
         }
         XCTAssertEqual(thinking, "I should inspect the project.")
+    }
+
+    @MainActor
+    func testStreamingToolUseWithEmptyInputAppendsDeltaWithoutSyntheticObjectPrefix() throws {
+        let start: [String: Any] = [
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": [
+                "type": "tool_use",
+                "id": "tool-stream-1",
+                "name": "Bash",
+                "input": [:]
+            ]
+        ]
+        let inputDelta: [String: Any] = [
+            "type": "content_block_delta",
+            "index": 1,
+            "delta": [
+                "type": "input_json_delta",
+                "partial_json": #"{"command":"echo hi"}"#
+            ]
+        ]
+
+        let model = AppModel()
+        model.selectedSessionID = "session-1"
+
+        for event in StreamEventParser.events(from: start, sessionID: "session-1") {
+            model.handle(event)
+        }
+        let startedBlock = try XCTUnwrap(model.selectedStreamingMessage?.blocks.first { $0.kind == .toolUse })
+        XCTAssertEqual(
+            startedBlock.inputJSON,
+            "",
+            "An empty streaming tool input is incomplete JSON, not a completed empty object."
+        )
+
+        for event in StreamEventParser.events(from: inputDelta, sessionID: "session-1") {
+            model.handle(event)
+        }
+        let updatedBlock = try XCTUnwrap(model.selectedStreamingMessage?.blocks.first { $0.kind == .toolUse })
+        XCTAssertEqual(updatedBlock.inputJSON, #"{"command":"echo hi"}"#)
+        XCTAssertFalse(updatedBlock.inputJSON?.hasPrefix("{}") == true)
     }
 
     func testUserImageContentBlockParsesAsRenderableImage() throws {
@@ -396,6 +533,60 @@ final class StreamEventParserTests: XCTestCase {
         XCTAssertEqual(message.content, "User interrupted the request.")
         XCTAssertFalse(message.content.contains("[Request interrupted by user]"))
         XCTAssertNil(message.checkpointUuid)
+    }
+
+    func testLocalCommandStdoutRendersAsSystemEventWithoutANSIOrUserRole() throws {
+        let object: [String: Any] = [
+            "type": "user",
+            "uuid": "model-stdout",
+            "message": [
+                "role": "user",
+                "content": "<local-command-stdout>Set model to \u{1B}[1mOpus 4.8\u{1B}[22m and saved as your default for new sessions</local-command-stdout>"
+            ]
+        ]
+
+        let message = try XCTUnwrap(StreamEventParser.messageFromJSONObject(object, fallbackID: "fallback"))
+        XCTAssertEqual(message.role, .system)
+        XCTAssertEqual(message.toolName, "Command output")
+        XCTAssertEqual(message.content, "Set model to Opus 4.8 and saved as your default for new sessions")
+        XCTAssertFalse(message.content.contains("\u{1B}"))
+        XCTAssertFalse(message.content.contains("<local-command-stdout>"))
+        XCTAssertNil(message.checkpointUuid)
+
+        let events = StreamEventParser.events(from: object, sessionID: "session-1")
+        XCTAssertTrue(events.contains { event in
+            if case .message(_, let parsed) = event {
+                return parsed.id == "model-stdout" && parsed.role == .system
+            }
+            return false
+        })
+    }
+
+    func testCompactSummaryRendersAsSystemEventWithoutUserRoleOrCheckpoint() throws {
+        let object: [String: Any] = [
+            "type": "user",
+            "uuid": "compact-summary",
+            "isCompactSummary": true,
+            "isVisibleInTranscriptOnly": true,
+            "message": [
+                "role": "user",
+                "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation."
+            ]
+        ]
+
+        let message = try XCTUnwrap(StreamEventParser.messageFromJSONObject(object, fallbackID: "fallback"))
+        XCTAssertEqual(message.role, .system)
+        XCTAssertEqual(message.toolName, "Context summary")
+        XCTAssertTrue(message.content.hasPrefix("This session is being continued"))
+        XCTAssertNil(message.checkpointUuid)
+
+        let events = StreamEventParser.events(from: object, sessionID: "session-1")
+        XCTAssertTrue(events.contains { event in
+            if case .message(_, let parsed) = event {
+                return parsed.id == "compact-summary" && parsed.role == .system
+            }
+            return false
+        })
     }
 
     func testSystemLocalCommandProtocolCanRenderAsReadableControlEvent() throws {

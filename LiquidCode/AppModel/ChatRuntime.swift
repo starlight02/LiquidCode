@@ -181,7 +181,7 @@ extension AppModel {
                 backfillCheckpoint(checkpoint, echo: message, sessionID: sessionID)
                 return
             }
-            if message.role == .assistant {
+            if message.role == .assistant || message.role == .error {
                 clearStreamingMessage(sessionID: sessionID)
             }
             appendMessage(message, sessionID: sessionID)

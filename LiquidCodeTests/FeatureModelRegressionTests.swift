@@ -293,6 +293,52 @@ final class FeatureModelRegressionTests: XCTestCase {
         XCTAssertEqual(fromDisplayItems.map(\.parentID), [nil, "assistant-structured", nil, "legacy-tool"])
     }
 
+    func testTranscriptDisplayBuilderRendersStructuredToolResultOnlyMessageAsToolOutput() throws {
+        let message = ChatMessage(
+            id: "tool-result-message",
+            role: .tool,
+            content: "",
+            blocks: [
+                ChatContentBlock(
+                    id: "tool-1-result",
+                    kind: .toolResult,
+                    text: "API Error: overloaded_error",
+                    toolUseID: "tool-1",
+                    isError: true
+                )
+            ]
+        )
+
+        let displayItems = TranscriptDisplayBuilder.displayItems(messages: [message])
+
+        XCTAssertEqual(displayItems.count, 1)
+        guard case .tool(let item) = try XCTUnwrap(displayItems.first) else {
+            return XCTFail("tool_result-only protocol messages must render as tool output, not a user bubble")
+        }
+        XCTAssertEqual(item.kind, .result)
+        XCTAssertEqual(item.toolUseID, "tool-1")
+        XCTAssertEqual(item.content, "API Error: overloaded_error")
+        XCTAssertTrue(item.isError)
+    }
+
+    func testTranscriptDisplayBuilderPreservesProviderFailureAsErrorMessage() throws {
+        let message = ChatMessage(
+            id: "assistant-provider-error",
+            role: .error,
+            content: "API Error: 529 overloaded_error\nUpstream provider overloaded."
+        )
+
+        let displayItems = TranscriptDisplayBuilder.displayItems(messages: [message])
+
+        XCTAssertEqual(displayItems.count, 1)
+        guard case .message(let item) = try XCTUnwrap(displayItems.first) else {
+            return XCTFail("provider failures must render as transcript error messages")
+        }
+        XCTAssertEqual(item.role, .error)
+        XCTAssertNotEqual(item.role, .assistant)
+        XCTAssertTrue(item.content.contains("overloaded_error"))
+    }
+
     func testTranscriptAutoScrollTokenTracksOnlyLightweightTranscriptBoundaries() {
         let first = ChatMessage(id: "first", role: .user, content: "first")
         let middle = ChatMessage(id: "middle", role: .assistant, content: "middle")

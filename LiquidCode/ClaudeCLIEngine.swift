@@ -547,16 +547,17 @@ enum StreamEventParser {
         }
         let message = obj["message"] as? [String: Any]
         let roleRaw = message?["role"] as? String ?? obj["role"] as? String ?? type
-        let role: ChatMessage.Role = (roleRaw == "user" || roleRaw == "human") ? .user : roleRaw == "system" ? .system : roleRaw == "tool" ? .tool : .assistant
+        let rawRole = chatRole(from: roleRaw)
         let id = obj["uuid"] as? String ?? obj["id"] as? String ?? fallbackID
         let contentAny = message?["content"] ?? obj["content"]
         let raw = (try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])).map { String(data: $0, encoding: .utf8) ?? "" }
         let parentID = obj["parent_uuid"] as? String ?? obj["parentUuid"] as? String ?? obj["parent_id"] as? String ?? obj["parentId"] as? String
         let timestamp = SessionJSONLCodec.parseTimestamp(obj["timestamp"]) ?? Date()
         if let control = claudeControlTranscriptEvent(from: contentAny) {
+            let role: ChatMessage.Role = control.kind == .taskFailure ? .error : .system
             return ChatMessage(
                 id: id,
-                role: .system,
+                role: role,
                 content: control.body,
                 timestamp: timestamp,
                 toolName: control.title,
@@ -566,8 +567,27 @@ enum StreamEventParser {
                 blocks: [ChatContentBlock(kind: .text, text: control.body, rawType: control.kind.rawValue)]
             )
         }
+        if obj["isCompactSummary"] as? Bool == true {
+            let rendered = renderMessageContent(contentAny)
+            let summary = rendered.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !summary.isEmpty else {
+                return nil
+            }
+            return ChatMessage(
+                id: id,
+                role: .system,
+                content: summary,
+                timestamp: timestamp,
+                toolName: "Context summary",
+                rawJSON: raw,
+                parentID: parentID,
+                checkpointUuid: nil,
+                blocks: [ChatContentBlock(kind: .text, text: summary, rawType: "compact_summary")]
+            )
+        }
         let rendered = renderMessageContent(contentAny)
         let content = rendered.text
+        let role = transcriptRole(rawRole: rawRole, content: content, rendered: rendered)
         let toolName = firstToolName(in: contentAny)
         if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, toolName == nil, rendered.images.isEmpty, rendered.blocks.isEmpty {
             return nil
@@ -642,6 +662,61 @@ enum StreamEventParser {
             return arr.contains { containsToolResult($0) }
         }
         return false
+    }
+
+    private static func chatRole(from raw: String) -> ChatMessage.Role {
+        switch raw {
+        case "user", "human":
+            return .user
+        case "system":
+            return .system
+        case "tool":
+            return .tool
+        default:
+            return .assistant
+        }
+    }
+
+    private static func transcriptRole(
+        rawRole: ChatMessage.Role,
+        content: String,
+        rendered: RenderedMessageContent
+    ) -> ChatMessage.Role {
+        if rawRole == .assistant, isProviderErrorTranscript(content) {
+            return .error
+        }
+        if rawRole == .user, isToolOnlyTranscript(rendered) {
+            return .tool
+        }
+        return rawRole
+    }
+
+    private static func isToolOnlyTranscript(_ rendered: RenderedMessageContent) -> Bool {
+        guard !rendered.blocks.isEmpty, rendered.images.isEmpty else {
+            return false
+        }
+        guard rendered.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return rendered.blocks.allSatisfy { $0.kind == .toolResult }
+    }
+
+    private static func isProviderErrorTranscript(_ content: String) -> Bool {
+        let firstLine = content
+            .components(separatedBy: .newlines)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let lower = firstLine.lowercased()
+        let fullLower = content.lowercased()
+        return lower.hasPrefix("api error") ||
+            lower.hasPrefix("provider error") ||
+            lower.hasPrefix("anthropic error") ||
+            lower.hasPrefix("openai error") ||
+            fullLower.contains("type=new_api_error") ||
+            fullLower.contains("overloaded_error") ||
+            fullLower.contains("rate_limit_error") ||
+            fullLower.contains("authentication_error") ||
+            fullLower.contains("invalid token")
     }
 
     private static func controlEvents(from obj: [String: Any], sessionID: String) -> [ClaudeEvent] {
@@ -765,7 +840,7 @@ enum StreamEventParser {
         let index = obj["index"] as? Int ?? obj["content_block_index"] as? Int ?? obj["contentBlockIndex"] as? Int
         if
             let contentBlock = obj["content_block"] as? [String: Any] ?? obj["contentBlock"] as? [String: Any],
-            let block = chatContentBlock(from: contentBlock) {
+            let block = streamingChatContentBlock(from: contentBlock) {
             return StreamingBlockStart(index: index, block: block)
         }
         if type == "agent.thinking" {
@@ -782,7 +857,7 @@ enum StreamEventParser {
                 kind: .toolUse,
                 toolUseID: id,
                 toolName: name,
-                inputJSON: jsonString(obj["input"] ?? [:]),
+                inputJSON: streamingToolInputJSON(from: obj["input"]),
                 rawType: type,
                 rawJSON: jsonString(obj)
             ))
@@ -979,6 +1054,33 @@ enum StreamEventParser {
             )
         }
         return RenderedMessageContent(text: "", images: [], blocks: [])
+    }
+
+    private static func streamingChatContentBlock(from item: [String: Any]) -> ChatContentBlock? {
+        guard (item["type"] as? String ?? "") == "tool_use" else {
+            return chatContentBlock(from: item)
+        }
+        let id = item["id"] as? String ?? UUID().uuidString
+        let name = item["name"] as? String ?? "Tool"
+        return ChatContentBlock(
+            id: id,
+            kind: .toolUse,
+            toolUseID: id,
+            toolName: name,
+            inputJSON: streamingToolInputJSON(from: item["input"]),
+            rawType: "tool_use",
+            rawJSON: jsonString(item)
+        )
+    }
+
+    private static func streamingToolInputJSON(from value: Any?) -> String {
+        guard let value else {
+            return ""
+        }
+        if let input = value as? [String: Any], input.isEmpty {
+            return ""
+        }
+        return jsonString(value)
     }
 
     private static func chatContentBlock(from item: [String: Any]) -> ChatContentBlock? {

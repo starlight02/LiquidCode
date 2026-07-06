@@ -2,7 +2,7 @@
 import XCTest
 
 final class TranscriptAutoExpansionRegressionTests: XCTestCase {
-    func testTranscriptAutoExpansionPolicyExpandsLatestStreamingToolRunItem() throws {
+    func testCommittedIncompleteToolRunAutoExpandsWhileTurnIsActiveWithoutStreamingItems() throws {
         let message = ChatMessage(
             id: "assistant-stream-tools",
             role: .assistant,
@@ -145,5 +145,60 @@ final class TranscriptAutoExpansionRegressionTests: XCTestCase {
         }
         XCTAssertEqual(runItems.map(\.kind), [.use, .use, .result])
         XCTAssertFalse(TranscriptToolRunCompletion.isComplete(runItems))
+    }
+
+    @MainActor
+    func testAutoScrollTokenChangesWhenStreamingToolInputPayloadGrows() throws {
+        let model = AppModel()
+        model.selectedSessionID = "session-1"
+
+        let start: [String: Any] = [
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": [
+                "type": "tool_use",
+                "id": "tool-stream-1",
+                "name": "Bash",
+                "input": [:]
+            ]
+        ]
+        let inputDelta: [String: Any] = [
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": [
+                "type": "input_json_delta",
+                "partial_json": #"{"command":"echo hi"}"#
+            ]
+        ]
+
+        for event in StreamEventParser.events(from: start, sessionID: "session-1") {
+            model.handle(event)
+        }
+        let before = transcriptAutoScrollToken(for: model)
+        XCTAssertEqual(model.selectedStreamingMessage?.content, "")
+
+        for event in StreamEventParser.events(from: inputDelta, sessionID: "session-1") {
+            model.handle(event)
+        }
+        let after = transcriptAutoScrollToken(for: model)
+
+        XCTAssertEqual(model.selectedStreamingMessage?.content, "")
+        XCTAssertNotEqual(
+            after,
+            before,
+            "Growing a streamed tool input must keep bottom-follow active even when no assistant text was appended."
+        )
+    }
+
+    @MainActor
+    private func transcriptAutoScrollToken(for model: AppModel) -> TranscriptAutoScrollToken {
+        let streamingDisplayItems = model.selectedStreamingMessage.map { TranscriptDisplayBuilder.displayItems(messages: [$0]) } ?? []
+        return TranscriptAutoScrollToken(
+            sessionID: model.selectedSessionID,
+            displayItems: model.selectedTranscriptDisplayItems,
+            streamingDisplayItems: streamingDisplayItems,
+            streamingText: model.selectedStreamingText,
+            pendingMessages: model.selectedPendingUserMessages
+        )
     }
 }

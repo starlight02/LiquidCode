@@ -339,7 +339,10 @@ func cleanedTextAndInlineImages(from rawText: String) -> (text: String, images: 
 struct ClaudeControlTranscriptEvent: Equatable, Sendable {
     enum Kind: String, Sendable {
         case command
+        case commandOutput
         case interrupted
+        case taskNotification
+        case taskFailure
     }
 
     var kind: Kind
@@ -358,6 +361,12 @@ func claudeControlTranscriptEvent(from value: Any?) -> ClaudeControlTranscriptEv
 
     if let command = claudeCommandEvent(from: text) {
         return command
+    }
+    if let commandOutput = claudeCommandOutputEvent(from: text) {
+        return commandOutput
+    }
+    if let taskNotification = claudeTaskNotificationEvent(from: text) {
+        return taskNotification
     }
     if let interruption = claudeInterruptionEvent(from: text) {
         return interruption
@@ -381,6 +390,25 @@ private func claudeCommandEvent(from text: String) -> ClaudeControlTranscriptEve
         title: "Claude Code Command",
         body: body,
         preview: command
+    )
+}
+
+private func claudeCommandOutputEvent(from text: String) -> ClaudeControlTranscriptEvent? {
+    guard
+        text.hasPrefix("<local-command-stdout>"),
+        let rawOutput = text.betweenXMLLikeTags("local-command-stdout")
+    else {
+        return nil
+    }
+    let body = removeANSIEscapeCodes(rawOutput).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !body.isEmpty else {
+        return nil
+    }
+    return ClaudeControlTranscriptEvent(
+        kind: .commandOutput,
+        title: "Command output",
+        body: body,
+        preview: body
     )
 }
 
@@ -409,6 +437,34 @@ private func claudeInterruptionEvent(from text: String) -> ClaudeControlTranscri
     }
 }
 
+private func claudeTaskNotificationEvent(from text: String) -> ClaudeControlTranscriptEvent? {
+    guard text.hasPrefix("<task-notification>") else {
+        return nil
+    }
+    let status = text.betweenXMLLikeTags("status")?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased() ?? ""
+    let summary = text.betweenXMLLikeTags("summary")?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let taskID = text.betweenXMLLikeTags("task-id")?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let body: String
+    if !summary.isEmpty {
+        body = summary
+    } else if !taskID.isEmpty, !status.isEmpty {
+        body = "Task \(taskID) \(status)."
+    } else {
+        body = "Task notification received."
+    }
+    let failed = status == "failed"
+    return ClaudeControlTranscriptEvent(
+        kind: failed ? .taskFailure : .taskNotification,
+        title: failed ? "Task failed" : "Task notification",
+        body: body,
+        preview: body
+    )
+}
+
 private func flattenedTextContent(from value: Any?) -> String {
     if let text = value as? String {
         return text
@@ -432,6 +488,16 @@ private func flattenedTextContent(from value: Any?) -> String {
 private func removeZeroWidthCharacters(_ text: String) -> String {
     let zeroWidthCharacters = CharacterSet(charactersIn: "\u{200B}\u{200C}\u{200D}\u{FEFF}")
     return String(text.unicodeScalars.filter { !zeroWidthCharacters.contains($0) })
+}
+
+private let ansiEscapeRegex = try? NSRegularExpression(pattern: "\u{1B}\\[[0-9;]*[A-Za-z]")
+
+private func removeANSIEscapeCodes(_ text: String) -> String {
+    guard let ansiEscapeRegex else {
+        return text
+    }
+    let nsRange = NSRange(text.startIndex ..< text.endIndex, in: text)
+    return ansiEscapeRegex.stringByReplacingMatches(in: text, options: [], range: nsRange, withTemplate: "")
 }
 
 private extension String {

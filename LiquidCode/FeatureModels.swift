@@ -168,9 +168,12 @@ enum TranscriptAutoExpansionPolicy {
         }
         switch item {
         case .tool(let tool):
+            guard tool.kind == .use else {
+                return .collapsed
+            }
             return TranscriptToolExpansionState(expandedDisplayItemID: item.id, expandedToolItemID: tool.id)
         case .toolRun(let tools):
-            guard let tool = tools.last else {
+            guard !TranscriptToolRunCompletion.isComplete(tools), let tool = tools.last(where: { $0.kind == .use }) else {
                 return .collapsed
             }
             return TranscriptToolExpansionState(expandedDisplayItemID: item.id, expandedToolItemID: tool.id)
@@ -182,12 +185,31 @@ enum TranscriptAutoExpansionPolicy {
     }
 }
 
+private extension TranscriptDisplayItem {
+    var autoScrollPayloadLength: Int {
+        switch self {
+        case .message(let message):
+            return message.content.count + message.displayImages.count
+        case .interaction(let permission):
+            return permission.summary.count + permission.inputJSON.count
+        case .question(let question):
+            return question.inputJSON.count
+        case .tool(let item):
+            return item.content.count
+        case .toolRun(let items):
+            return items.reduce(0) { $0 + $1.content.count }
+        }
+    }
+}
+
 struct TranscriptAutoScrollToken: Equatable, Sendable {
     let sessionID: String?
     let displayItemCount: Int
     let lastDisplayItemID: String?
+    let lastDisplayItemPayloadLength: Int
     let streamingItemCount: Int
     let lastStreamingItemID: String?
+    let lastStreamingItemPayloadLength: Int
     let streamingTextLength: Int
     let pendingMessageCount: Int
     let lastPendingMessageID: String?
@@ -202,8 +224,10 @@ struct TranscriptAutoScrollToken: Equatable, Sendable {
         self.sessionID = sessionID
         displayItemCount = displayItems.count
         lastDisplayItemID = displayItems.last?.id
+        lastDisplayItemPayloadLength = displayItems.last?.autoScrollPayloadLength ?? 0
         streamingItemCount = streamingDisplayItems.count
         lastStreamingItemID = streamingDisplayItems.last?.id
+        lastStreamingItemPayloadLength = streamingDisplayItems.last?.autoScrollPayloadLength ?? 0
         streamingTextLength = streamingText.count
         pendingMessageCount = pendingMessages.count
         lastPendingMessageID = pendingMessages.last?.id

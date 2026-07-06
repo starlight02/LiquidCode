@@ -1831,11 +1831,20 @@ struct ChatPanelView: View {
             let findTargets = model.selectedChatFindTargets
             let activeFindTarget = findTargets.indices.contains(model.chatFindIndex) ? findTargets[model.chatFindIndex] : nil
             let findMatchedItemIDs = Set(findTargets.map(\.itemID))
+            let displayToolExpansion = TranscriptAutoExpansionPolicy.state(
+                for: displayItems,
+                isStreaming: model.selectedHasActiveTurn && streamingDisplayItems.isEmpty
+            )
             let streamingToolExpansion = TranscriptAutoExpansionPolicy.state(for: streamingDisplayItems, isStreaming: true)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
                     ForEach(displayItems) { item in
-                        displayItemView(item, activeFindTarget: activeFindTarget, findMatchedItemIDs: findMatchedItemIDs)
+                        displayItemView(
+                            item,
+                            activeFindTarget: activeFindTarget,
+                            findMatchedItemIDs: findMatchedItemIDs,
+                            toolExpansion: displayToolExpansion
+                        )
                     }
                     ForEach(streamingDisplayItems) { item in
                         displayItemView(
@@ -2162,7 +2171,11 @@ struct MessageBubbleView: View {
         case .error:
             systemLikeMessage(icon: "exclamationmark.triangle.fill", tint: .red, title: L("Error"))
         case .system:
-            systemLikeMessage(icon: systemMessageIcon, tint: .secondary, title: message.toolName ?? L("System"))
+            if message.toolName == "Context summary" {
+                contextSummaryMessage
+            } else {
+                systemLikeMessage(icon: systemMessageIcon, tint: .secondary, title: message.toolName ?? L("System"))
+            }
         }
     }
 
@@ -2172,8 +2185,40 @@ struct MessageBubbleView: View {
             "terminal"
         case "Interrupted":
             "pause.circle"
+        case "Context summary":
+            "text.append"
         default:
             "info.circle"
+        }
+    }
+
+    private var contextSummaryMessage: some View {
+        HStack(alignment: .top, spacing: 12) {
+            TranscriptAvatar(systemImage: "text.append", foreground: .secondary, background: Color.secondary.opacity(0.12))
+            DisclosureGroup {
+                MarkdownRendererView(content: message.content, findText: findText, activeOccurrenceIndex: activeOccurrenceIndex)
+                    .textSelection(.enabled)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 6)
+            } label: {
+                HStack(spacing: 7) {
+                    Text(L("Context summary"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(10)
+            .background(Color.secondary.opacity(0.055))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.secondary.opacity(0.14), lineWidth: 1))
+            .frame(maxWidth: 760, alignment: .leading)
+            .pointingHandCursor()
+            .help(L("Toggle context summary"))
+            Spacer(minLength: 60)
         }
     }
 
