@@ -137,6 +137,7 @@
 "Edit MCP server" = "编辑 MCP 服务器";
 "Edit" = "编辑";
 "Loading file..." = "正在加载文件...";
+"Loading conversation…" = "正在加载对话…";
 "File content is not loaded yet" = "文件内容尚未加载";
 "Empty project" = "项目为空";
 "Enable skill" = "启用技能";

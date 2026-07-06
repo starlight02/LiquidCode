@@ -10,6 +10,13 @@ extension AppModel {
         messagesBySession[selectedSessionID ?? ""] ?? []
     }
 
+    var isLoadingSelectedMessages: Bool {
+        guard let selectedSessionID else {
+            return false
+        }
+        return loadingMessageSessionIDs.contains(selectedSessionID) && messagesBySession[selectedSessionID] == nil
+    }
+
     var selectedTranscriptDisplayItems: [TranscriptDisplayItem] {
         guard let selectedSessionID else {
             return []

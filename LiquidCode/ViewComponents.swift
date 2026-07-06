@@ -1545,7 +1545,10 @@ struct ChatPanelView: View {
                         ))
                 } else {
                     ZStack(alignment: .bottom) {
-                        if model.selectedMessages.isEmpty && model.selectedStreamingText.isEmpty && model.pendingPermissionsForSelectedSession.isEmpty {
+                        if model.isLoadingSelectedMessages && model.selectedStreamingText.isEmpty && model.pendingPermissionsForSelectedSession.isEmpty {
+                            loadingState
+                                .transition(.opacity)
+                        } else if model.selectedMessages.isEmpty && model.selectedStreamingText.isEmpty && model.pendingPermissionsForSelectedSession.isEmpty {
                             readyState
                                 .transition(.opacity.combined(with: .offset(y: 8)))
                         } else {
@@ -1561,6 +1564,7 @@ struct ChatPanelView: View {
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.82), value: model.selectedSessionID)
             .animation(.easeInOut(duration: 0.3), value: model.selectedMessages.isEmpty)
+            .animation(.easeInOut(duration: 0.25), value: model.isLoadingSelectedMessages)
         }
         .background(LiquidContentSurface(cornerRadius: LiquidGlassToken.panelRadius))
         .clipShape(RoundedRectangle(cornerRadius: LiquidGlassToken.panelRadius, style: .continuous))
@@ -1750,6 +1754,29 @@ struct ChatPanelView: View {
             InputBarView(presentation: .welcome)
                 .opacity(chipsOpacity)
         }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 14) {
+            Group {
+                if #available(macOS 26.0, *) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .padding(22)
+                        .glassEffect(.regular, in: Circle())
+                } else {
+                    ProgressView()
+                        .controlSize(.large)
+                        .padding(22)
+                        .background(.thinMaterial, in: Circle())
+                }
+            }
+            Text(L("Loading conversation…"))
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
     }
 
     private var readyState: some View {

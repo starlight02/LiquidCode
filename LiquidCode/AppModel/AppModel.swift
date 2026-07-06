@@ -69,7 +69,7 @@ final class AppModel: ObservableObject {
     let skillService = SkillService()
     let sessionIndex = SessionIndexService()
     var reloadSessionsGeneration = 0
-    var loadingMessageSessionIDs: Set<String> = []
+    @Published var loadingMessageSessionIDs: Set<String> = []
     var fileTreeReloadGeneration = 0
     var mcpSkillsReloadGeneration = 0
     var workspaceWatchGeneration = 0
