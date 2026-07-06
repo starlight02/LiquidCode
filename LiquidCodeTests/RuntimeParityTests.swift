@@ -585,6 +585,48 @@ final class RuntimeParityTests: XCTestCase {
         XCTAssertEqual(discovered.title, "Fix native sidebar session titles")
     }
 
+    func testSessionIndexPreviewSurvivesOversizedInlineImageInFirstUserMessage() throws {
+        let home = try temporaryDirectory(prefix: "lc-home-bigimage")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let project = home.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = home.appendingPathComponent(".claude/projects").appendingPathComponent(encodeClaudeProjectPath(project.path), isDirectory: true)
+        try FileManager.default.createDirectory(at: store, withIntermediateDirectories: true)
+        let sessionID = "123e4567-e89b-12d3-a456-426614174321"
+        let file = store.appendingPathComponent(sessionID).appendingPathExtension("jsonl")
+
+        // The first user message carries the real preview text followed by a base64
+        // image large enough that the whole JSONL line exceeds the head-scan byte
+        // budget (128 KB). A fixed-window read would slice this line mid-way, corrupt
+        // the JSON, and drop the preview to the generic "Claude session" placeholder.
+        let hugeBase64 = String(repeating: "A", count: 300 * 1024)
+        let contentBlocks: [[String: Any]] = [
+            ["type": "text", "text": "为什么缩略图有一个方角的背景？"],
+            ["type": "image", "source": ["type": "base64", "media_type": "image/jpeg", "data": hugeBase64]]
+        ]
+        let record: [String: Any] = [
+            "type": "user",
+            "uuid": "u-big",
+            "cwd": project.path,
+            "timestamp": "2026-07-05T00:00:00Z",
+            "message": ["role": "user", "content": contentBlocks]
+        ]
+        let recordData = try JSONSerialization.data(withJSONObject: record)
+        let recordLine = try XCTUnwrap(String(data: recordData, encoding: .utf8))
+        XCTAssertGreaterThan(recordLine.utf8.count, 128 * 1024)
+        try (recordLine + "\n").write(to: file, atomically: true, encoding: .utf8)
+        let trackingDirectory = home.appendingPathComponent(".liquidcode", isDirectory: true)
+        try FileManager.default.createDirectory(at: trackingDirectory, withIntermediateDirectories: true)
+        try "\(sessionID)\n".write(to: trackingDirectory.appendingPathComponent("tracked_sessions.txt"), atomically: true, encoding: .utf8)
+
+        let index = SessionIndexService(home: home)
+        let listed = try XCTUnwrap(index.listSessions().first)
+        XCTAssertEqual(listed.preview, "为什么缩略图有一个方角的背景？")
+        XCTAssertEqual(listed.title, "为什么缩略图有一个方角的背景？")
+        let discovered = try XCTUnwrap(index.discoverAllSessions().first { $0.id == sessionID })
+        XCTAssertEqual(discovered.preview, "为什么缩略图有一个方角的背景？")
+    }
+
     func testSessionIndexLoadsImageHistoryAsStructuredImages() throws {
         let home = try temporaryDirectory(prefix: "lc-home-images")
         defer { try? FileManager.default.removeItem(at: home) }

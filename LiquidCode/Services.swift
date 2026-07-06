@@ -1137,7 +1137,11 @@ enum SessionJSONLCodec {
     }
 
     private static let headerCache = HeaderInfoCache()
-    private static let headerReadLimit = 128 * 1024
+    // Header info (cwd, timestamp, generated title, first user message) lives in the
+    // first handful of records, so we scan only the head of the file rather than whole
+    // multi-MB logs. This is the byte budget for that scan; the reader always finishes
+    // the record straddling the budget so an oversized inline-image line is never cut.
+    private static let headerByteBudget = 128 * 1024
 
     static func extractSessionInfo(_ url: URL) -> SessionInfo {
         let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)?
@@ -1145,14 +1149,17 @@ enum SessionJSONLCodec {
         if let cached = headerCache.lookup(path: url.path, mtime: mtime) {
             return cached
         }
-        // Read only the head of the file — cwd lives in the first meta line and the
-        // first user message is near the top, so we never load whole multi-MB logs.
-        let content = readHead(url, maxBytes: headerReadLimit)
+        // Scan the head of the file — cwd lives in the first meta line and the first
+        // user message is near the top, so we never load whole multi-MB logs. Reading
+        // complete lines (never a fixed byte window) is essential: a user message can
+        // inline a base64 image hundreds of KB long on a single line, and a mid-line cut
+        // would corrupt the JSON so the preview silently falls back to the generic
+        // "Claude session" placeholder.
         var preview = ""
         var generatedTitle = ""
         var cwd = ""
         var createdAt: Date?
-        for line in content.split(separator: "\n") {
+        for line in readHeadLines(url, byteBudget: headerByteBudget) {
             guard
                 let data = line.data(using: .utf8),
                 let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -1205,15 +1212,51 @@ enum SessionJSONLCodec {
         return title.isEmpty ? nil : String(title.prefix(120))
     }
 
-    private static func readHead(_ url: URL, maxBytes: Int) -> String {
+    /// Reads complete newline-delimited lines from the head of the file, scanning about
+    /// `byteBudget` bytes. Unlike a fixed byte-window read, a line is only emitted once
+    /// its terminating newline is seen, so a record is never truncated mid-way — critical
+    /// because a single user message can inline a multi-hundred-KB base64 image, and a cut
+    /// there would corrupt the JSON and drop the preview. The budget bounds the scan for
+    /// ordinary files (matching the old fixed-window cost); when the budget boundary lands
+    /// inside a record, that one straddling line is still read to completion rather than
+    /// discarded, so an oversized inline-image line at the head is recovered intact.
+    private static func readHeadLines(_ url: URL, byteBudget: Int) -> [String] {
         guard let handle = try? FileHandle(forReadingFrom: url) else {
-            return ""
+            return []
         }
         defer { try? handle.close() }
-        let data = (try? handle.read(upToCount: maxBytes)) ?? Data()
-        // A trailing byte sequence may be split across the read boundary; UTF-8
-        // decoding substitutes U+FFFD and the partial last line simply fails to parse.
-        return String(bytes: data, encoding: .utf8) ?? ""
+        let chunkSize = 256 * 1024
+        var lines: [String] = []
+        var pending = Data()
+        var consumed = 0
+        let newline = UInt8(ascii: "\n")
+        // Read until the budget is met, then keep reading only until the current record's
+        // newline arrives so the straddling line is completed rather than cut.
+        while true {
+            guard let chunk = try? handle.read(upToCount: chunkSize), !chunk.isEmpty else {
+                break
+            }
+            consumed += chunk.count
+            pending.append(chunk)
+            while let nlIndex = pending.firstIndex(of: newline) {
+                let lineData = pending.subdata(in: pending.startIndex ..< nlIndex)
+                pending.removeSubrange(pending.startIndex ... nlIndex)
+                if let line = String(bytes: lineData, encoding: .utf8) {
+                    lines.append(line)
+                }
+            }
+            // Budget met and the pending record is complete (nothing buffered): stop.
+            if consumed >= byteBudget, pending.isEmpty {
+                break
+            }
+        }
+        // Emit any trailing unterminated line (file ended without a final newline). A line
+        // still pending here is the final partial record of the whole file, not a
+        // budget-truncated one, since we only exit the loop with empty pending or at EOF.
+        if !pending.isEmpty, let line = String(bytes: pending, encoding: .utf8) {
+            lines.append(line)
+        }
+        return lines
     }
 
     static func parseTimestamp(_ value: Any?) -> Date? {
