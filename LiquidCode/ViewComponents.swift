@@ -1529,6 +1529,14 @@ struct ChatPanelView: View {
     @State private var headingOpacity: Double = 0
     @State private var subtitleOpacity: Double = 0
     @State private var chipsOpacity: Double = 0
+    // Auto-scroll follows the transcript bottom only while the user is parked there.
+    // Scrolling up releases the follow so history reading is never yanked back down;
+    // returning near the bottom re-arms it. Growing content alone must not release it
+    // (new output is appended below, so the offset is unchanged) — only a real upward
+    // scroll does, which is why we compare against the last observed offset.
+    @State private var isPinnedToBottom = true
+    @State private var lastContentOffsetY: CGFloat = 0
+    private let autoScrollReleaseThreshold: CGFloat = 40
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -1894,8 +1902,27 @@ struct ChatPanelView: View {
                 .padding(.bottom, 230)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
+            .onScrollGeometryChange(for: ScrollFollowMetrics.self) { geometry in
+                ScrollFollowMetrics(
+                    offsetY: geometry.contentOffset.y,
+                    distanceFromBottom: geometry.contentSize.height
+                        - geometry.contentOffset.y
+                        - geometry.containerSize.height
+                )
+            } action: { _, metrics in
+                updateAutoScrollFollow(metrics)
+            }
             .onAppear { scrollToTranscriptBottom(proxy, animated: false) }
-            .onChange(of: transcriptAutoScrollToken) { _, _ in scrollToTranscriptBottom(proxy) }
+            .onChange(of: transcriptAutoScrollToken) { _, _ in
+                // Only chase the bottom while the user is parked there. During streaming
+                // the token changes on every delta; a non-animated scroll keeps pace
+                // smoothly instead of relaunching a 0.18s animation dozens of times a
+                // second, which is what made the transcript jitter and never settle.
+                guard isPinnedToBottom else {
+                    return
+                }
+                scrollToTranscriptBottom(proxy, animated: false)
+            }
             .onChange(of: activeFindTarget?.id) { _, _ in
                 if let target = activeFindTarget {
                     withAnimation { proxy.scrollTo(target.itemID, anchor: .center) }
@@ -1904,8 +1931,24 @@ struct ChatPanelView: View {
         }
     }
 
+    private func updateAutoScrollFollow(_ metrics: ScrollFollowMetrics) {
+        defer { lastContentOffsetY = metrics.offsetY }
+        // Re-arm as soon as the user parks near the bottom again.
+        if metrics.distanceFromBottom <= autoScrollReleaseThreshold {
+            isPinnedToBottom = true
+            return
+        }
+        // A real upward scroll (offset shrinks) releases the follow. Growing content
+        // leaves the offset unchanged — only the content height grows — so appending
+        // output never trips this and never yanks a scrolled-up reader back down.
+        if metrics.offsetY < lastContentOffsetY - 0.5 {
+            isPinnedToBottom = false
+        }
+    }
+
     private func scrollToTranscriptBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
         DispatchQueue.main.async {
+            isPinnedToBottom = true
             if animated {
                 withAnimation(.snappy(duration: 0.18)) {
                     proxy.scrollTo(transcriptBottomAnchorID, anchor: .bottom)
@@ -1915,6 +1958,11 @@ struct ChatPanelView: View {
             }
         }
     }
+}
+
+private struct ScrollFollowMetrics: Equatable {
+    var offsetY: CGFloat
+    var distanceFromBottom: CGFloat
 }
 
 extension AppModel {
