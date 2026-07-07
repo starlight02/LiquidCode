@@ -183,6 +183,7 @@ enum RewindAction: String, CaseIterable, Identifiable, Sendable {
 enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
     case files = "Files"
     case plan = "Plan"
+    case agent = "Agents"
     case skills = "Skills"
     var id: String {
         rawValue
@@ -196,6 +197,7 @@ enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .files: "folder"
         case .plan: "list.bullet.rectangle"
+        case .agent: "point.3.connected.trianglepath.dotted"
         case .skills: "sparkles"
         }
     }
@@ -378,6 +380,9 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     var attachments: [AttachmentChip]
     var images: [MessageImageReference]
     var blocks: [ChatContentBlock]
+    /// Non-nil when this message came from a subagent's sidechain transcript. Used to
+    /// route the message into the subagent bucket instead of the main transcript.
+    var agentID: String?
 
     init(
         id: String = UUID().uuidString,
@@ -390,7 +395,8 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         checkpointUuid: String? = nil,
         attachments: [AttachmentChip] = [],
         images: [MessageImageReference] = [],
-        blocks: [ChatContentBlock] = []
+        blocks: [ChatContentBlock] = [],
+        agentID: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -403,6 +409,7 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         self.attachments = attachments
         self.images = images
         self.blocks = blocks
+        self.agentID = agentID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -417,6 +424,7 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         case attachments
         case images
         case blocks
+        case agentID
     }
 
     init(from decoder: Decoder) throws {
@@ -432,6 +440,7 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         attachments = try container.decodeIfPresent([AttachmentChip].self, forKey: .attachments) ?? []
         images = try container.decodeIfPresent([MessageImageReference].self, forKey: .images) ?? []
         blocks = try container.decodeIfPresent([ChatContentBlock].self, forKey: .blocks) ?? []
+        agentID = try container.decodeIfPresent(String.self, forKey: .agentID)
     }
 }
 

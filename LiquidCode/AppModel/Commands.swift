@@ -74,8 +74,7 @@ extension AppModel {
         case .newChat: newChat()
         case .settings: settingsOpen = true
         case .mcpSettings: settingsTab = .mcp; settingsOpen = true
-        case .agentsOverlay: agentPanelOpen = true
-        case .panel(let tab): secondaryTab = tab
+        case .panel(let tab): secondaryTab = tab; secondaryOpen = true
         case .mode(let mode): setComposerMode(mode)
         case .model(let model): setComposerModel(model)
         case .sendSlash(let slash): setComposerText(slash + " ")
@@ -95,9 +94,9 @@ extension AppModel {
             .init(title: L("Settings"), subtitle: L("CLI, MCP, appearance"), kind: .settings),
             .init(title: L("Files Panel"), subtitle: L("Show project files"), kind: .panel(.files)),
             .init(title: L("Plan Panel"), subtitle: L("Review plan drafts and approvals"), kind: .panel(.plan)),
+            .init(title: L("Agents Panel"), subtitle: L("Show subagent activity"), kind: .panel(.agent)),
             .init(title: L("Skills Panel"), subtitle: L("Show Claude skills"), kind: .panel(.skills)),
             .init(title: L("MCP Settings"), subtitle: L("Show MCP servers in Settings"), kind: .mcpSettings),
-            .init(title: L("Agents Panel"), subtitle: L("Show agent activity overlay"), kind: .agentsOverlay),
             .init(title: L("Install or Update Claude CLI"), subtitle: cliStatus.version ?? "Claude CLI", kind: .installCLI),
             .init(title: L("Claude Login"), subtitle: cliStatus.authStatus, kind: .loginCLI),
             .init(title: L("Export Current Session"), subtitle: L("Markdown export"), kind: .exportCurrent),
@@ -136,7 +135,7 @@ extension AppModel {
 }
 
 struct PaletteCommand: Identifiable, Hashable {
-    enum Kind: Hashable { case newChat, settings, panel(SecondaryTab), mcpSettings, agentsOverlay, mode(SessionMode), model(String), sendSlash(String), installCLI, loginCLI,
+    enum Kind: Hashable { case newChat, settings, panel(SecondaryTab), mcpSettings, mode(SessionMode), model(String), sendSlash(String), installCLI, loginCLI,
                                exportCurrent, rewind, changelog }
 
     let id = UUID()

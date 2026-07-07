@@ -278,19 +278,17 @@ final class FeatureModelRegressionTests: XCTestCase {
         let fromDisplayItems = AgentActivityBuilder.toolCalls(fromDisplayItems: displayItems, sessionID: "session")
 
         XCTAssertEqual(fromDisplayItems, fromMessages)
-        XCTAssertEqual(fromDisplayItems.map(\.id), ["tool-use-1", "tool-use-1", "legacy-tool_agent_2", "legacy-result_agent_3"])
-        XCTAssertEqual(fromDisplayItems.map(\.name), ["perf-reviewer", "perf-reviewer", "Bash", "Bash"])
+        XCTAssertEqual(fromDisplayItems.map(\.id), ["legacy-tool_agent_0", "legacy-result_agent_1"])
+        XCTAssertEqual(fromDisplayItems.map(\.name), ["Bash", "Bash"])
         XCTAssertEqual(
             fromDisplayItems.map(\.inputPreview),
             [
-                #"{"description":"Review perf regression","subagent_type":"perf-reviewer"}"#,
-                "",
                 "[tool_use: Bash]\n{\"command\":\"xcodebuild test\"}",
                 ""
             ]
         )
-        XCTAssertEqual(fromDisplayItems.map(\.resultPreview), ["", "Perf review finished", "", "Tests passed"])
-        XCTAssertEqual(fromDisplayItems.map(\.parentID), [nil, "assistant-structured", nil, "legacy-tool"])
+        XCTAssertEqual(fromDisplayItems.map(\.resultPreview), ["", "Tests passed"])
+        XCTAssertEqual(fromDisplayItems.map(\.parentID), [nil, "legacy-tool"])
     }
 
     func testTranscriptDisplayBuilderRendersStructuredToolResultOnlyMessageAsToolOutput() throws {

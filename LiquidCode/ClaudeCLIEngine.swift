@@ -502,7 +502,11 @@ enum ClaudeControlProtocol {
 
 enum StreamEventParser {
     static func events(from obj: [String: Any], sessionID: String) -> [ClaudeEvent] {
-        if obj["isMeta"] as? Bool == true || obj["isSidechain"] as? Bool == true {
+        // `isMeta` records are companion noise (image sources, etc.) and never shown.
+        // `isSidechain` records are a subagent's own internal transcript — we no longer
+        // drop them, but they are handled specially below so they never reach the main
+        // transcript's message/tool stores.
+        if obj["isMeta"] as? Bool == true {
             return []
         }
         let type = obj["type"] as? String ?? ""
@@ -520,6 +524,17 @@ enum StreamEventParser {
                 merged[key] = value
             }
             return events(from: merged, sessionID: sessionID)
+        }
+        // A subagent's internal record: surface it only as an agentID-tagged `.message`
+        // so ChatRuntime routes it into the subagent bucket. We deliberately skip the
+        // tool/stream events here so the subagent's internal tool calls never land in
+        // the main transcript's tool store — they are reconstructed from these messages
+        // by SubagentActivityBuilder instead.
+        if obj["isSidechain"] as? Bool == true {
+            guard let message = messageFromJSONObject(obj, fallbackID: UUID().uuidString) else {
+                return []
+            }
+            return [.message(sessionID: sessionID, message)]
         }
         if type == "control_request" {
             return controlEvents(from: obj, sessionID: sessionID)
@@ -553,7 +568,7 @@ enum StreamEventParser {
     }
 
     static func messageFromJSONObject(_ obj: [String: Any], fallbackID: String) -> ChatMessage? {
-        if obj["isMeta"] as? Bool == true || obj["isSidechain"] as? Bool == true {
+        if obj["isMeta"] as? Bool == true {
             return nil
         }
         let type = obj["type"] as? String ?? ""
@@ -567,9 +582,18 @@ enum StreamEventParser {
         let contentAny = message?["content"] ?? obj["content"]
         let raw = (try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted])).map { String(data: $0, encoding: .utf8) ?? "" }
         let parentID = obj["parent_uuid"] as? String ?? obj["parentUuid"] as? String ?? obj["parent_id"] as? String ?? obj["parentId"] as? String
+        // A subagent's internal records carry `agentId`; the field tags the message so
+        // ChatRuntime can route it into the subagent bucket rather than the main transcript.
+        let agentID = (obj["agentId"] as? String ?? obj["agent_id"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let timestamp = SessionJSONLCodec.parseTimestamp(obj["timestamp"]) ?? Date()
         if let control = claudeControlTranscriptEvent(from: contentAny) {
             let role: ChatMessage.Role = control.kind == .taskFailure ? .error : .system
+            // A task-notification carries the parent spawn block's toolUseID. We keep it
+            // on the message (as `toolName`/block metadata) so ChatRuntime can intercept
+            // it and merge the completion status into the SubagentActivity card instead of
+            // rendering an orphan system/error bubble.
+            let isTaskNotification = control.kind == .taskNotification || control.kind == .taskFailure
             return ChatMessage(
                 id: id,
                 role: role,
@@ -577,9 +601,15 @@ enum StreamEventParser {
                 timestamp: timestamp,
                 toolName: control.title,
                 rawJSON: raw,
-                parentID: parentID,
+                parentID: isTaskNotification ? (control.toolUseID ?? parentID) : parentID,
                 checkpointUuid: nil,
-                blocks: [ChatContentBlock(kind: .text, text: control.body, rawType: control.kind.rawValue)]
+                blocks: [ChatContentBlock(
+                    kind: .text,
+                    text: control.body,
+                    toolUseID: isTaskNotification ? control.toolUseID : nil,
+                    rawType: control.kind.rawValue
+                )],
+                agentID: isTaskNotification ? (control.taskID ?? agentID) : agentID
             )
         }
         if obj["isCompactSummary"] as? Bool == true {
@@ -618,7 +648,8 @@ enum StreamEventParser {
             parentID: parentID,
             checkpointUuid: checkpoint,
             images: rendered.images,
-            blocks: rendered.blocks
+            blocks: rendered.blocks,
+            agentID: agentID
         )
     }
 
@@ -783,7 +814,7 @@ enum StreamEventParser {
 
     private static func displayToolName(rawToolName: String, input: Any) -> String {
         guard
-            rawToolName == "Task",
+            SubagentSpawnParser.isSpawnTool(rawToolName),
             let object = input as? [String: Any],
             let subagentName = object["subagent_type"] as? String
         else {

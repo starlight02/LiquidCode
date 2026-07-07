@@ -192,6 +192,26 @@ extension AppModel {
         case .streamBlockDelta(let sessionID, let index, let kind, let text):
             appendStreamingBlockDelta(sessionID: sessionID, index: index, kind: kind, text: text)
         case .message(let sessionID, let message):
+            // A task-notification is intercepted into the completion bucket and merged
+            // into the matching SubagentActivity card — it never renders as an orphan
+            // system/error bubble in the main transcript.
+            if let completion = subagentCompletion(from: message) {
+                // The completion carries `<task-id>` (== agentId) and `<tool-use-id>`, so
+                // it also links sidechain records to the spawn card even when no permission
+                // request surfaced the mapping live.
+                if let agentID = message.agentID, !agentID.isEmpty {
+                    subagentAgentLinksBySession[sessionID, default: [:]][agentID] = completion.toolUseID
+                }
+                recordSubagentCompletion(completion.toolUseID, completion.completion, sessionID: sessionID)
+                return
+            }
+            // A subagent's own sidechain message routes into the subagent bucket so the
+            // main transcript stays clean; its internal tool calls are reconstructed by
+            // SubagentActivityBuilder rather than shown inline.
+            if let agentID = message.agentID, !agentID.isEmpty {
+                appendSubagentMessage(message, sessionID: sessionID)
+                return
+            }
             if message.role == .user, let checkpoint = message.checkpointUuid {
                 backfillCheckpoint(checkpoint, echo: message, sessionID: sessionID)
                 return
@@ -205,6 +225,10 @@ extension AppModel {
             upsertTool(tool, sessionID: sessionID)
         case .permissionRequested(let permission):
             upsertPendingPermission(permission)
+            // A subagent's permission request carries its agentID plus the parent spawn
+            // block's toolUseID. Harvest that link so live sidechain records attribute to
+            // the right card while the turn is still running.
+            recordSubagentAgentLink(agentID: permission.agentID, toolUseID: permission.parentToolUseID, sessionID: permission.sessionID)
             var tool = ToolCall(
                 id: permission.toolUseID ?? permission.requestID,
                 sessionID: permission.sessionID,
@@ -325,6 +349,98 @@ extension AppModel {
         if let idx = sessions.firstIndex(where: { $0.id == sessionID }) {
             sessions[idx].preview = String(message.transcriptPreview.prefix(120))
             sessions[idx].modifiedAt = Date()
+        }
+    }
+
+    /// A task-notification message carries the parent spawn block's toolUseID (stamped
+    /// onto the first block by the parser). Returns that id plus the parsed completion,
+    /// or nil when the message is not a subagent completion.
+    private func subagentCompletion(from message: ChatMessage) -> (toolUseID: String, completion: SubagentCompletion)? {
+        guard
+            let block = message.blocks.first,
+            let rawType = block.rawType,
+            rawType == ClaudeControlTranscriptEvent.Kind.taskNotification.rawValue
+            || rawType == ClaudeControlTranscriptEvent.Kind.taskFailure.rawValue,
+            let toolUseID = block.toolUseID?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !toolUseID.isEmpty
+        else {
+            return nil
+        }
+        let status: SubagentActivity.Status = rawType == ClaudeControlTranscriptEvent.Kind.taskFailure.rawValue ? .failed : .succeeded
+        let summary = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (toolUseID, SubagentCompletion(status: status, summary: summary.isEmpty ? nil : summary))
+    }
+
+    private func recordSubagentCompletion(_ toolUseID: String, _ completion: SubagentCompletion, sessionID: String) {
+        subagentCompletionsBySession[sessionID, default: [:]][toolUseID] = completion
+        rebuildSubagentActivities(sessionID: sessionID)
+    }
+
+    /// Records an agentID → parent spawn toolUseID link harvested from a live source
+    /// (permission request or completion notification) so routed sidechain records can
+    /// attribute to the right card. No-op unless both ids are present.
+    private func recordSubagentAgentLink(agentID: String?, toolUseID: String?, sessionID: String) {
+        guard
+            let agentID = agentID?.trimmingCharacters(in: .whitespacesAndNewlines), !agentID.isEmpty,
+            let toolUseID = toolUseID?.trimmingCharacters(in: .whitespacesAndNewlines), !toolUseID.isEmpty
+        else {
+            return
+        }
+        guard subagentAgentLinksBySession[sessionID]?[agentID] != toolUseID else {
+            return
+        }
+        subagentAgentLinksBySession[sessionID, default: [:]][agentID] = toolUseID
+        rebuildSubagentActivities(sessionID: sessionID)
+    }
+
+    private func appendSubagentMessage(_ message: ChatMessage, sessionID: String) {
+        subagentMessagesBySession[sessionID, default: []].append(message)
+        rebuildSubagentActivities(sessionID: sessionID)
+    }
+
+    /// Rebuilds the session's `SubagentActivity` list from the main transcript's spawn
+    /// blocks, the routed sidechain messages, and the recorded completions, then triggers
+    /// a transcript rebuild so the inline `.subagent` cards pick up fresh status/children.
+    func rebuildSubagentActivities(sessionID: String) {
+        let activities = SubagentActivityBuilder.activities(
+            mainMessages: messagesBySession[sessionID] ?? [],
+            sidechainMessages: subagentMessagesBySession[sessionID] ?? [],
+            metas: subagentMetasBySession[sessionID] ?? [],
+            agentLinks: subagentAgentLinksBySession[sessionID] ?? [:],
+            childCallsByAgentID: subagentChildCallsByAgentID[sessionID] ?? [:],
+            completions: subagentCompletionsBySession[sessionID] ?? [:]
+        )
+        subagentActivitiesBySession[sessionID] = activities
+        rebuildTranscriptDisplayItems(sessionID: sessionID)
+    }
+
+    /// Lazily loads a persisted subagent's internal tool calls from its own jsonl
+    /// (which can reach ~800KB), reading each file at most once. Called when the user
+    /// expands a subagent card or opens the agent inspector, so history sessions build
+    /// their shells from lightweight metas up front and only pay the big read on demand.
+    func loadSubagentChildCallsIfNeeded(sessionID: String, agentID: String) {
+        let trimmed = agentID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, subagentChildCallsByAgentID[sessionID]?[trimmed] == nil else {
+            return
+        }
+        guard let path = sessions.first(where: { $0.id == sessionID })?.path else {
+            return
+        }
+        // Mark as loaded (empty) immediately so a slow or empty read is not retried.
+        subagentChildCallsByAgentID[sessionID, default: [:]][trimmed] = []
+        let index = sessionIndex
+        Task.detached(priority: .userInitiated) {
+            let calls = index.loadSubagentChildCalls(mainPath: path, agentID: trimmed)
+            guard !calls.isEmpty else {
+                return
+            }
+            await MainActor.run {
+                guard self.sessions.contains(where: { $0.id == sessionID && $0.path == path }) else {
+                    return
+                }
+                self.subagentChildCallsByAgentID[sessionID, default: [:]][trimmed] = calls
+                self.rebuildSubagentActivities(sessionID: sessionID)
+            }
         }
     }
 

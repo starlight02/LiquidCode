@@ -36,7 +36,26 @@ final class AppModel: ObservableObject {
     @Published var settingsOpen = false
     @Published var settingsTab: SettingsTab = .general
     @Published var commandPaletteOpen = false
-    @Published var agentPanelOpen = false
+    // Subagent state. Sidechain messages routed off the main transcript live in
+    // `subagentMessagesBySession` (keyed by sessionID, grouped later by agentID).
+    // `subagentCompletionsBySession` holds task-notification results keyed by the
+    // parent spawn toolUseID. `subagentActivitiesBySession` is the built, enriched
+    // result the transcript card and inspector read (keyed by sessionID). Loaded
+    // subagent transcripts are cached in `subagentChildCallsByAgentID` so the lazy
+    // history loader only reads each big jsonl once. `focusedSubagentID` lets the
+    // inline card scroll the inspector to a specific activity.
+    @Published var subagentMessagesBySession: [String: [ChatMessage]] = [:]
+    @Published var subagentCompletionsBySession: [String: [String: SubagentCompletion]] = [:]
+    // Live agentID → parent spawn toolUseID links, harvested from permission requests
+    // and completion notifications so live sidechain records attribute to the right
+    // card before any meta.json is available (history uses metas instead).
+    @Published var subagentAgentLinksBySession: [String: [String: String]] = [:]
+    @Published var subagentActivitiesBySession: [String: [SubagentActivity]] = [:]
+    @Published var subagentChildCallsByAgentID: [String: [String: [TranscriptToolItem]]] = [:]
+    // Parsed `.meta.json` companions keyed by sessionID, filled by the lazy history
+    // loader so reloaded sessions can attribute persisted sidechain records.
+    @Published var subagentMetasBySession: [String: [SubagentMeta]] = [:]
+    @Published var focusedSubagentID: String?
     @Published var currentError: AppError?
     @Published var composerText = ""
     @Published var composerTextBySession: [String: String] = [:]

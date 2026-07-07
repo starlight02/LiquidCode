@@ -1199,7 +1199,10 @@ struct SidebarView: View {
 
     private var sidebarFooter: some View {
         HStack(spacing: 10) {
-            Button { model.agentPanelOpen.toggle() } label: { Label(L("Agents"), systemImage: "point.3.connected.trianglepath.dotted") }
+            Button {
+                model.secondaryTab = .agent
+                model.secondaryOpen = true
+            } label: { Label(L("Agents"), systemImage: "point.3.connected.trianglepath.dotted") }
                 .buttonStyle(.plain)
                 .pointingHandCursor()
                 .help(L("Open agent activity"))
@@ -1526,7 +1529,6 @@ struct ChatPanelView: View {
     // floating input bar that overlaps the bottom of the scroll view.
     private let transcriptBottomReservedHeight: CGFloat = 230
     @State private var findOpen = false
-    @State private var agentPopoverOpen = false
     @State private var logoOpacity: Double = 0
     @State private var headingOpacity: Double = 0
     @State private var subtitleOpacity: Double = 0
@@ -1604,15 +1606,16 @@ struct ChatPanelView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Button {
-                    agentPopoverOpen.toggle()
+                    model.secondaryTab = .agent
+                    model.secondaryOpen = true
                 } label: {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(model.selectedHasActiveTurn ? Color.orange : Color.mint)
                             .frame(width: 7, height: 7)
                         Text(L("Agent"))
-                        if !model.selectedToolCalls.isEmpty {
-                            Text("\(model.selectedToolCalls.count)")
+                        if !model.selectedSubagentActivities.isEmpty {
+                            Text("\(model.selectedSubagentActivities.count)")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
@@ -1623,14 +1626,10 @@ struct ChatPanelView: View {
                 .foregroundStyle(model.selectedHasActiveTurn ? Color.orange : Color.mint)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(agentPopoverOpen ? Color.accentColor.opacity(0.10) : Color.clear)
+                .background(model.secondaryOpen && model.secondaryTab == .agent ? Color.accentColor.opacity(0.10) : Color.clear)
                 .clipShape(Capsule())
                 .pointingHandCursor()
                 .help(L("Open agent activity"))
-                .popover(isPresented: $agentPopoverOpen, arrowEdge: .top) {
-                    AgentPopoverView()
-                        .environmentObject(model)
-                }
             }
             if model.selectedHasActiveTurn {
                 ActivityPillView()
@@ -1839,6 +1838,8 @@ struct ChatPanelView: View {
             QuestionTranscriptCardView(question: question).id(idPrefix + question.id)
         case .todo(let item):
             TodoListCardView(item: item).id(idPrefix + item.id)
+        case .subagent(let activity):
+            SubagentCardView(activity: activity).id(idPrefix + "subagent_" + activity.id)
         case .tool(let item):
             ToolDisplayItemView(item: item, autoExpanded: autoExpandItem).id(idPrefix + item.id)
         case .toolRun(let items):

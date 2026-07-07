@@ -100,13 +100,26 @@ extension AppModel {
             let index = sessionIndex
             Task.detached(priority: .userInitiated) {
                 let loadedMessages = index.loadMessages(path: path)
-                let displayItems = TranscriptDisplayBuilder.displayItems(messages: loadedMessages)
+                // Lightweight `.meta.json` companions build the subagent shells; the large
+                // per-subagent transcripts are only read when a card is expanded.
+                let metas = index.loadSubagentMetas(mainPath: path)
+                let activities = SubagentActivityBuilder.activities(
+                    mainMessages: loadedMessages,
+                    sidechainMessages: [],
+                    metas: metas,
+                    childCallsByAgentID: [:],
+                    completions: [:]
+                )
+                let activityMap = Dictionary(activities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                let displayItems = TranscriptDisplayBuilder.displayItems(messages: loadedMessages, subagentActivities: activityMap)
                 let toolCalls = AgentActivityBuilder.toolCalls(fromDisplayItems: displayItems, sessionID: id)
                 await MainActor.run {
                     self.loadingMessageSessionIDs.remove(id)
                     guard self.sessions.contains(where: { $0.id == id && $0.path == path }) else {
                         return
                     }
+                    self.subagentMetasBySession[id] = metas
+                    self.subagentActivitiesBySession[id] = activities
                     self.setMessages(loadedMessages, for: id, displayItems: displayItems)
                     self.toolCallsBySession[id] = toolCalls
                 }

@@ -1863,6 +1863,7 @@ struct SecondaryPanelView: View {
                 switch model.secondaryTab {
                 case .files: FilePanelView()
                 case .plan: PlanInspectorView()
+                case .agent: AgentInspectorView()
                 case .skills: SkillsPanelView()
                 }
             }
@@ -2503,104 +2504,6 @@ struct MCPPanelView: View {
                 }.padding(.vertical, 4)
             }
         }.padding(12)
-    }
-}
-
-struct AgentPanelView: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10) {
-                if model.selectedToolCalls.isEmpty {
-                    ContentUnavailableView(
-                        L("No agent activity"),
-                        systemImage: "point.3.connected.trianglepath.dotted",
-                        description: Text(L("Tool calls and sub-agent work appear here while Claude is running."))
-                    )
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 80)
-                } else {
-                    ForEach(model.selectedToolCalls) { tool in
-                        HStack(alignment: .top, spacing: 10) {
-                            StatusDot(color: tool.status == .failed || tool.status == .denied ? .red : tool.status == .succeeded ? .mint : .orange)
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack {
-                                    Text(tool.name).font(.headline)
-                                    Text(tool.status.rawValue)
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.primary.opacity(0.05))
-                                        .clipShape(Capsule())
-                                }
-                                if
-                                    !tool.inputPreview
-                                        .isEmpty {
-                                    Text(tool.inputPreview).font(.system(.caption, design: .monospaced)).lineLimit(3).foregroundStyle(.secondary).textSelection(.enabled) }
-                                if let parent = tool.parentID {
-                                    Text(LF("Parent: %@", parent)).font(.caption2).foregroundStyle(.tertiary)
-                                }
-                            }
-                            Spacer()
-                        }
-                        .padding(12)
-                        .liquidGlassCard(role: .floatingCard, prominence: .subtle, radius: 16)
-                    }
-                }
-            }
-            .padding(8)
-        }
-    }
-}
-
-struct AgentPopoverView: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 22) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(L("Agents"))
-                        .font(.headline)
-                    Spacer()
-                    Text(LF("%d agents", max(model.selectedToolCalls.count, model.selectedHasActiveTurn ? 1 : 0)))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                AgentPanelView()
-                    .frame(width: 430, height: 320)
-            }
-            .padding(16)
-        }
-        .frame(width: 462, height: 360)
-    }
-}
-
-struct AgentFloatingOverlayView: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        Color.black
-            .opacity(0.12)
-            .ignoresSafeArea()
-            .pointingHandCursor()
-            .onTapGesture { model.agentPanelOpen = false }
-        HStack {
-            Spacer()
-            GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 24) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Label(L("Agent Activity"), systemImage: "point.3.connected.trianglepath.dotted")
-                            .font(.title3.bold())
-                        Spacer()
-                        ToolbarIconButton(systemImage: "xmark", help: "Close agents") { model.agentPanelOpen = false }
-                    }
-                    AgentPanelView()
-                }
-                .padding(18)
-                .frame(width: 440, height: 580)
-            }
-            .padding(.trailing, 32)
-        }
     }
 }
 

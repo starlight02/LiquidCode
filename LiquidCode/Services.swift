@@ -1734,6 +1734,69 @@ final class SessionIndexService: @unchecked Sendable {
         SessionJSONLCodec.parsedObjects(path: path).compactMap { StreamEventParser.messageFromJSONObject($0, fallbackID: UUID().uuidString) }
     }
 
+    /// The `subagents` directory that sits beside a main session jsonl. Given
+    /// `.../<enc>/<uuid>.jsonl`, subagent transcripts live in `.../<enc>/<uuid>/subagents/`.
+    private func subagentsDirectory(forMainPath mainPath: String) -> URL? {
+        let main = URL(fileURLWithPath: mainPath)
+        guard main.pathExtension == "jsonl" else {
+            return nil
+        }
+        let sessionUUID = main.deletingPathExtension().lastPathComponent
+        let dir = main.deletingLastPathComponent()
+            .appendingPathComponent(sessionUUID, isDirectory: true)
+            .appendingPathComponent("subagents", isDirectory: true)
+        return directoryExists(dir.path) ? dir : nil
+    }
+
+    /// Lazily loads only the lightweight `.meta.json` companions (each ~120 bytes) for a
+    /// session's persisted subagents, so opening a session can build subagent shells
+    /// without reading the large transcript jsonls. Children are loaded on demand via
+    /// `loadSubagentChildCalls(mainPath:agentID:)`.
+    func loadSubagentMetas(mainPath: String) -> [SubagentMeta] {
+        guard let dir = subagentsDirectory(forMainPath: mainPath) else {
+            return []
+        }
+        guard let entries = try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+            return []
+        }
+        var metas: [SubagentMeta] = []
+        for file in entries where file.pathExtension == "json" && file.lastPathComponent.hasSuffix(".meta.json") {
+            let agentID = file.lastPathComponent
+                .replacingOccurrences(of: ".meta.json", with: "")
+                .replacingOccurrences(of: "agent-", with: "")
+            guard
+                let json = try? String(contentsOf: file, encoding: .utf8),
+                let meta = SubagentMeta.parse(agentID: agentID, metaJSON: json)
+            else {
+                continue
+            }
+            metas.append(meta)
+        }
+        return metas
+    }
+
+    /// Reads a single subagent's transcript jsonl on demand (these can reach ~800KB) and
+    /// extracts its internal tool calls as `TranscriptToolItem`s, run through the same
+    /// display pipeline as the main transcript so child tools render identically.
+    func loadSubagentChildCalls(mainPath: String, agentID: String) -> [TranscriptToolItem] {
+        guard let dir = subagentsDirectory(forMainPath: mainPath) else {
+            return []
+        }
+        let file = dir.appendingPathComponent("agent-\(agentID).jsonl")
+        guard fileManager.fileExists(atPath: file.path) else {
+            return []
+        }
+        let messages = SessionJSONLCodec.parsedObjects(path: file.path)
+            .compactMap { StreamEventParser.messageFromJSONObject($0, fallbackID: UUID().uuidString) }
+        return TranscriptDisplayBuilder.displayItems(messages: messages).flatMap { item -> [TranscriptToolItem] in
+            switch item {
+            case .tool(let tool): [tool]
+            case .toolRun(let tools): tools
+            default: []
+            }
+        }
+    }
+
     func exportMarkdown(path: String, outputPath: String, conversationOnly: Bool = false) throws {
         try SessionJSONLCodec.exportMarkdown(path: path, outputPath: outputPath, conversationOnly: conversationOnly)
     }

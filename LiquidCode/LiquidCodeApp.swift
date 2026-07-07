@@ -161,7 +161,11 @@ struct LiquidCodeCommands: Commands {
                 "3",
                 modifiers: [.command, .option]
             )
-            Button(L("Agents")) { LiquidCodeMainWindowController.shared.show(model: model); model.agentPanelOpen.toggle() }.keyboardShortcut("4", modifiers: [.command, .option])
+            Button(L("Agents")) {
+                LiquidCodeMainWindowController.shared.show(model: model)
+                model.secondaryTab = .agent
+                model.secondaryOpen.toggle()
+            }.keyboardShortcut("4", modifiers: [.command, .option])
             Button(L("Settings")) { LiquidCodeMainWindowController.shared.show(model: model); model.settingsOpen = true }.keyboardShortcut(",")
         }
     }

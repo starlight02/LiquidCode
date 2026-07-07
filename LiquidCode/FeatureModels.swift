@@ -186,6 +186,148 @@ enum PlanPayloadParser {
     }
 }
 
+/// One subagent Claude spawned via the `Agent`/`Task` tool. The `id` is the parent
+/// spawn block's toolUseID — stable and available the moment the spawn card appears,
+/// so we can build a `.running` shell immediately and later fill in `agentID`,
+/// `childToolCalls`, and the completion `status`/`summary` as those sources arrive.
+struct SubagentActivity: Identifiable, Equatable, Sendable {
+    enum Status: String, Sendable { case running, succeeded, failed }
+    let id: String
+    var agentID: String?
+    var subagentType: String
+    var description: String
+    var status: Status
+    var childToolCalls: [TranscriptToolItem]
+    var summary: String?
+    var startedAt: Date
+    var finishedAt: Date?
+
+    init(
+        id: String,
+        agentID: String? = nil,
+        subagentType: String,
+        description: String = "",
+        status: Status = .running,
+        childToolCalls: [TranscriptToolItem] = [],
+        summary: String? = nil,
+        startedAt: Date = Date(),
+        finishedAt: Date? = nil
+    ) {
+        self.id = id
+        self.agentID = agentID
+        self.subagentType = subagentType
+        self.description = description
+        self.status = status
+        self.childToolCalls = childToolCalls
+        self.summary = summary
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+    }
+
+    var childToolUseCount: Int {
+        childToolCalls.filter { $0.kind == .use }.count
+    }
+}
+
+/// A subagent's completion, parsed from a `<task-notification>` and keyed by the
+/// parent spawn block's toolUseID. Merged into the matching `SubagentActivity` so the
+/// inline card shows the final status instead of leaving an orphan system bubble.
+struct SubagentCompletion: Equatable, Sendable {
+    let status: SubagentActivity.Status
+    let summary: String?
+}
+
+/// Recognizes the tool the CLI uses to spawn a subagent and extracts its type and
+/// description. Real payloads name the tool `Agent`; older code matched only `Task`,
+/// so both are accepted here to keep the subagent card working across CLI versions.
+enum SubagentSpawnParser {
+    static let spawnToolNames: Set<String> = ["Agent", "Task"]
+
+    static func isSpawnTool(_ toolName: String?) -> Bool {
+        guard let toolName = toolName?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return spawnToolNames.contains(toolName)
+    }
+
+    /// Returns `nil` when the payload carries neither a `subagent_type` nor a
+    /// description/prompt, so a mislabeled tool falls back to the generic card.
+    static func parse(inputJSON: String) -> (subagentType: String, description: String)? {
+        let trimmed = inputJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            let data = trimmed.data(using: .utf8),
+            let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else {
+            return nil
+        }
+        var candidates = [root]
+        for key in ["input", "metadata", "request"] {
+            if let nested = root[key] as? [String: Any] {
+                candidates.append(nested)
+            }
+        }
+        var subagentType = ""
+        var description = ""
+        for object in candidates {
+            if
+                subagentType.isEmpty,
+                let value = (object["subagent_type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !value.isEmpty {
+                subagentType = value
+            }
+            if description.isEmpty {
+                for key in ["description", "prompt"] {
+                    if
+                        let value = (object[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                        !value.isEmpty {
+                        description = value
+                        break
+                    }
+                }
+            }
+        }
+        guard !subagentType.isEmpty || !description.isEmpty else {
+            return nil
+        }
+        return (subagentType.isEmpty ? "Subagent" : subagentType, description)
+    }
+}
+
+/// Parsed `<agentId>.meta.json` companion for a persisted subagent transcript.
+/// `toolUseID` links the subagent file back to the parent spawn block in the main
+/// transcript, which is the reliable anchor for attribution.
+struct SubagentMeta: Equatable, Sendable {
+    let agentID: String
+    let agentType: String
+    let description: String
+    let toolUseID: String
+    let spawnDepth: Int
+
+    static func parse(agentID: String, metaJSON: String) -> SubagentMeta? {
+        guard
+            let data = metaJSON.data(using: .utf8),
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else {
+            return nil
+        }
+        let toolUseID = (object["toolUseId"] as? String ?? object["toolUseID"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !toolUseID.isEmpty else {
+            return nil
+        }
+        let agentType = (object["agentType"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let description = (object["description"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let spawnDepth = (object["spawnDepth"] as? Int) ?? 1
+        return SubagentMeta(
+            agentID: agentID,
+            agentType: agentType,
+            description: description,
+            toolUseID: toolUseID,
+            spawnDepth: spawnDepth
+        )
+    }
+}
+
 struct TranscriptToolItem: Identifiable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable { case use, result }
     let id: String
@@ -199,7 +341,7 @@ struct TranscriptToolItem: Identifiable, Equatable, Sendable {
         guard kind == .use else {
             return L("Tool result")
         }
-        if toolName == "Task", let subagentName = taskSubagentType(in: content) {
+        if SubagentSpawnParser.isSpawnTool(toolName), let subagentName = taskSubagentType(in: content) {
             return subagentName
         }
         return toolName
@@ -241,6 +383,7 @@ enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
     case interaction(PermissionRequest)
     case question(TranscriptQuestionItem)
     case todo(TranscriptTodoItem)
+    case subagent(SubagentActivity)
     case tool(TranscriptToolItem)
     case toolRun([TranscriptToolItem])
 
@@ -250,6 +393,7 @@ enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
         case .interaction(let permission): "interaction_\(permission.id)"
         case .question(let question): question.id
         case .todo(let item): item.id
+        case .subagent(let activity): "subagent_\(activity.id)"
         case .tool(let item): item.id
         case .toolRun(let items): "toolrun_" + items.map(\.id).joined(separator: "_")
         }
@@ -282,14 +426,19 @@ enum TranscriptAutoExpansionPolicy {
         case .message,
              .interaction,
              .question,
-             .todo:
+             .todo,
+             .subagent:
             return .collapsed
         }
     }
 }
 
 enum TranscriptDisplayBuilder {
-    static func displayItems(messages: [ChatMessage], pendingPermissions: [PermissionRequest] = []) -> [TranscriptDisplayItem] {
+    static func displayItems(
+        messages: [ChatMessage],
+        pendingPermissions: [PermissionRequest] = [],
+        subagentActivities: [String: SubagentActivity] = [:]
+    ) -> [TranscriptDisplayItem] {
         let pending = deduplicatedPendingPermissions(pendingPermissions)
         let pendingQuestionToolIDs = Set(pending.compactMap { permission -> String? in
             guard InteractionAdapter(permission: permission).kind == .question else {
@@ -311,6 +460,12 @@ enum TranscriptDisplayBuilder {
                 suppressedQuestionSignatures: pendingQuestionSignatures
             )
         }
+        let subagentToolUseIDs = Set(rawItems.compactMap { item -> String? in
+            guard case .subagent(let activity) = item else {
+                return nil
+            }
+            return activity.id
+        })
         var output: [TranscriptDisplayItem] = []
         var index = 0
         while index < rawItems.count {
@@ -324,12 +479,25 @@ enum TranscriptDisplayBuilder {
             case .todo(let todo):
                 output.append(.todo(todo))
                 index += 1
+            case .subagent(let activity):
+                // A spawn card is standalone like .todo/.question — it must never be
+                // swept into an adjacent tool run. Enrich it below with the built activity.
+                output.append(.subagent(enrichedActivity(activity, using: subagentActivities)))
+                index += 1
             case .tool(let first):
+                if first.kind == .result, first.toolUseID.map(subagentToolUseIDs.contains) == true {
+                    index += 1
+                    continue
+                }
                 var run = [first]
                 index += 1
                 while index < rawItems.count {
                     guard case .tool(let next) = rawItems[index] else {
                         break
+                    }
+                    if next.kind == .result, next.toolUseID.map(subagentToolUseIDs.contains) == true {
+                        index += 1
+                        continue
                     }
                     run.append(next)
                     index += 1
@@ -344,6 +512,16 @@ enum TranscriptDisplayBuilder {
         }
         output.append(contentsOf: pending.map(TranscriptDisplayItem.interaction))
         return output
+    }
+
+    /// Replaces the empty spawn shell produced by `items(for:)` with the fully built
+    /// activity (children, status, summary) when the builder has one for this
+    /// toolUseID; otherwise keeps the shell so the card still renders while running.
+    private static func enrichedActivity(
+        _ shell: SubagentActivity,
+        using activities: [String: SubagentActivity]
+    ) -> SubagentActivity {
+        activities[shell.id] ?? shell
     }
 
     private static func deduplicatedPendingPermissions(_ permissions: [PermissionRequest]) -> [PermissionRequest] {
@@ -462,6 +640,17 @@ enum TranscriptDisplayBuilder {
                         sourceMessage: message,
                         toolUseID: toolUseID,
                         inputJSON: block.inputJSON ?? "{}"
+                    )))
+                } else if SubagentSpawnParser.isSpawnTool(toolName), let parsed = SubagentSpawnParser.parse(inputJSON: block.inputJSON ?? "") {
+                    // A spawn tool becomes a `.subagent` shell keyed by its toolUseID.
+                    // Children/status are empty here — displayItems enriches the shell
+                    // from the session's built SubagentActivity in a post-pass, since
+                    // this per-message step cannot see cross-message sidechain records.
+                    output.append(.subagent(SubagentActivity(
+                        id: toolUseID,
+                        subagentType: parsed.subagentType,
+                        description: parsed.description,
+                        startedAt: message.timestamp
                     )))
                 } else if toolName == "TodoWrite", let todos = TodoPayloadParser.parse(inputJSON: block.inputJSON ?? "") {
                     // A recognizable TodoWrite becomes its own checklist item; an
@@ -661,6 +850,7 @@ private enum RawTranscriptDisplayItem {
     case message(ChatMessage)
     case question(TranscriptQuestionItem)
     case todo(TranscriptTodoItem)
+    case subagent(SubagentActivity)
     case tool(TranscriptToolItem)
 }
 
@@ -688,6 +878,7 @@ enum AgentActivityBuilder {
             case .message,
                  .question,
                  .todo,
+                 .subagent,
                  .interaction: []
             }
         }
@@ -716,6 +907,123 @@ enum AgentActivityBuilder {
             )
             return call
         }
+    }
+}
+
+/// Builds the session's `SubagentActivity` list by joining three sources on the
+/// parent spawn block's toolUseID: the main transcript's spawn blocks (the
+/// authoritative list — one card per spawn), the subagent's own sidechain messages
+/// (live-routed or history-loaded, grouped by agentID → toolUseID via metas), and
+/// the completion notifications (status + summary). The main transcript is never
+/// touched, so subagent-internal tool calls stay out of it.
+enum SubagentActivityBuilder {
+    static func activities(
+        mainMessages: [ChatMessage],
+        sidechainMessages: [ChatMessage],
+        metas: [SubagentMeta],
+        agentLinks: [String: String] = [:],
+        childCallsByAgentID: [String: [TranscriptToolItem]],
+        completions: [String: SubagentCompletion]
+    ) -> [SubagentActivity] {
+        // 1. Authoritative shells: one per spawn block in the main transcript.
+        var shells: [SubagentActivity] = []
+        var indexByToolUseID: [String: Int] = [:]
+        for message in mainMessages {
+            for block in message.blocks where block.kind == .toolUse && SubagentSpawnParser.isSpawnTool(block.toolName) {
+                let toolUseID = block.toolUseID ?? block.id
+                guard indexByToolUseID[toolUseID] == nil else {
+                    continue
+                }
+                let parsed = SubagentSpawnParser.parse(inputJSON: block.inputJSON ?? "")
+                indexByToolUseID[toolUseID] = shells.count
+                shells.append(SubagentActivity(
+                    id: toolUseID,
+                    subagentType: parsed?.subagentType ?? "Subagent",
+                    description: parsed?.description ?? "",
+                    startedAt: message.timestamp
+                ))
+            }
+        }
+
+        // 2. Map agentID → toolUseID from metas (history) so sidechain records can be
+        //    attributed to the right shell.
+        var toolUseIDByAgentID: [String: String] = [:]
+        for meta in metas {
+            guard let idx = indexByToolUseID[meta.toolUseID] else {
+                continue
+            }
+            toolUseIDByAgentID[meta.agentID] = meta.toolUseID
+            if shells[idx].agentID == nil {
+                shells[idx].agentID = meta.agentID
+            }
+            if shells[idx].subagentType == "Subagent", !meta.agentType.isEmpty {
+                shells[idx].subagentType = meta.agentType
+            }
+            if shells[idx].description.isEmpty, !meta.description.isEmpty {
+                shells[idx].description = meta.description
+            }
+        }
+        // Live sources (permission requests, completion notifications) also link an
+        // agentID to a spawn toolUseID. Merge them so live sidechain records attribute
+        // even when no meta.json is available yet.
+        for (agentID, toolUseID) in agentLinks {
+            guard let idx = indexByToolUseID[toolUseID] else {
+                continue
+            }
+            if toolUseIDByAgentID[agentID] == nil {
+                toolUseIDByAgentID[agentID] = toolUseID
+            }
+            if shells[idx].agentID == nil {
+                shells[idx].agentID = agentID
+            }
+        }
+
+        // 3. Group sidechain messages by agentID, run them through the SAME display
+        //    pipeline as the main transcript, and attach the extracted tool items to the
+        //    matching shell. Pre-loaded child calls (history) are merged in too.
+        var messagesByAgentID: [String: [ChatMessage]] = [:]
+        for message in sidechainMessages {
+            guard let agentID = message.agentID, !agentID.isEmpty else {
+                continue
+            }
+            messagesByAgentID[agentID, default: []].append(message)
+        }
+        for (agentID, group) in messagesByAgentID {
+            guard let toolUseID = toolUseIDByAgentID[agentID], let idx = indexByToolUseID[toolUseID] else {
+                continue
+            }
+            let toolItems = TranscriptDisplayBuilder.displayItems(messages: group).flatMap { item -> [TranscriptToolItem] in
+                switch item {
+                case .tool(let tool): [tool]
+                case .toolRun(let tools): tools
+                default: []
+                }
+            }
+            shells[idx].childToolCalls.append(contentsOf: toolItems)
+            if shells[idx].agentID == nil {
+                shells[idx].agentID = agentID
+            }
+        }
+        for (agentID, calls) in childCallsByAgentID {
+            guard let toolUseID = toolUseIDByAgentID[agentID], let idx = indexByToolUseID[toolUseID] else {
+                continue
+            }
+            shells[idx].childToolCalls.append(contentsOf: calls)
+        }
+
+        // 4. Merge completion status/summary by toolUseID.
+        for (toolUseID, completion) in completions {
+            guard let idx = indexByToolUseID[toolUseID] else {
+                continue
+            }
+            shells[idx].status = completion.status
+            shells[idx].summary = completion.summary
+            if shells[idx].finishedAt == nil {
+                shells[idx].finishedAt = Date()
+            }
+        }
+
+        return shells
     }
 }
 

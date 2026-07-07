@@ -25,7 +25,20 @@ extension AppModel {
         if pending.isEmpty, let cached = displayItemsBySession[selectedSessionID] {
             return cached
         }
-        return TranscriptDisplayBuilder.displayItems(messages: selectedMessages, pendingPermissions: pending)
+        return TranscriptDisplayBuilder.displayItems(
+            messages: selectedMessages,
+            pendingPermissions: pending,
+            subagentActivities: subagentActivityMap(for: selectedSessionID)
+        )
+    }
+
+    /// Keys the session's built subagent activities by their spawn toolUseID so the
+    /// display builder can enrich each `.subagent` shell with its children and status.
+    func subagentActivityMap(for sessionID: String) -> [String: SubagentActivity] {
+        guard let activities = subagentActivitiesBySession[sessionID] else {
+            return [:]
+        }
+        return Dictionary(activities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     var selectedStreamingMessage: ChatMessage? {
@@ -59,6 +72,10 @@ extension AppModel {
 
     var selectedToolCalls: [ToolCall] {
         toolCallsBySession[selectedSessionID ?? ""] ?? []
+    }
+
+    var selectedSubagentActivities: [SubagentActivity] {
+        subagentActivitiesBySession[selectedSessionID ?? ""] ?? []
     }
 
     var activeProvider: ProviderRecord? {
@@ -104,11 +121,17 @@ extension AppModel {
     }
 
     func rebuildTranscriptDisplayItems(sessionID: String) {
-        displayItemsBySession[sessionID] = TranscriptDisplayBuilder.displayItems(messages: messagesBySession[sessionID] ?? [])
+        displayItemsBySession[sessionID] = TranscriptDisplayBuilder.displayItems(
+            messages: messagesBySession[sessionID] ?? [],
+            subagentActivities: subagentActivityMap(for: sessionID)
+        )
     }
 
     func setMessages(_ messages: [ChatMessage], for sessionID: String, displayItems: [TranscriptDisplayItem]? = nil) {
         messagesBySession[sessionID] = messages
-        displayItemsBySession[sessionID] = displayItems ?? TranscriptDisplayBuilder.displayItems(messages: messages)
+        displayItemsBySession[sessionID] = displayItems ?? TranscriptDisplayBuilder.displayItems(
+            messages: messages,
+            subagentActivities: subagentActivityMap(for: sessionID)
+        )
     }
 }

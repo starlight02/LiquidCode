@@ -349,6 +349,13 @@ struct ClaudeControlTranscriptEvent: Equatable, Sendable {
     var title: String
     var body: String
     var preview: String
+    /// For task-notification events: the parent spawn block's toolUseID, used to
+    /// merge the completion status into the matching `SubagentActivity` card.
+    var toolUseID: String?
+    /// For task-notification events: the `<task-id>`, which equals the subagent's
+    /// `agentId`. Links sidechain records to the parent spawn card as a reliable
+    /// fallback when no permission request surfaced the mapping live.
+    var taskID: String?
 }
 
 func claudeControlTranscriptEvent(from value: Any?) -> ClaudeControlTranscriptEvent? {
@@ -448,6 +455,8 @@ private func claudeTaskNotificationEvent(from text: String) -> ClaudeControlTran
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let taskID = text.betweenXMLLikeTags("task-id")?
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let toolUseID = text.betweenXMLLikeTags("tool-use-id")?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let body: String
     if !summary.isEmpty {
         body = summary
@@ -461,7 +470,9 @@ private func claudeTaskNotificationEvent(from text: String) -> ClaudeControlTran
         kind: failed ? .taskFailure : .taskNotification,
         title: failed ? "Task failed" : "Task notification",
         body: body,
-        preview: body
+        preview: body,
+        toolUseID: toolUseID.isEmpty ? nil : toolUseID,
+        taskID: taskID.isEmpty ? nil : taskID
     )
 }
 

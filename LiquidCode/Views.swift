@@ -85,9 +85,6 @@ struct AppShellView: View {
                 if model.settingsOpen {
                     SettingsPanelView()
                 }
-                if model.agentPanelOpen {
-                    AgentFloatingOverlayView()
-                }
                 if model.commandPaletteOpen {
                     CommandPaletteView()
                 }
