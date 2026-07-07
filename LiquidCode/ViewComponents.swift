@@ -1913,6 +1913,16 @@ struct ChatPanelView: View {
                 updateAutoScrollFollow(metrics)
             }
             .onAppear { scrollToTranscriptBottom(proxy, animated: false) }
+            .onChange(of: model.selectedSessionID) { _, _ in
+                // Switching conversations is a fresh view: always re-arm and jump to the
+                // bottom, ignoring whether the previous session was scrolled up. Reset the
+                // last-offset baseline too, otherwise the geometry handler compares the new
+                // session's near-zero offset against the old session's larger one, reads it
+                // as an upward scroll, and releases the follow before the jump lands.
+                lastContentOffsetY = 0
+                isPinnedToBottom = true
+                scrollToTranscriptBottom(proxy, animated: false)
+            }
             .onChange(of: transcriptAutoScrollToken) { _, _ in
                 // Only chase the bottom while the user is parked there. During streaming
                 // the token changes on every delta; a non-animated scroll keeps pace
