@@ -1523,6 +1523,7 @@ struct ChatPanelView: View {
     let isFilePreviewMode: Bool
     let onToggleSecondary: () -> Void
     private let transcriptBottomAnchorID = "transcript_bottom_anchor"
+    private let transcriptBottomReservedHeight: CGFloat = 230
     @State private var findOpen = false
     @State private var agentPopoverOpen = false
     @State private var logoOpacity: Double = 0
@@ -1536,6 +1537,7 @@ struct ChatPanelView: View {
     // scroll does, which is why we compare against the last observed offset.
     @State private var isPinnedToBottom = true
     @State private var lastContentOffsetY: CGFloat = 0
+    @State private var lastMetricsSessionID: String?
     private let autoScrollReleaseThreshold: CGFloat = 40
     var body: some View {
         VStack(spacing: 0) {
@@ -1894,16 +1896,17 @@ struct ChatPanelView: View {
                         Color.clear.frame(height: 1).id("streaming")
                     }
                     ForEach(model.selectedPendingUserMessages) { pending in QueuedUserMessageView(message: pending).id("queued_\(pending.id)") }
+                    Color.clear.frame(height: transcriptBottomReservedHeight)
                     Color.clear.frame(height: 1).id(transcriptBottomAnchorID)
                 }
                 .frame(maxWidth: LiquidGlassToken.chatMaxWidth, alignment: .leading)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 18)
-                .padding(.bottom, 230)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
             .onScrollGeometryChange(for: ScrollFollowMetrics.self) { geometry in
                 ScrollFollowMetrics(
+                    sessionID: model.selectedSessionID,
                     offsetY: geometry.contentOffset.y,
                     distanceFromBottom: geometry.contentSize.height
                         - geometry.contentOffset.y
@@ -1914,20 +1917,18 @@ struct ChatPanelView: View {
             }
             .onAppear { scrollToTranscriptBottom(proxy, animated: false) }
             .onChange(of: model.selectedSessionID) { _, _ in
-                // Switching conversations is a fresh view: always re-arm and jump to the
-                // bottom, ignoring whether the previous session was scrolled up. Reset the
-                // last-offset baseline too, otherwise the geometry handler compares the new
-                // session's near-zero offset against the old session's larger one, reads it
-                // as an upward scroll, and releases the follow before the jump lands.
+                // A conversation switch is a fresh transcript: re-arm follow and reset the
+                // geometry baseline so the loading session's near-zero offset isn't misread
+                // as an upward scroll. The actual bottom scroll happens on the transcript
+                // token change below (fired by the cache hit or async load completion).
                 lastContentOffsetY = 0
                 isPinnedToBottom = true
-                scrollToTranscriptBottom(proxy, animated: false)
             }
             .onChange(of: transcriptAutoScrollToken) { _, _ in
-                // Only chase the bottom while the user is parked there. During streaming
-                // the token changes on every delta; a non-animated scroll keeps pace
-                // smoothly instead of relaunching a 0.18s animation dozens of times a
-                // second, which is what made the transcript jitter and never settle.
+                // Follow the bottom only while the user is parked there. The guard matters
+                // during an active turn (the user may have scrolled up to read history and
+                // must not be yanked down); when not streaming, staleness of isPinnedToBottom
+                // is avoided because switching/loading re-arms it above.
                 guard isPinnedToBottom else {
                     return
                 }
@@ -1942,6 +1943,17 @@ struct ChatPanelView: View {
     }
 
     private func updateAutoScrollFollow(_ metrics: ScrollFollowMetrics) {
+        // A conversation switch replaces the whole transcript, so the first geometry
+        // report for the new session is a discontinuity, not a user gesture. Adopt its
+        // offset as the new baseline without deciding follow state — the switch already
+        // re-armed isPinnedToBottom. This is what stops the scrollbar from thrashing:
+        // otherwise the new session's small offset reads as an upward scroll against the
+        // old session's large one, flipping the pin off and fighting the bottom scroll.
+        if metrics.sessionID != lastMetricsSessionID {
+            lastMetricsSessionID = metrics.sessionID
+            lastContentOffsetY = metrics.offsetY
+            return
+        }
         defer { lastContentOffsetY = metrics.offsetY }
         // Re-arm as soon as the user parks near the bottom again.
         if metrics.distanceFromBottom <= autoScrollReleaseThreshold {
@@ -1971,6 +1983,7 @@ struct ChatPanelView: View {
 }
 
 private struct ScrollFollowMetrics: Equatable {
+    var sessionID: String?
     var offsetY: CGFloat
     var distanceFromBottom: CGFloat
 }
