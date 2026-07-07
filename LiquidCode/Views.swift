@@ -16,7 +16,6 @@ enum GlassControlMetric {
 struct AppShellView: View {
     @EnvironmentObject var model: AppModel
     @State private var sidebarOpen = true
-    @State private var secondaryOpen = false
     @State private var previewWidth: Double = 640
     @State private var sidebarDragStart: Double?
     @State private var rightDragStart: Double?
@@ -45,9 +44,9 @@ struct AppShellView: View {
                     ChatPanelView(
                         sidebarOpen: sidebarOpen,
                         onToggleSidebar: { sidebarOpen.toggle() },
-                        secondaryOpen: secondaryOpen,
+                        secondaryOpen: model.secondaryOpen,
                         isFilePreviewMode: isFilePreviewMode,
-                        onToggleSecondary: { secondaryOpen.toggle() }
+                        onToggleSecondary: { model.secondaryOpen.toggle() }
                     )
                     .frame(minWidth: LiquidGlassToken.chatMinWidth, maxWidth: .infinity, maxHeight: .infinity)
                     .layoutPriority(1)
@@ -62,8 +61,8 @@ struct AppShellView: View {
                                     .offset(x: -4)
                                     .gesture(previewResizeGesture)
                             }
-                    } else if secondaryOpen {
-                        SecondaryPanelView(onClose: { secondaryOpen = false })
+                    } else if model.secondaryOpen {
+                        SecondaryPanelView(onClose: { model.secondaryOpen = false })
                             .frame(width: secondaryPaneWidth)
                             .frame(maxHeight: .infinity)
                             .overlay(alignment: .leading) {
@@ -78,7 +77,7 @@ struct AppShellView: View {
                 .padding(.bottom, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .animation(.snappy(duration: 0.22), value: sidebarOpen)
-                .animation(.snappy(duration: 0.22), value: secondaryOpen)
+                .animation(.snappy(duration: 0.22), value: model.secondaryOpen)
                 .animation(.snappy(duration: 0.22), value: isFilePreviewMode)
                 .background(LiquidAppBackdrop())
                 .background(WindowAccessor(configure: configureLiquidWindow))
@@ -108,14 +107,14 @@ struct AppShellView: View {
         .onAppear { model.bootstrap() }
         .onChange(of: model.selectedSessionID) { _, newValue in
             if newValue == nil {
-                secondaryOpen = false
+                model.secondaryOpen = false
             }
         }
         .onChange(of: isFilePreviewMode) { _, active in
             if active {
                 let screenWidth = NSScreen.main?.visibleFrame.width ?? 1280
                 previewWidth = min(820, max(520, screenWidth * 0.40))
-                secondaryOpen = true
+                model.secondaryOpen = true
             }
         }
     }
@@ -150,7 +149,7 @@ struct AppShellView: View {
     }
 
     private func resolvedSecondaryWidth(containerWidth: CGFloat) -> CGFloat {
-        guard secondaryOpen, !isFilePreviewMode else {
+        guard model.secondaryOpen, !isFilePreviewMode else {
             return CGFloat(model.settings.secondaryWidth)
         }
         let contentWidth = max(0, containerWidth - 20)
@@ -185,7 +184,7 @@ struct AppShellView: View {
                 }
                 let next = (rightDragStart ?? model.settings.secondaryWidth) - value.translation.width
                 if next < 260 {
-                    secondaryOpen = false; rightDragStart = nil
+                    model.secondaryOpen = false; rightDragStart = nil
                 } else {
                     model.settings.secondaryWidth = min(Double(secondaryMaximumWidth), max(Double(secondaryMinimumWidth), next))
                 }

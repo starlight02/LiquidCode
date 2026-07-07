@@ -1837,6 +1837,8 @@ struct ChatPanelView: View {
             InlineInteractionCardView(permission: permission).id(idPrefix + "interaction_\(permission.id)")
         case .question(let question):
             QuestionTranscriptCardView(question: question).id(idPrefix + question.id)
+        case .todo(let item):
+            TodoListCardView(item: item).id(idPrefix + item.id)
         case .tool(let item):
             ToolDisplayItemView(item: item, autoExpanded: autoExpandItem).id(idPrefix + item.id)
         case .toolRun(let items):
@@ -2099,71 +2101,6 @@ struct QueuedUserMessageView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.accentColor.opacity(0.22)) }
             .frame(maxWidth: 760, alignment: .trailing)
-        }
-    }
-}
-
-struct PlanInspectorView: View {
-    @EnvironmentObject var model: AppModel
-    private var planMessages: [ChatMessage] {
-        model.selectedMessages.filter { message in
-            let lower = ((message.toolName ?? "") + " " + message.content).lowercased()
-            return lower.contains("plan") || lower.contains("exitplanmode") || lower.contains("todo")
-        }
-    }
-
-    private var pendingPlanApprovals: [PermissionRequest] {
-        model.pendingPermissionsForSelectedSession.filter { InteractionAdapter(permission: $0).kind == .planReview }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Label(L("Plan"), systemImage: "list.bullet.rectangle")
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    if model.settings.sessionMode == .plan {
-                        Text(L("Active"))
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.accentColor.opacity(0.12))
-                            .foregroundStyle(Color.accentColor)
-                            .clipShape(Capsule())
-                    }
-                    Spacer(minLength: 0)
-                }
-                Text(L("Review plan drafts, todos, and resolved plan approvals without resizing the transcript."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            Divider().opacity(0.55)
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if planMessages.isEmpty && pendingPlanApprovals.isEmpty {
-                        ContentUnavailableView(L("No plan yet"), systemImage: "list.bullet.rectangle", description: Text(L("Switch to Plan mode or approve an ExitPlanMode card.")))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 36)
-                    }
-                    if !pendingPlanApprovals.isEmpty {
-                        Label(L("Plan approval pending in the composer action slot."), systemImage: "arrow.down.circle")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(10)
-                            .background { StandardContentCardBackground(cornerRadius: 10, tint: .accentColor) }
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                    ForEach(planMessages) { message in
-                        MarkdownRendererView(content: message.content)
-                            .padding(10)
-                            .background { StandardContentCardBackground(cornerRadius: 10, tint: .accentColor) }
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                }
-                .padding(12)
-            }
         }
     }
 }

@@ -29,6 +29,10 @@ final class AppModel: ObservableObject {
     @Published var activeProviderID: String?
     @Published var modelDisplayNames: [String: String] = [:]
     @Published var secondaryTab: SecondaryTab = .files
+    // The right inspector's open state lives here (not as AppShellView @State) so
+    // deeply nested views — the composer's plan-review card — can open the panel to
+    // show plan detail without threading a binding down through the whole hierarchy.
+    @Published var secondaryOpen = false
     @Published var settingsOpen = false
     @Published var settingsTab: SettingsTab = .general
     @Published var commandPaletteOpen = false

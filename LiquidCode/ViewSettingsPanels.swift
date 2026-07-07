@@ -715,59 +715,82 @@ struct PlanReviewInlineCardView: View {
     let permission: PermissionRequest
     var compact: Bool = false
     @State private var expanded = true
-    private var planText: String {
-        permission.summary.isEmpty ? permission.inputJSON : permission.summary
-    }
-
-    private var stepCount: Int {
-        planText.split(separator: "\n").filter { $0.range(of: #"^\d+\.\s"#, options: .regularExpression) != nil }.count
+    @State private var revisionNote = ""
+    private var plan: PlanDraft {
+        PlanPayloadParser.parse(inputJSON: permission.inputJSON, fallbackSummary: permission.summary)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let plan = plan
+        return VStack(alignment: .leading, spacing: 10) {
             Button { expanded.toggle() } label: {
-                HStack {
-                    Image(systemName: "list.bullet.rectangle").foregroundStyle(Color.accentColor); Text(L("Plan review"))
-                        .font(.headline); if stepCount > 0 {
-                        Text(LF("%d steps", stepCount))
+                HStack(spacing: 8) {
+                    Image(systemName: "list.bullet.rectangle").foregroundStyle(Color.accentColor)
+                    Text(L("Plan review")).font(.headline)
+                    if plan.stepCount > 0 {
+                        Text(LF("%d steps", plan.stepCount))
                             .font(.caption)
-                            .padding(
-                                .horizontal,
-                                6
-                            )
+                            .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Color.accentColor.opacity(0.12))
-                            .clipShape(Capsule()) }; Spacer(); Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption) } }
-                .buttonStyle(.plain)
-                .pointingHandCursor()
-                .help(expanded ? L("Collapse plan details") : L("Expand plan details"))
-            if expanded && !compact {
-                MarkdownRendererView(content: planText).font(.callout)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                    Button {
+                        model.secondaryTab = .plan
+                        model.secondaryOpen = true
+                    } label: {
+                        Image(systemName: "sidebar.right").font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
+                    .help(L("View plan details in the inspector"))
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.caption)
+                }
+                .contentShape(Rectangle())
             }
-            HStack {
-                Button(L("Reject"), role: .destructive) { model.respondPermission(permission, allow: false) }
+            .buttonStyle(.plain)
+            .pointingHandCursor()
+            .help(expanded ? L("Collapse plan details") : L("Expand plan details"))
+            if expanded && !compact {
+                MarkdownRendererView(content: plan.markdown).font(.callout)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                TextField(L("Tell Claude how to adjust this plan…"), text: $revisionNote, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.callout)
+                    .lineLimit(1 ... 4)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(LiquidGlassToken.hairline, lineWidth: 1)
+                    }
+                HStack {
+                    Button(L("Reject"), role: .destructive) { model.respondPermission(permission, allow: false) }
+                        .buttonStyle(.plain)
+                        .liquidGlassButton(radius: 11)
+                    Button {
+                        model.submitPlanRevision(permission, note: revisionNote)
+                        revisionNote = ""
+                    } label: {
+                        Label(L("Send adjustment"), systemImage: "arrow.uturn.left")
+                    }
                     .buttonStyle(.plain)
                     .liquidGlassButton(radius: 11)
-                Button(L("Restart Plan")) {
-                    model.setComposerMode(.plan)
-                    model.updateComposerText(L("Please revise the plan before execution:") + "\n\n")
-                    model.respondPermission(
-                        permission,
-                        allow: false
-                    )
-                    model.toastInfo(L("Plan"), L("Describe the revision in the composer"))
+                    .disabled(revisionNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Spacer()
+                    Button {
+                        model.setComposerMode(.code)
+                        model.respondPermission(permission, allow: true, editedInput: permission.inputJSON)
+                    } label: {
+                        Label(L("Approve Plan"), systemImage: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(active: true, radius: 11)
                 }
-                .buttonStyle(.plain)
-                .liquidGlassButton(radius: 11)
-                Spacer()
-                Button {
-                    model.setComposerMode(.code); model.respondPermission(permission, allow: true, editedInput: permission.inputJSON)
-                } label: {
-                    Label(L("Approve Plan"), systemImage: "checkmark.circle.fill")
-                }
-                .buttonStyle(.plain)
-                .liquidGlassButton(active: true, radius: 11)
             }
         }
         .padding(14)

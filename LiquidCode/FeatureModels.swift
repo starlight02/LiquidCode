@@ -92,6 +92,100 @@ struct MarkdownImageReference: Equatable, Sendable {
     var source: String
 }
 
+/// One item from a TodoWrite payload. The CLI sends `content` (imperative form),
+/// `activeForm` (present-continuous, shown while in progress), and `status`.
+struct TodoItem: Identifiable, Equatable, Sendable {
+    enum Status: String, Sendable {
+        case pending
+        case inProgress = "in_progress"
+        case completed
+    }
+
+    let id: String
+    let content: String
+    let activeForm: String
+    let status: Status
+}
+
+/// Decodes a `TodoWrite` tool call's `inputJSON` into structured todo items.
+/// Returns `nil` when the payload is not a recognizable todo list, so the caller
+/// can fall back to the generic tool card instead of rendering a broken checklist.
+enum TodoPayloadParser {
+    static func parse(inputJSON: String) -> [TodoItem]? {
+        let trimmed = inputJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            let data = trimmed.data(using: .utf8),
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let rawTodos = object["todos"] as? [[String: Any]]
+        else {
+            return nil
+        }
+        var todos: [TodoItem] = []
+        for (index, raw) in rawTodos.enumerated() {
+            guard let content = (raw["content"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty else {
+                continue
+            }
+            let activeForm = (raw["activeForm"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let status = TodoItem.Status(rawValue: (raw["status"] as? String) ?? "pending") ?? .pending
+            todos.append(TodoItem(id: "\(index)_\(content.hashValue)", content: content, activeForm: activeForm, status: status))
+        }
+        // An empty `todos` array is a valid payload the CLI sends to clear the list;
+        // still return it so the card can show a cleared state rather than a JSON dump.
+        return todos
+    }
+}
+
+/// A parsed plan drafted by the agent before ExitPlanMode approval. The markdown
+/// lives in the control request's `input.plan` field; older shapes only carry it
+/// in the request description, so we fall back through summary then raw JSON.
+struct PlanDraft: Equatable, Sendable {
+    let markdown: String
+    let stepCount: Int
+}
+
+enum PlanPayloadParser {
+    static func parse(inputJSON: String, fallbackSummary: String) -> PlanDraft {
+        let markdown = extractedMarkdown(inputJSON: inputJSON) ?? nonEmpty(fallbackSummary) ?? inputJSON
+        return PlanDraft(markdown: markdown, stepCount: numberedStepCount(in: markdown))
+    }
+
+    /// Walks the same nested candidate objects as `InteractionAdapter` (input /
+    /// metadata / request) looking for a plan field, so both surfaces agree on
+    /// where the plan text lives.
+    private static func extractedMarkdown(inputJSON: String) -> String? {
+        guard
+            let data = inputJSON.data(using: .utf8),
+            let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else {
+            return nil
+        }
+        var candidates = [root]
+        for key in ["input", "metadata", "request"] {
+            if let nested = root[key] as? [String: Any] {
+                candidates.append(nested)
+            }
+        }
+        for object in candidates {
+            for key in ["plan", "planContent", "plan_content"] {
+                if let value = (object[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                    return value
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func numberedStepCount(in markdown: String) -> Int {
+        let lines = markdown.split(separator: "\n")
+        return lines.filter { $0.range(of: #"^\s*\d+\.\s"#, options: .regularExpression) != nil }.count
+    }
+
+    private static func nonEmpty(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 struct TranscriptToolItem: Identifiable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable { case use, result }
     let id: String
@@ -136,10 +230,17 @@ struct TranscriptQuestionItem: Identifiable, Equatable, Sendable {
     var isPending: Bool = false
 }
 
+struct TranscriptTodoItem: Identifiable, Equatable, Sendable {
+    let id: String
+    let sourceMessage: ChatMessage
+    let items: [TodoItem]
+}
+
 enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
     case message(ChatMessage)
     case interaction(PermissionRequest)
     case question(TranscriptQuestionItem)
+    case todo(TranscriptTodoItem)
     case tool(TranscriptToolItem)
     case toolRun([TranscriptToolItem])
 
@@ -148,6 +249,7 @@ enum TranscriptDisplayItem: Identifiable, Equatable, Sendable {
         case .message(let message): message.id
         case .interaction(let permission): "interaction_\(permission.id)"
         case .question(let question): question.id
+        case .todo(let item): item.id
         case .tool(let item): item.id
         case .toolRun(let items): "toolrun_" + items.map(\.id).joined(separator: "_")
         }
@@ -179,7 +281,8 @@ enum TranscriptAutoExpansionPolicy {
             return TranscriptToolExpansionState(expandedDisplayItemID: item.id, expandedToolItemID: tool.id)
         case .message,
              .interaction,
-             .question:
+             .question,
+             .todo:
             return .collapsed
         }
     }
@@ -217,6 +320,9 @@ enum TranscriptDisplayBuilder {
                 index += 1
             case .question(let question):
                 output.append(.question(question))
+                index += 1
+            case .todo(let todo):
+                output.append(.todo(todo))
                 index += 1
             case .tool(let first):
                 var run = [first]
@@ -357,6 +463,14 @@ enum TranscriptDisplayBuilder {
                         toolUseID: toolUseID,
                         inputJSON: block.inputJSON ?? "{}"
                     )))
+                } else if toolName == "TodoWrite", let todos = TodoPayloadParser.parse(inputJSON: block.inputJSON ?? "") {
+                    // A recognizable TodoWrite becomes its own checklist item; an
+                    // unparsable payload falls through to the generic tool card below.
+                    output.append(.todo(TranscriptTodoItem(
+                        id: "\(message.id)_todo_\(ordinal)_\(block.id)",
+                        sourceMessage: message,
+                        items: todos
+                    )))
                 } else if !isAskUserQuestion(toolName) {
                     output.append(.tool(TranscriptToolItem(
                         id: "\(message.id)_tool_\(ordinal)_\(block.id)",
@@ -482,6 +596,17 @@ enum TranscriptDisplayBuilder {
                     inputJSON: payload
                 ))
             }
+            if
+                case .tool(let tool) = item,
+                tool.kind == .use,
+                tool.toolName == "TodoWrite",
+                let todos = TodoPayloadParser.parse(inputJSON: cleanToolPayload(tool.content)) {
+                return .todo(TranscriptTodoItem(
+                    id: "\(message.id)_todo_legacy_\(tool.id)",
+                    sourceMessage: message,
+                    items: todos
+                ))
+            }
             return item
         }
         if converted.isEmpty, output.isEmpty {
@@ -535,6 +660,7 @@ enum TranscriptDisplayBuilder {
 private enum RawTranscriptDisplayItem {
     case message(ChatMessage)
     case question(TranscriptQuestionItem)
+    case todo(TranscriptTodoItem)
     case tool(TranscriptToolItem)
 }
 
@@ -561,6 +687,7 @@ enum AgentActivityBuilder {
             case .toolRun(let tools): tools
             case .message,
                  .question,
+                 .todo,
                  .interaction: []
             }
         }

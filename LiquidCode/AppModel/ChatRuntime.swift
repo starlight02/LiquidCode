@@ -160,6 +160,21 @@ extension AppModel {
         } catch { showError("Permission response failed", error.localizedDescription) }
     }
 
+    /// Rejects the pending plan and sends the user's revision note back to Claude so it
+    /// re-plans. Staying in plan mode keeps the next turn a plan (not an execution). The
+    /// note is queued when a turn is already active, mirroring how `sendComposer` defers.
+    func submitPlanRevision(_ permission: PermissionRequest, note: String) {
+        respondPermission(permission, allow: false)
+        setComposerMode(.plan)
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let payload = trimmed.isEmpty ? L("Please revise the plan before execution.") : trimmed
+        if hasActiveTurn(for: permission.sessionID) {
+            pendingUserMessagesBySession[permission.sessionID, default: []].append(PendingUserMessage(content: payload))
+        } else {
+            send(payload)
+        }
+    }
+
     func handle(_ event: ClaudeEvent) {
         switch event {
         case .sessionStarted(let sessionID, let cliID):
