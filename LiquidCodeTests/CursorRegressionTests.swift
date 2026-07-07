@@ -181,37 +181,33 @@ final class CursorRegressionTests: XCTestCase {
         )
     }
 
-    func testTranscriptAutoScrollsToBottomAnchorForUserMessagesAndStreaming() throws {
+    func testTranscriptUsesDeclarativeBottomAnchorAndPerSessionScrollIdentity() throws {
         let source = try Self.source("LiquidCode/ViewComponents.swift")
         let chatPanel = try XCTUnwrap(Self.typeBody(named: "ChatPanelView", in: source))
 
         XCTAssertTrue(
-            chatPanel.contains("private let transcriptBottomAnchorID = \"transcript_bottom_anchor\""),
-            "Auto-scroll regression: transcript needs a stable bottom sentinel instead of targeting the last raw message id."
+            chatPanel.contains(".defaultScrollAnchor(.bottom)"),
+            "Auto-scroll regression: the transcript must land at and stick to the bottom declaratively, not via an imperative scrollTo that races async layout."
         )
         XCTAssertTrue(
-            chatPanel.contains("Color.clear.frame(height: 1).id(transcriptBottomAnchorID)"),
-            "Auto-scroll regression: a bottom sentinel must exist after messages, streaming output, and queued user messages."
+            chatPanel.contains(".id(model.selectedSessionID)"),
+            "Auto-scroll regression: the scroll view needs a per-session identity so switching conversations never inherits the previous transcript's offset."
         )
         XCTAssertTrue(
-            chatPanel.contains("streamingText: model.selectedStreamingText"),
-            "Auto-scroll regression: streaming deltas must update the lightweight bottom-follow token."
-        )
-        XCTAssertTrue(
-            chatPanel.contains("pendingMessages: model.selectedPendingUserMessages"),
-            "Auto-scroll regression: queued user messages must also force the transcript to the bottom without joining every queued id."
-        )
-        XCTAssertTrue(
-            chatPanel.contains(".onAppear { scrollToTranscriptBottom(proxy, animated: false) }"),
-            "Auto-scroll regression: opening a transcript should land at the latest content."
-        )
-        XCTAssertTrue(
-            chatPanel.contains(".onChange(of: transcriptAutoScrollToken)"),
-            "Auto-scroll regression: every user send and assistant stream update should scroll to the bottom sentinel."
+            chatPanel.contains("Color.clear.frame(height: transcriptBottomReservedHeight)"),
+            "Auto-scroll regression: reserved trailing space must keep the last message clear of the floating input bar."
         )
         XCTAssertFalse(
-            chatPanel.contains(".onChange(of: model.selectedMessages.count)"),
-            "Auto-scroll regression: raw message count misses display-item regrouping and same-count streaming updates."
+            chatPanel.contains("scrollToTranscriptBottom"),
+            "Auto-scroll regression: the imperative bottom-scroll helper raced SwiftUI layout and must stay removed."
+        )
+        XCTAssertFalse(
+            chatPanel.contains("transcriptAutoScrollToken"),
+            "Auto-scroll regression: the lightweight follow token drove the removed imperative scroll and must stay removed."
+        )
+        XCTAssertFalse(
+            chatPanel.contains("onScrollGeometryChange"),
+            "Auto-scroll regression: the geometry state machine fought the bottom scroll and must stay removed."
         )
     }
 

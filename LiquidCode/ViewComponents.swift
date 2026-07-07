@@ -1522,7 +1522,8 @@ struct ChatPanelView: View {
     let secondaryOpen: Bool
     let isFilePreviewMode: Bool
     let onToggleSecondary: () -> Void
-    private let transcriptBottomAnchorID = "transcript_bottom_anchor"
+    // Reserved trailing space inside the transcript so the last message clears the
+    // floating input bar that overlaps the bottom of the scroll view.
     private let transcriptBottomReservedHeight: CGFloat = 230
     @State private var findOpen = false
     @State private var agentPopoverOpen = false
@@ -1530,15 +1531,6 @@ struct ChatPanelView: View {
     @State private var headingOpacity: Double = 0
     @State private var subtitleOpacity: Double = 0
     @State private var chipsOpacity: Double = 0
-    // Auto-scroll follows the transcript bottom only while the user is parked there.
-    // Scrolling up releases the follow so history reading is never yanked back down;
-    // returning near the bottom re-arms it. Growing content alone must not release it
-    // (new output is appended below, so the offset is unchanged) — only a real upward
-    // scroll does, which is why we compare against the last observed offset.
-    @State private var isPinnedToBottom = true
-    @State private var lastContentOffsetY: CGFloat = 0
-    @State private var lastMetricsSessionID: String?
-    private let autoScrollReleaseThreshold: CGFloat = 40
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -1824,16 +1816,6 @@ struct ChatPanelView: View {
         return TranscriptDisplayBuilder.displayItems(messages: [message])
     }
 
-    private var transcriptAutoScrollToken: TranscriptAutoScrollToken {
-        TranscriptAutoScrollToken(
-            sessionID: model.selectedSessionID,
-            displayItems: displayItems,
-            streamingDisplayItems: streamingDisplayItems,
-            streamingText: model.selectedStreamingText,
-            pendingMessages: model.selectedPendingUserMessages
-        )
-    }
-
     @ViewBuilder
     private func displayItemView(
         _ item: TranscriptDisplayItem,
@@ -1896,96 +1878,31 @@ struct ChatPanelView: View {
                         Color.clear.frame(height: 1).id("streaming")
                     }
                     ForEach(model.selectedPendingUserMessages) { pending in QueuedUserMessageView(message: pending).id("queued_\(pending.id)") }
+                    // Reserved trailing space so the last message clears the floating input
+                    // bar that overlaps the transcript bottom in the parent ZStack.
                     Color.clear.frame(height: transcriptBottomReservedHeight)
-                    Color.clear.frame(height: 1).id(transcriptBottomAnchorID)
                 }
                 .frame(maxWidth: LiquidGlassToken.chatMaxWidth, alignment: .leading)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 18)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-            .onScrollGeometryChange(for: ScrollFollowMetrics.self) { geometry in
-                ScrollFollowMetrics(
-                    sessionID: model.selectedSessionID,
-                    offsetY: geometry.contentOffset.y,
-                    distanceFromBottom: geometry.contentSize.height
-                        - geometry.contentOffset.y
-                        - geometry.containerSize.height
-                )
-            } action: { _, metrics in
-                updateAutoScrollFollow(metrics)
-            }
-            .onAppear { scrollToTranscriptBottom(proxy, animated: false) }
-            .onChange(of: model.selectedSessionID) { _, _ in
-                // A conversation switch is a fresh transcript: re-arm follow and reset the
-                // geometry baseline so the loading session's near-zero offset isn't misread
-                // as an upward scroll. The actual bottom scroll happens on the transcript
-                // token change below (fired by the cache hit or async load completion).
-                lastContentOffsetY = 0
-                isPinnedToBottom = true
-            }
-            .onChange(of: transcriptAutoScrollToken) { _, _ in
-                // Follow the bottom only while the user is parked there. The guard matters
-                // during an active turn (the user may have scrolled up to read history and
-                // must not be yanked down); when not streaming, staleness of isPinnedToBottom
-                // is avoided because switching/loading re-arms it above.
-                guard isPinnedToBottom else {
-                    return
-                }
-                scrollToTranscriptBottom(proxy, animated: false)
-            }
+            // Declarative bottom landing: the scroll view renders at the bottom on first
+            // layout and stays pinned as streamed content grows, with no imperative
+            // scrollTo to race the async layout — which is what made the transcript land
+            // mid-way and then jerk to the bottom without animation.
+            .defaultScrollAnchor(.bottom)
             .onChange(of: activeFindTarget?.id) { _, _ in
                 if let target = activeFindTarget {
                     withAnimation { proxy.scrollTo(target.itemID, anchor: .center) }
                 }
             }
         }
+        // A fresh identity per session gives each conversation its own scroll view, so a
+        // switch never inherits the previous transcript's offset (the cause of switching
+        // from the bottom of one chat and landing in the middle of another).
+        .id(model.selectedSessionID)
     }
-
-    private func updateAutoScrollFollow(_ metrics: ScrollFollowMetrics) {
-        // A conversation switch replaces the whole transcript, so the first geometry
-        // report for the new session is a discontinuity, not a user gesture. Adopt its
-        // offset as the new baseline without deciding follow state — the switch already
-        // re-armed isPinnedToBottom. This is what stops the scrollbar from thrashing:
-        // otherwise the new session's small offset reads as an upward scroll against the
-        // old session's large one, flipping the pin off and fighting the bottom scroll.
-        if metrics.sessionID != lastMetricsSessionID {
-            lastMetricsSessionID = metrics.sessionID
-            lastContentOffsetY = metrics.offsetY
-            return
-        }
-        defer { lastContentOffsetY = metrics.offsetY }
-        // Re-arm as soon as the user parks near the bottom again.
-        if metrics.distanceFromBottom <= autoScrollReleaseThreshold {
-            isPinnedToBottom = true
-            return
-        }
-        // A real upward scroll (offset shrinks) releases the follow. Growing content
-        // leaves the offset unchanged — only the content height grows — so appending
-        // output never trips this and never yanks a scrolled-up reader back down.
-        if metrics.offsetY < lastContentOffsetY - 0.5 {
-            isPinnedToBottom = false
-        }
-    }
-
-    private func scrollToTranscriptBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
-        DispatchQueue.main.async {
-            isPinnedToBottom = true
-            if animated {
-                withAnimation(.snappy(duration: 0.18)) {
-                    proxy.scrollTo(transcriptBottomAnchorID, anchor: .bottom)
-                }
-            } else {
-                proxy.scrollTo(transcriptBottomAnchorID, anchor: .bottom)
-            }
-        }
-    }
-}
-
-private struct ScrollFollowMetrics: Equatable {
-    var sessionID: String?
-    var offsetY: CGFloat
-    var distanceFromBottom: CGFloat
 }
 
 extension AppModel {

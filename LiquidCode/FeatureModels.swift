@@ -185,55 +185,6 @@ enum TranscriptAutoExpansionPolicy {
     }
 }
 
-private extension TranscriptDisplayItem {
-    var autoScrollPayloadLength: Int {
-        switch self {
-        case .message(let message):
-            return message.content.count + message.displayImages.count
-        case .interaction(let permission):
-            return permission.summary.count + permission.inputJSON.count
-        case .question(let question):
-            return question.inputJSON.count
-        case .tool(let item):
-            return item.content.count
-        case .toolRun(let items):
-            return items.reduce(0) { $0 + $1.content.count }
-        }
-    }
-}
-
-struct TranscriptAutoScrollToken: Equatable, Sendable {
-    let sessionID: String?
-    let displayItemCount: Int
-    let lastDisplayItemID: String?
-    let lastDisplayItemPayloadLength: Int
-    let streamingItemCount: Int
-    let lastStreamingItemID: String?
-    let lastStreamingItemPayloadLength: Int
-    let streamingTextLength: Int
-    let pendingMessageCount: Int
-    let lastPendingMessageID: String?
-
-    init(
-        sessionID: String?,
-        displayItems: [TranscriptDisplayItem],
-        streamingDisplayItems: [TranscriptDisplayItem],
-        streamingText: String,
-        pendingMessages: [PendingUserMessage]
-    ) {
-        self.sessionID = sessionID
-        displayItemCount = displayItems.count
-        lastDisplayItemID = displayItems.last?.id
-        lastDisplayItemPayloadLength = displayItems.last?.autoScrollPayloadLength ?? 0
-        streamingItemCount = streamingDisplayItems.count
-        lastStreamingItemID = streamingDisplayItems.last?.id
-        lastStreamingItemPayloadLength = streamingDisplayItems.last?.autoScrollPayloadLength ?? 0
-        streamingTextLength = streamingText.count
-        pendingMessageCount = pendingMessages.count
-        lastPendingMessageID = pendingMessages.last?.id
-    }
-}
-
 enum TranscriptDisplayBuilder {
     static func displayItems(messages: [ChatMessage], pendingPermissions: [PermissionRequest] = []) -> [TranscriptDisplayItem] {
         let pending = deduplicatedPendingPermissions(pendingPermissions)

@@ -148,7 +148,7 @@ final class TranscriptAutoExpansionRegressionTests: XCTestCase {
     }
 
     @MainActor
-    func testAutoScrollTokenChangesWhenStreamingToolInputPayloadGrows() throws {
+    func testStreamingToolInputPayloadGrowsAsPartialJSONArrives() throws {
         let model = AppModel()
         model.selectedSessionID = "session-1"
 
@@ -174,31 +174,24 @@ final class TranscriptAutoExpansionRegressionTests: XCTestCase {
         for event in StreamEventParser.events(from: start, sessionID: "session-1") {
             model.handle(event)
         }
-        let before = transcriptAutoScrollToken(for: model)
+        let toolBefore = try XCTUnwrap(model.selectedStreamingMessage?.blocks.first { $0.kind == .toolUse })
         XCTAssertEqual(model.selectedStreamingMessage?.content, "")
+        let inputLengthBefore = (toolBefore.inputJSON ?? "").count
 
         for event in StreamEventParser.events(from: inputDelta, sessionID: "session-1") {
             model.handle(event)
         }
-        let after = transcriptAutoScrollToken(for: model)
+        let toolAfter = try XCTUnwrap(model.selectedStreamingMessage?.blocks.first { $0.kind == .toolUse })
 
         XCTAssertEqual(model.selectedStreamingMessage?.content, "")
-        XCTAssertNotEqual(
-            after,
-            before,
-            "Growing a streamed tool input must keep bottom-follow active even when no assistant text was appended."
+        XCTAssertGreaterThan(
+            (toolAfter.inputJSON ?? "").count,
+            inputLengthBefore,
+            "A streamed input_json_delta must grow the tool block's input as partial JSON arrives, so the transcript reflects the tool being built up live."
         )
-    }
-
-    @MainActor
-    private func transcriptAutoScrollToken(for model: AppModel) -> TranscriptAutoScrollToken {
-        let streamingDisplayItems = model.selectedStreamingMessage.map { TranscriptDisplayBuilder.displayItems(messages: [$0]) } ?? []
-        return TranscriptAutoScrollToken(
-            sessionID: model.selectedSessionID,
-            displayItems: model.selectedTranscriptDisplayItems,
-            streamingDisplayItems: streamingDisplayItems,
-            streamingText: model.selectedStreamingText,
-            pendingMessages: model.selectedPendingUserMessages
+        XCTAssertTrue(
+            (toolAfter.inputJSON ?? "").contains("echo hi"),
+            "The streamed partial JSON must accumulate into the tool block input."
         )
     }
 }
