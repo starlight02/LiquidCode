@@ -65,6 +65,14 @@ final class AppModel: ObservableObject {
     let fileSystem = FileSystemService()
     let claudeUserSettings: ClaudeUserSettingsService
     let directoryWatcher = DirectoryWatchManager()
+    // Separate watcher for the selected session's transcript file so external writers
+    // (a `claude --resume` in the user's terminal, another window) surface live. It
+    // must be its own instance: DirectoryWatchManager holds a single desired watch, so
+    // sharing directoryWatcher would clobber the workspace file-tree watch.
+    let sessionFileWatcher = DirectoryWatchManager()
+    var sessionFileWatchTask: Task<Void, Never>?
+    var sessionFileWatchGeneration = 0
+    var watchedSessionFilePath: String?
     let mcpService = MCPService()
     let skillService = SkillService()
     let sessionIndex = SessionIndexService()
@@ -102,7 +110,9 @@ final class AppModel: ObservableObject {
         mcpSkillsReloadTask?.cancel()
         workspaceWatchTask?.cancel()
         filePreviewLoadTask?.cancel()
+        sessionFileWatchTask?.cancel()
         directoryWatcher.unwatchAll()
+        sessionFileWatcher.unwatchAll()
         engine.killAll()
     }
 }

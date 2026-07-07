@@ -45,6 +45,15 @@ extension AppModel {
             }
             return lhs.modifiedAt > rhs.modifiedAt
         }
+        // A draft's transcript file appears only after its first turn is persisted; once
+        // discovery surfaces a path for the selected session, begin tailing it so later
+        // external writes sync live.
+        if
+            let id = selectedSessionID,
+            watchedSessionFilePath == nil,
+            let path = sessions.first(where: { $0.id == id })?.path {
+            startWatchingSessionFile(path: path)
+        }
     }
 
     func saveSessionMeta() {
@@ -67,6 +76,7 @@ extension AppModel {
             fileEditDirty = false
             resetWorkspaceChangeState()
             cancelDeferredWorkspaceWatch()
+            stopWatchingSessionFile()
             restoreComposerState(for: nil)
             restoreComposerConfiguration(for: nil)
             mcpServers = []
@@ -76,6 +86,13 @@ extension AppModel {
         }
         restoreComposerState(for: id)
         restoreComposerConfiguration(for: id)
+        // Tail this session's transcript so external `claude --resume` writes appear live;
+        // drafts have no file yet, so stop watching until one exists.
+        if let path = session.path {
+            startWatchingSessionFile(path: path)
+        } else {
+            stopWatchingSessionFile()
+        }
         let sameProjectFastPath = !workingDirectory.isEmpty && workingDirectory == session.projectDir
         let previousProjectDir = sameProjectFastPath ? workingDirectory : (existingDirectoryPath(workingDirectory) ?? workingDirectory)
         if messagesBySession[id] == nil, let path = session.path, !loadingMessageSessionIDs.contains(id) {
