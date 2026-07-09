@@ -7,6 +7,7 @@ func settingsTabIcon(_ tab: SettingsTab) -> String {
     case .general: "sun.max"
     case .cli: "terminal"
     case .mcp: "server.rack"
+    case .extensions: "puzzlepiece.extension"
     case .feedback: "bubble.left.and.text.bubble.right"
     }
 }

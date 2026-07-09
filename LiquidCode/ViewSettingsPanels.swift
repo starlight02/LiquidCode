@@ -2578,8 +2578,16 @@ struct MCPPanelView: View {
                 ); serverName = ""; command = "" } } }
             List(model.mcpServers) { server in
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack { Text(server.name).font(.headline); Spacer(); Text(server.transport).font(.caption).padding(4).background(.thinMaterial).clipShape(Capsule()) }
+                    HStack {
+                        Text(server.name).font(.headline)
+                        Spacer()
+                        MCPRuntimeBadge(server: server)
+                        Text(server.transport).font(.caption).padding(4).background(.thinMaterial).clipShape(Capsule())
+                    }
                     Text(server.command ?? server.url ?? L("No command/url")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    if let error = server.lastError, server.runtimeStatus == .failed {
+                        Text(error).font(.caption2).foregroundStyle(.red).lineLimit(2)
+                    }
                     HStack {
                         Text(server.source).font(.caption2).foregroundStyle(.tertiary); Spacer(); Button(L("Test")) { model.testMCPServer(server) }; if
                             server
@@ -2670,6 +2678,7 @@ struct SettingsPanelView: View {
                                 switch model.settingsTab {
                                 case .general: generalContent
                                 case .mcp: mcpContent
+                                case .extensions: ExtensionsSettingsContent()
                                 case .cli: cliContent
                                 case .feedback: feedbackContent
                                 }
@@ -2859,6 +2868,7 @@ struct SettingsPanelView: View {
                                     .padding(.vertical, 2)
                                     .background(Color.primary.opacity(0.05))
                                     .clipShape(Capsule())
+                                MCPRuntimeBadge(server: server)
                                 if !server.args.isEmpty {
                                     Text(LF("%d args", server.args.count))
                                         .font(.caption2)
@@ -2870,6 +2880,12 @@ struct SettingsPanelView: View {
                                 }
                             }
                             Text(mcpCommandLine(server)).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
+                            if let error = server.lastError, server.runtimeStatus == .failed {
+                                Text(error)
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                                    .lineLimit(2)
+                            }
                         }
                         Spacer()
                         Button(L("Test")) { model.testMCPServer(server) }

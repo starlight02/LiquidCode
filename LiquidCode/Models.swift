@@ -208,6 +208,7 @@ enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
 enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     case general = "General"
     case mcp = "MCP"
+    case extensions = "Hooks & Plugins"
     case cli = "CLI"
     case feedback = "Feedback"
     var id: String {
@@ -511,9 +512,25 @@ struct SkillInfo: Identifiable, Codable, Hashable, Sendable {
     var version: String?
 }
 
+enum MCPRuntimeStatus: String, Codable, Hashable, Sendable {
+    case idle
+    case testing
+    case ok
+    case failed
+
+    var label: String {
+        switch self {
+        case .idle: return L("Not tested")
+        case .testing: return L("Testing…")
+        case .ok: return L("OK")
+        case .failed: return L("Failed")
+        }
+    }
+}
+
 struct MCPServer: Identifiable, Codable, Hashable, Sendable {
     var id: String {
-        name
+        "\(source):\(name)"
     }
 
     var name: String
@@ -524,6 +541,10 @@ struct MCPServer: Identifiable, Codable, Hashable, Sendable {
     var enabled: Bool = true
     var source: String = "Claude"
     var lastError: String?
+    /// Runtime probe result; not written to mcp.json.
+    var runtimeStatus: MCPRuntimeStatus = .idle
+    var toolCount: Int?
+    var lastTestedAt: Date?
 }
 
 struct ProviderRecord: Identifiable, Codable, Hashable, Sendable {

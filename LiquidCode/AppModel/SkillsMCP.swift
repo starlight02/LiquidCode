@@ -6,6 +6,7 @@ extension AppModel {
         cancelDeferredMCPAndSkillsReload()
         mcpServers = mcpService.loadServers(projectPath: workingDirectory.isEmpty ? nil : workingDirectory)
         skills = skillService.loadSkills(projectPath: workingDirectory.isEmpty ? nil : workingDirectory)
+        reloadClaudeExtensions()
     }
 
     func reloadMCPAndSkillsDeferred(debounceNanoseconds: UInt64 = 0) {
@@ -236,22 +237,31 @@ extension AppModel {
     }
 
     func testMCPServer(_ server: MCPServer) {
-        if let url = server.url, URL(string: url) != nil {
-            toastSuccess("MCP config valid", LF("%@ uses %@", server.name, url)); return
+        guard let index = mcpServers.firstIndex(where: { $0.name == server.name && $0.source == server.source }) else {
+            return
         }
-        guard let command = server.command?.split(separator: " ").first.map(String.init), !command.isEmpty else {
-            toastWarning(
-                "MCP config incomplete",
-                LF("%@ has no command or URL", server.name)
-            ); return }
-        let resolved = command.contains("/") ? (FileManager.default.isExecutableFile(atPath: command) ? command : nil) : Shell.capture("/usr/bin/env", ["which", command])
-        if let resolved, !resolved.isEmpty {
-            toastSuccess("MCP command found", "\(server.name): \(resolved)")
+        mcpServers[index].runtimeStatus = .testing
+        mcpServers[index].lastError = nil
+
+        let result = MCPRuntimeProbe.evaluate(mcpServers[index])
+        mcpServers[index].runtimeStatus = result.status
+        mcpServers[index].toolCount = result.toolCount
+        mcpServers[index].lastError = result.error
+        mcpServers[index].lastTestedAt = Date()
+
+        if result.status == .ok {
+            let tools = result.toolCount.map { LF("%d tools", $0) }
+            let message = tools.map { "\(result.detail) · \($0)" } ?? result.detail
+            toastSuccess("MCP OK", message)
         } else {
-            toastWarning(
-                "MCP command missing",
-                "\(server.name): \(command)"
-            ) }
+            toastWarning("MCP failed", result.error ?? result.detail)
+        }
+    }
+
+    func reloadClaudeExtensions() {
+        let projectPath = workingDirectory.isEmpty ? nil : workingDirectory
+        claudePlugins = ClaudeExtensionsService.loadPlugins()
+        claudeHooks = ClaudeExtensionsService.loadHooks(projectPath: projectPath)
     }
 
     private func saveAppMCPServers() {

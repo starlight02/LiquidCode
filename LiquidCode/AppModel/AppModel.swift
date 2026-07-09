@@ -27,6 +27,9 @@ final class AppModel: ObservableObject {
     @Published var skills: [SkillInfo] = []
     @Published var selectedSkill: SkillInfo?
     @Published var mcpServers: [MCPServer] = []
+    // Read-only Claude Code hooks / plugins inventory (settings + install registry).
+    @Published var claudeHooks: [ClaudeHookEntry] = []
+    @Published var claudePlugins: [ClaudePluginEntry] = []
     @Published var providers: [ProviderRecord] = []
     @Published var activeProviderID: String?
     @Published var modelDisplayNames: [String: String] = [:]
