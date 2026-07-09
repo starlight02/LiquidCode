@@ -65,4 +65,28 @@ final class SessionFileSyncRegressionTests: XCTestCase {
         XCTAssertGreaterThan(model.selectedTranscriptDisplayItems.count, beforeCount)
         XCTAssertTrue(model.selectedMessages.contains { $0.content == "appended externally" })
     }
+
+    func testMergeExternalMessagesAlignsComposerModelFromTranscript() {
+        let model = AppModel()
+        let sessionID = "sync-session"
+        model.sessions = [
+            SessionRecord(id: sessionID, path: "/tmp/sync.jsonl", project: "P", projectDir: "/tmp", modifiedAt: Date(), preview: "old", isDraft: false)
+        ]
+        model.selectedSessionID = sessionID
+        model.settings.selectedModel = "opus"
+        model.sendConfigurationBySession[sessionID] = ComposerSendConfiguration(
+            model: "opus",
+            mode: .code,
+            thinkingLevel: .high
+        )
+        let existing = ChatMessage(id: "m1", role: .user, content: "hi")
+        model.setMessages([existing], for: sessionID)
+
+        // A CLI turn that ran sonnet must flip the GUI composer off the stale opus snapshot.
+        let external = ChatMessage(id: "m2", role: .assistant, content: "ok", model: "claude-sonnet-4-6")
+        model.mergeExternalMessages([existing, external], sessionID: sessionID)
+
+        XCTAssertEqual(model.settings.selectedModel, "claude-sonnet-4-6")
+        XCTAssertEqual(model.sendConfigurationBySession[sessionID]?.model, "claude-sonnet-4-6")
+    }
 }

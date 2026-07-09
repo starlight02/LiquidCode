@@ -641,6 +641,11 @@ enum StreamEventParser {
             return nil
         }
         let checkpoint = (role == .user && !containsToolResult(contentAny)) ? id : nil
+        // Assistant records carry `message.model` (e.g. "claude-sonnet-4-6"). Capture it so
+        // the GUI can re-align the composer picker when a session was continued from CLI.
+        let reportedModel = (message?["model"] as? String ?? obj["model"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = (reportedModel?.isEmpty == false && reportedModel != "<synthetic>") ? reportedModel : nil
         return ChatMessage(
             id: id,
             role: role,
@@ -652,7 +657,8 @@ enum StreamEventParser {
             checkpointUuid: checkpoint,
             images: rendered.images,
             blocks: rendered.blocks,
-            agentID: agentID
+            agentID: agentID,
+            model: model
         )
     }
 

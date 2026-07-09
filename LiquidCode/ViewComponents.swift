@@ -1821,7 +1821,8 @@ struct ChatPanelView: View {
         activeFindTarget: ChatFindTarget?,
         findMatchedItemIDs: Set<String>,
         idPrefix: String = "",
-        toolExpansion: TranscriptToolExpansionState = .collapsed
+        toolExpansion: TranscriptToolExpansionState = .collapsed,
+        isLive: Bool = false
     ) -> some View {
         let autoExpandItem = toolExpansion.expandedDisplayItemID == item.id
         switch item {
@@ -1830,7 +1831,8 @@ struct ChatPanelView: View {
                 message: message,
                 findText: model.chatFindText,
                 hasFindMatch: findMatchedItemIDs.contains(message.id),
-                activeOccurrenceIndex: activeFindTarget?.itemID == message.id ? activeFindTarget?.occurrenceIndex : nil
+                activeOccurrenceIndex: activeFindTarget?.itemID == message.id ? activeFindTarget?.occurrenceIndex : nil,
+                isLive: isLive
             ).id(idPrefix + message.id)
         case .interaction(let permission):
             InlineInteractionCardView(permission: permission).id(idPrefix + "interaction_\(permission.id)")
@@ -1874,7 +1876,8 @@ struct ChatPanelView: View {
                             activeFindTarget: activeFindTarget,
                             findMatchedItemIDs: findMatchedItemIDs,
                             idPrefix: "streaming_",
-                            toolExpansion: streamingToolExpansion
+                            toolExpansion: streamingToolExpansion,
+                            isLive: true
                         )
                     }
                     if !streamingDisplayItems.isEmpty {
@@ -2206,6 +2209,9 @@ struct MessageBubbleView: View {
     var findText: String = ""
     var hasFindMatch = false
     var activeOccurrenceIndex: Int?
+    /// True while this bubble is part of the live streaming strip. Historical thinking
+    /// blocks must not keep the progressive "Thinking…" label after the turn ends.
+    var isLive = false
     var body: some View {
         switch message.role {
         case .user:
@@ -2306,7 +2312,7 @@ struct MessageBubbleView: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
             } label: {
-                Text(L("Thinking…"))
+                Text(isLive ? L("Thinking…") : L("Thought"))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
             }

@@ -390,6 +390,7 @@
 "Theme" = "外观";
 "Thinking" = "思考";
 "Thinking…" = "正在思考…";
+"Thought" = "思考过程";
 "Title" = "标题";
 "Tool calls and sub-agent work appear here while Claude is running." = "Claude 运行时，工具调用和子代理工作会显示在这里。";
 "Tool result" = "工具结果";

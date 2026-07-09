@@ -226,4 +226,41 @@ extension AppModel {
         next.thinkingLevel = configuration.thinkingLevel
         settings = next
     }
+
+    /// Aligns the composer model picker with the latest model actually used in a session's
+    /// transcript (from assistant `message.model` fields written by Claude Code). Prefer this
+    /// over a stale GUI-local snapshot when the user switched models from the CLI.
+    func syncComposerModelFromMessages(_ messages: [ChatMessage], sessionID: String) {
+        guard
+            let latest = messages.last(where: {
+                guard let model = $0.model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else {
+                    return false
+                }
+                return model != "<synthetic>" && ($0.role == .assistant || $0.role == .thinking || $0.role == .error)
+            })?.model?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !latest.isEmpty else {
+            return
+        }
+        applyComposerModel(latest, to: sessionID)
+    }
+
+    private func applyComposerModel(_ model: String, to sessionID: String) {
+        let existing = sendConfigurationBySession[sessionID]
+        let nextConfig = ComposerSendConfiguration(
+            model: model,
+            mode: existing?.mode ?? settings.sessionMode,
+            thinkingLevel: existing?.thinkingLevel ?? settings.thinkingLevel
+        )
+        if sendConfigurationBySession[sessionID] != nextConfig {
+            sendConfigurationBySession[sessionID] = nextConfig
+            persistSettings()
+        }
+        guard selectedSessionID == sessionID else {
+            return
+        }
+        guard normalizedModelDisplayKey(settings.selectedModel) != normalizedModelDisplayKey(model) else {
+            return
+        }
+        settings.selectedModel = model
+    }
 }

@@ -149,6 +149,7 @@ final class ThinkingIndicatorRegressionTests: XCTestCase {
         let source = try Self.source("LiquidCode/ViewComponents.swift")
         let chatPanel = try XCTUnwrap(Self.typeBody(named: "ChatPanelView", in: source))
         let indicator = try XCTUnwrap(Self.typeBody(named: "ThinkingIndicatorView", in: source))
+        let bubble = try XCTUnwrap(Self.typeBody(named: "MessageBubbleView", in: source))
 
         XCTAssertTrue(
             chatPanel.contains("ThinkingIndicatorView(phase: model.selectedTurnPhase)"),
@@ -173,6 +174,14 @@ final class ThinkingIndicatorRegressionTests: XCTestCase {
         XCTAssertTrue(
             indicator.contains("Claude is thinking…") || indicator.contains("L(\"Claude is thinking…\")"),
             "Thinking phase must use the thinking label."
+        )
+        XCTAssertTrue(
+            bubble.contains("isLive ? L(\"Thinking…\") : L(\"Thought\")") || bubble.contains("isLive"),
+            "Historical thinking blocks must use a past-tense label, not progressive Thinking…"
+        )
+        XCTAssertTrue(
+            bubble.contains("L(\"Thought\")"),
+            "Completed thinking blocks must render as Thought."
         )
     }
 

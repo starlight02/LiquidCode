@@ -370,6 +370,10 @@ extension AppModel {
             sessions[idx].preview = String(message.transcriptPreview.prefix(120))
             sessions[idx].modifiedAt = Date()
         }
+        // Live assistant records also carry message.model — keep the composer picker honest.
+        if let model = message.model, !model.isEmpty, model != "<synthetic>" {
+            syncComposerModelFromMessages(messagesBySession[sessionID] ?? [], sessionID: sessionID)
+        }
     }
 
     /// A task-notification message carries the parent spawn block's toolUseID (stamped

@@ -108,6 +108,8 @@ extension AppModel {
         }
         let merged = existing + appended
         setMessages(merged, for: sessionID)
+        // External CLI appends may include a model switch — re-align the composer picker.
+        syncComposerModelFromMessages(merged, sessionID: sessionID)
         if let idx = sessions.firstIndex(where: { $0.id == sessionID }), let last = merged.last {
             sessions[idx].preview = String(last.transcriptPreview.prefix(120))
             sessions[idx].modifiedAt = Date()

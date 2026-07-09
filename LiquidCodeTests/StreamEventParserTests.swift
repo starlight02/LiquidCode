@@ -12,6 +12,7 @@ final class StreamEventParserTests: XCTestCase {
             "uuid": "msg-1",
             "message": [
                 "role": "assistant",
+                "model": "claude-sonnet-4-6",
                 "content": [
                     ["type": "text", "text": "I will inspect the file."],
                     ["type": "tool_use", "id": "tool-1", "name": "Read", "input": ["file_path": "README.md"]]
@@ -23,6 +24,7 @@ final class StreamEventParserTests: XCTestCase {
         XCTAssertEqual(message.id, "msg-1")
         XCTAssertEqual(message.role, .assistant)
         XCTAssertEqual(message.content, "I will inspect the file.")
+        XCTAssertEqual(message.model, "claude-sonnet-4-6")
         XCTAssertFalse(message.content.contains("[tool_use:"))
         XCTAssertEqual(message.blocks.map(\.kind), [.text, .toolUse])
         XCTAssertEqual(message.blocks.last?.toolName, "Read")
@@ -32,7 +34,7 @@ final class StreamEventParserTests: XCTestCase {
         let events = StreamEventParser.events(from: object, sessionID: "session-1")
         XCTAssertTrue(events.contains { event in
             if case .message(_, let parsedMessage) = event {
-                return parsedMessage.id == "msg-1"
+                return parsedMessage.id == "msg-1" && parsedMessage.model == "claude-sonnet-4-6"
             }
             return false
         })

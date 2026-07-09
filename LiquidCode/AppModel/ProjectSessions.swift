@@ -86,6 +86,11 @@ extension AppModel {
         }
         restoreComposerState(for: id)
         restoreComposerConfiguration(for: id)
+        // If the transcript is already in memory, re-align the composer model now so a
+        // CLI /model switch is reflected without waiting for a reload.
+        if let cached = messagesBySession[id] {
+            syncComposerModelFromMessages(cached, sessionID: id)
+        }
         // Tail this session's transcript so external `claude --resume` writes appear live;
         // drafts have no file yet, so stop watching until one exists.
         if let path = session.path {
@@ -122,6 +127,9 @@ extension AppModel {
                     self.subagentActivitiesBySession[id] = activities
                     self.setMessages(loadedMessages, for: id, displayItems: displayItems)
                     self.toolCallsBySession[id] = toolCalls
+                    // Prefer the model the transcript actually ran (CLI may have switched
+                    // via /model) over a stale GUI-local composer snapshot.
+                    self.syncComposerModelFromMessages(loadedMessages, sessionID: id)
                 }
             }
         }

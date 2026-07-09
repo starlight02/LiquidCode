@@ -383,6 +383,9 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
     /// Non-nil when this message came from a subagent's sidechain transcript. Used to
     /// route the message into the subagent bucket instead of the main transcript.
     var agentID: String?
+    /// Model id reported on assistant records (`message.model` in the CLI jsonl). Used to
+    /// keep the GUI composer model aligned with whatever the session actually ran last.
+    var model: String?
 
     init(
         id: String = UUID().uuidString,
@@ -396,7 +399,8 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         attachments: [AttachmentChip] = [],
         images: [MessageImageReference] = [],
         blocks: [ChatContentBlock] = [],
-        agentID: String? = nil
+        agentID: String? = nil,
+        model: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -410,6 +414,7 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         self.images = images
         self.blocks = blocks
         self.agentID = agentID
+        self.model = model
     }
 
     enum CodingKeys: String, CodingKey {
@@ -425,6 +430,7 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         case images
         case blocks
         case agentID
+        case model
     }
 
     init(from decoder: Decoder) throws {
@@ -441,6 +447,7 @@ struct ChatMessage: Identifiable, Codable, Equatable, Sendable {
         images = try container.decodeIfPresent([MessageImageReference].self, forKey: .images) ?? []
         blocks = try container.decodeIfPresent([ChatContentBlock].self, forKey: .blocks) ?? []
         agentID = try container.decodeIfPresent(String.self, forKey: .agentID)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
     }
 }
 
