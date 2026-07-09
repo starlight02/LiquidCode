@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
+# Build a signed (or ad-hoc) LiquidCode.app and wrap it as a macOS PKG installer.
+# Output: .build-release/LiquidCode.app + .build-release/LiquidCode-<ver>[-unsigned].pkg
 set -euo pipefail
 
 APP_NAME="LiquidCode"
+BUNDLE_ID="moe.aili.LiquidCode"
 PROJECT="LiquidCode.xcodeproj"
 SCHEME="LiquidCode"
 CONFIGURATION="Release"
@@ -34,32 +37,28 @@ RELEASE_UPLOAD_DRY_RUN_ENABLED="$(release_upload_dry_run_value)"
 RELEASE_CREATE_DRAFT_ENABLED="$(release_create_draft_value)"
 RELEASE_TAG_VALUE="$(release_tag_value)"
 
-
 fail() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
-command -v xcodebuild >/dev/null || fail "xcodebuild not found"
-command -v codesign >/dev/null || fail "codesign not found"
-command -v hdiutil >/dev/null || fail "hdiutil not found"
-command -v xcrun >/dev/null || fail "xcrun not found"
-command -v ditto >/dev/null || fail "ditto not found"
-command -v tar >/dev/null || fail "tar not found"
-command -v shasum >/dev/null || fail "shasum not found"
-command -v python3 >/dev/null || fail "python3 not found"
-command -v lipo >/dev/null || fail "lipo not found"
-command -v spctl >/dev/null || fail "spctl not found"
-command -v pkgbuild >/dev/null || fail "pkgbuild not found"
-command -v productbuild >/dev/null || fail "productbuild not found"
-[[ -x "$PLISTBUDDY" ]] || fail "PlistBuddy not found at $PLISTBUDDY"
+need() { command -v "$1" >/dev/null || fail "$1 not found"; }
+need xcodebuild
+need codesign
+need ditto
+need lipo
+need pkgbuild
+need productbuild
+need python3
+[[ -x "$PLISTBUDDY" ]] || fail "PlistBuddy not found"
 
 if release_truthy "$RELEASE_SIGNING_REQUIRED"; then
   [[ -n "${CODESIGN_IDENTITY:-}" ]] || fail "RELEASE_SIGNING_REQUIRED=1 requires CODESIGN_IDENTITY"
+  [[ -n "${INSTALLER_SIGN_IDENTITY:-}" ]] || fail "RELEASE_SIGNING_REQUIRED=1 requires INSTALLER_SIGN_IDENTITY"
   [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]] || fail "RELEASE_SIGNING_REQUIRED=1 requires NOTARY_KEYCHAIN_PROFILE"
-  updater_signing_key_present || fail "RELEASE_SIGNING_REQUIRED=1 requires updater signing key env (UPDATER_SIGNING_PRIVATE_KEY/UPDATER_SIGNING_PRIVATE_KEY_PATH or TAURI_SIGNING_PRIVATE_KEY/TAURI_SIGNING_PRIVATE_KEY_PATH)"
 fi
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
-  security find-identity -v -p codesigning | grep -F "$CODESIGN_IDENTITY" >/dev/null || fail "CODESIGN_IDENTITY not found in keychain: $CODESIGN_IDENTITY"
+  security find-identity -v -p codesigning | grep -F "$CODESIGN_IDENTITY" >/dev/null \
+    || fail "CODESIGN_IDENTITY not found in keychain: $CODESIGN_IDENTITY"
 fi
 
 if [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" && -z "${CODESIGN_IDENTITY:-}" ]]; then
@@ -67,7 +66,7 @@ if [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" && -z "${CODESIGN_IDENTITY:-}" ]]; then
 fi
 
 if release_truthy "$RELEASE_UPLOAD_ENABLED" && ! release_truthy "$RELEASE_UPLOAD_DRY_RUN_ENABLED" && ! release_truthy "$RELEASE_SIGNING_REQUIRED"; then
-  fail "RELEASE_UPLOAD=1 real uploads require RELEASE_SIGNING_REQUIRED=1; use RELEASE_UPLOAD_DRY_RUN=1 for dev/ad-hoc validation"
+  fail "RELEASE_UPLOAD=1 real uploads require RELEASE_SIGNING_REQUIRED=1; use RELEASE_UPLOAD_DRY_RUN=1 for ad-hoc validation"
 fi
 
 if release_truthy "$RELEASE_UPLOAD_ENABLED" && ! release_truthy "$RELEASE_UPLOAD_DRY_RUN_ENABLED"; then
@@ -75,19 +74,9 @@ if release_truthy "$RELEASE_UPLOAD_ENABLED" && ! release_truthy "$RELEASE_UPLOAD
 fi
 
 if release_truthy "$RELEASE_SIGNING_REQUIRED"; then
-  info "Release mode: production signed/notarized release (Developer ID + notary + updater signature required)"
+  info "Release mode: signed + notarized PKG"
 else
-  info "Release mode: development/ad-hoc build; artifacts are for local smoke/dry-run only and must not be published."
-fi
-if release_truthy "$RELEASE_UPLOAD_DRY_RUN_ENABLED"; then
-  info "Upload mode: GitHub release dry-run"
-elif release_truthy "$RELEASE_UPLOAD_ENABLED"; then
-  info "Upload mode: real GitHub release upload"
-else
-  info "Upload mode: disabled"
-fi
-if release_truthy "$RELEASE_CREATE_DRAFT_ENABLED"; then
-  info "Draft release behavior: create/reuse GitHub draft release before uploading assets."
+  info "Release mode: ad-hoc / unsigned PKG (local smoke only)"
 fi
 
 cd "$ROOT"
@@ -98,16 +87,12 @@ if [[ "$RELEASE_TAG_VALUE" =~ ^v[0-9] ]]; then
 else
   info "Verifying MARKETING_VERSION metadata"
   "$ROOT/scripts/verify-version.sh"
-  if [[ -n "$RELEASE_TAG_VALUE" ]]; then
-    info "RELEASE_TAG=$RELEASE_TAG_VALUE is not a v* version tag; skipping tag/version equality check"
-  fi
 fi
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-info "Archiving $APP_NAME via Xcode project ($PROJECT / $SCHEME / $CONFIGURATION)"
-info "Universal strategy: ARCHS=\"$ARCHS_VALUE\" ONLY_ACTIVE_ARCH=NO"
+info "Archiving $APP_NAME ($ARCHS_VALUE)"
 xcodebuild \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
@@ -124,9 +109,9 @@ xcodebuild \
 ditto "$ARCHIVE_APP" "$APP"
 xattr -cr "$APP" 2>/dev/null || true
 find "$APP" \( -name ".DS_Store" -o -name "._*" \) -delete 2>/dev/null || true
-[[ -f "$PLIST" ]] || fail "Archived app is missing Info.plist: $PLIST"
+[[ -f "$PLIST" ]] || fail "Missing Info.plist: $PLIST"
 
-# Embed git provenance (mirrors alma-onebot-bridge macOS packaging).
+# Git provenance in Info.plist
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git_commit="$(git rev-parse --short=12 HEAD)"
   git_version="$(git describe --tags --always 2>/dev/null || printf '%s' "$git_commit")"
@@ -141,8 +126,7 @@ else
   git_dirty=false
 fi
 set_plist_string() {
-  local key="$1"
-  local value="$2"
+  local key="$1" value="$2"
   if "$PLISTBUDDY" -c "Print :$key" "$PLIST" >/dev/null 2>&1; then
     "$PLISTBUDDY" -c "Set :$key $value" "$PLIST"
   else
@@ -152,144 +136,246 @@ set_plist_string() {
 set_plist_string "LiquidCodeGitCommit" "$git_commit"
 set_plist_string "LiquidCodeGitVersion" "$git_version"
 set_plist_string "LiquidCodeGitDirty" "$git_dirty"
-info "Embedded git provenance: $git_commit ($git_version)"
-[[ -f "$SIDECAR" ]] || fail "Archived app is missing sidecar from Xcode Resources phase: $SIDECAR_RELATIVE"
+
+[[ -f "$SIDECAR" ]] || fail "Missing sidecar: $SIDECAR_RELATIVE"
 chmod +x "$SIDECAR"
 
-DISPLAY_NAME="$($PLISTBUDDY -c 'Print :CFBundleDisplayName' "$PLIST" 2>/dev/null || true)"
-[[ -n "$DISPLAY_NAME" ]] || DISPLAY_NAME="$($PLISTBUDDY -c 'Print :CFBundleName' "$PLIST")"
 VERSION="$($PLISTBUDDY -c 'Print :CFBundleShortVersionString' "$PLIST")"
 BUILD_NUMBER="$($PLISTBUDDY -c 'Print :CFBundleVersion' "$PLIST")"
-BUNDLE_ID="$($PLISTBUDDY -c 'Print :CFBundleIdentifier' "$PLIST")"
-SAFE_DISPLAY_NAME="${DISPLAY_NAME// /-}"
-DMG="$BUILD_DIR/${SAFE_DISPLAY_NAME}-${VERSION}.dmg"
-UPDATER_TARBALL="$BUILD_DIR/${SAFE_DISPLAY_NAME}-${VERSION}.app.tar.gz"
-UPDATER_SHA="$UPDATER_TARBALL.sha256"
-UPDATER_SIG="$UPDATER_TARBALL.sig"
-LATEST_JSON="$BUILD_DIR/latest.json"
-
-info "Resolved identity/version from Xcode-built Info.plist"
-echo "    Display name: $DISPLAY_NAME"
-echo "    Bundle ID:    $BUNDLE_ID"
-echo "    Version:      $VERSION ($BUILD_NUMBER)"
+info "Version $VERSION ($BUILD_NUMBER) commit $git_commit"
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
-  info "Signing with Developer ID identity: $CODESIGN_IDENTITY"
+  info "Signing app: $CODESIGN_IDENTITY"
   codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$SIDECAR"
   codesign --force --deep --options runtime --timestamp --entitlements "$ENTITLEMENTS" --sign "$CODESIGN_IDENTITY" "$APP"
 else
-  info "CODESIGN_IDENTITY not set; dev build uses ad-hoc signing and is not a notarized release."
+  info "Ad-hoc codesign (no CODESIGN_IDENTITY)"
   codesign --force --deep --entitlements "$ENTITLEMENTS" --sign - "$APP"
 fi
 
-info "Gate: codesign --verify --deep --strict"
+info "codesign --verify"
 codesign --verify --deep --strict --verbose=2 "$APP"
 
-info "Gate: lipo architecture check"
+info "Architecture check ($ARCHS_VALUE)"
 ACTUAL_ARCHS="$(lipo -archs "$APP/Contents/MacOS/$APP_NAME")"
 for expected_arch in $ARCHS_VALUE; do
-  [[ " $ACTUAL_ARCHS " == *" $expected_arch "* ]] || fail "Missing expected architecture '$expected_arch' in $APP_NAME executable (found: $ACTUAL_ARCHS)"
+  [[ " $ACTUAL_ARCHS " == *" $expected_arch "* ]] || fail "Missing arch '$expected_arch' (found: $ACTUAL_ARCHS)"
 done
-echo "    Architectures: $ACTUAL_ARCHS"
+echo "    $ACTUAL_ARCHS"
 
-info "Creating DMG: $DMG"
-hdiutil create -volname "$DISPLAY_NAME" -srcfolder "$APP" -ov -format UDZO "$DMG"
-hdiutil verify "$DMG"
+# --- PKG packaging (inlined; was package-macos-pkg.sh) ---
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/liquidcode-pkg.XXXXXX")"
+cleanup_pkg() { rm -rf "$WORK_DIR"; }
+trap cleanup_pkg EXIT
 
-info "Creating PKG installer"
-PKG="$(
-  PKG_OUT_DIR="$BUILD_DIR"   INSTALLER_SIGN_IDENTITY="${INSTALLER_SIGN_IDENTITY:-}"   NOTARY_KEYCHAIN_PROFILE="${NOTARY_KEYCHAIN_PROFILE:-}"     "$ROOT/scripts/package-macos-pkg.sh" "$APP" | tail -n 1
-)"
-[[ -f "$PKG" ]] || fail "PKG was not produced (got: $PKG)"
-info "PKG artifact: $PKG"
+RESOURCES_DIR="$WORK_DIR/resources"
+SCRIPTS_DIR="$WORK_DIR/scripts"
+STAGING_ROOT="$WORK_DIR/root"
+STAGED_APP="$STAGING_ROOT/Applications/$APP_NAME.app"
+COMPONENT_PLIST="$WORK_DIR/components.plist"
+DISTRIBUTION_XML="$WORK_DIR/Distribution.xml"
+COMPONENT_PKG="$WORK_DIR/$APP_NAME-component.pkg"
 
-info "Creating updater tarball and checksum"
-(cd "$BUILD_DIR" && tar -czf "$UPDATER_TARBALL" "$APP_NAME.app")
-shasum -a 256 "$UPDATER_TARBALL" > "$UPDATER_SHA"
-sign_updater_artifact "$UPDATER_TARBALL" "$UPDATER_SIG" "$RELEASE_SIGNING_REQUIRED"
-
-if [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
-  info "Gate: xcrun notarytool submit DMG"
-  xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" --wait
-  info "Gate: xcrun stapler staple DMG"
-  xcrun stapler staple "$DMG"
-  info "Gate: xcrun stapler validate DMG"
-  xcrun stapler validate "$DMG"
-  info "Gate: spctl assess app and DMG"
-  spctl --assess --type execute --verbose "$APP"
-  spctl --assess --type open --context context:primary-signature --verbose "$DMG"
+if [[ -n "${INSTALLER_SIGN_IDENTITY:-}" ]]; then
+  PKG="$BUILD_DIR/${APP_NAME}-${VERSION}.pkg"
 else
-  info "Gate: notarization/stapler/spctl skipped for development/ad-hoc build; this is not a production release."
+  PKG="$BUILD_DIR/${APP_NAME}-${VERSION}-unsigned.pkg"
 fi
 
-PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-SIGNATURE_TEXT="$(signature_text_for_metadata "$UPDATER_SIG")"
-info "Generating update manifest: $LATEST_JSON"
-python3 - "$LATEST_JSON" "$VERSION" "$BUILD_NUMBER" "$PUB_DATE" "$DISPLAY_NAME" "$(basename "$DMG")" "$(basename "$UPDATER_TARBALL")" "$(basename "$UPDATER_SIG")" "$(awk '{print $1}' "$UPDATER_SHA")" "$SIGNATURE_TEXT" <<'PY'
-import json, sys
-path, version, build, pub_date, name, dmg, updater, sig_file, checksum, signature = sys.argv[1:]
-data = {"version": version, "build": build, "pub_date": pub_date, "name": name, "platforms": {"darwin-universal": {"url": dmg, "updater": updater, "updater_signature": sig_file, "signature": signature, "checksum": checksum}}}
-json.dump(data, open(path, "w"), indent=2)
-open(path, "a").write("\n")
-PY
+mkdir -p "$RESOURCES_DIR" "$SCRIPTS_DIR" "$STAGING_ROOT/Applications"
+ditto "$APP" "$STAGED_APP"
+xattr -cr "$STAGED_APP" 2>/dev/null || true
+find "$STAGED_APP" \( -name ".DS_Store" -o -name "._*" \) -delete 2>/dev/null || true
 
-info "Gate: latest.json manifest validation"
-python3 - "$LATEST_JSON" "$VERSION" "$BUILD_NUMBER" "$DISPLAY_NAME" "$(basename "$DMG")" "$(basename "$UPDATER_TARBALL")" "$(basename "$UPDATER_SIG")" "$(awk '{print $1}' "$UPDATER_SHA")" "$SIGNATURE_TEXT" <<'PY'
-import json
-import sys
+if [[ -f "$ROOT/LICENSE" ]]; then
+  cp "$ROOT/LICENSE" "$RESOURCES_DIR/LICENSE.txt"
+else
+  printf 'LiquidCode\nSee repository README for license terms.\n' >"$RESOURCES_DIR/LICENSE.txt"
+fi
 
-path, version, build, name, dmg, updater, sig_file, checksum, signature = sys.argv[1:]
-with open(path, encoding="utf-8") as fh:
-    data = json.load(fh)
-platform = data.get("platforms", {}).get("darwin-universal", {})
-checks = {
-    "version": data.get("version") == version,
-    "build": data.get("build") == build,
-    "name": data.get("name") == name,
-    "url": platform.get("url") == dmg,
-    "updater": platform.get("updater") == updater,
-    "updater_signature": platform.get("updater_signature") == sig_file,
-    "checksum": platform.get("checksum") == checksum,
-    "signature": platform.get("signature") == signature and signature and "placeholder" not in signature,
+cat >"$COMPONENT_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+  <dict>
+    <key>BundleHasStrictIdentifier</key>
+    <true/>
+    <key>BundleIsRelocatable</key>
+    <false/>
+    <key>BundleIsVersionChecked</key>
+    <false/>
+    <key>BundleOverwriteAction</key>
+    <string>upgrade</string>
+    <key>RootRelativeBundlePath</key>
+    <string>Applications/$APP_NAME.app</string>
+  </dict>
+</array>
+</plist>
+EOF
+
+cat >"$DISTRIBUTION_XML" <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+  <title>$APP_NAME $VERSION</title>
+  <license file="LICENSE.txt" mime-type="text/plain"/>
+  <options customize="never" require-scripts="false" rootVolumeOnly="true"/>
+  <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+  <choices-outline>
+    <line choice="default"/>
+  </choices-outline>
+  <choice id="default" title="$APP_NAME">
+    <pkg-ref id="$BUNDLE_ID"/>
+  </choice>
+  <pkg-ref id="$BUNDLE_ID" version="$VERSION" onConclusion="none">$APP_NAME-component.pkg</pkg-ref>
+</installer-gui-script>
+EOF
+
+cat >"$SCRIPTS_DIR/preinstall" <<'EOF'
+#!/bin/sh
+set -u
+APP_NAME="LiquidCode"
+BUNDLE_ID="moe.aili.LiquidCode"
+APP_EXEC="/Applications/$APP_NAME.app/Contents/MacOS/$APP_NAME"
+MARKER_FILE="/private/tmp/$BUNDLE_ID.was-running"
+
+matching_pids() {
+  /bin/ps -axo pid=,command= | /usr/bin/awk -v prefix="$1" '
+    { pid=$1; sub(/^[[:space:]]*[0-9]+[[:space:]]+/,"",$0); if (index($0,prefix)==1) print pid }'
 }
-failed = [key for key, ok in checks.items() if not ok]
-if failed:
-    raise SystemExit("ERROR: latest.json validation failed: " + ", ".join(failed))
-PY
+running_pids() { matching_pids "$APP_EXEC" | /usr/bin/sort -u; }
+has_running() { [ -n "$(running_pids)" ]; }
+console_user() { /usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true; }
+console_uid() {
+  u="$1"; [ -n "$u" ] && [ "$u" != "root" ] && [ "$u" != "loginwindow" ] || return 1
+  /usr/bin/id -u "$u" 2>/dev/null
+}
+run_as_user() {
+  u="$(console_user)"; uid="$(console_uid "$u")" || return 1
+  /bin/launchctl asuser "$uid" "$@"
+}
+wait_stop() {
+  n="$1"; i=0
+  while [ "$i" -lt "$n" ]; do
+    has_running || return 0
+    /bin/sleep 0.2
+    i=$((i + 1))
+  done
+  return 1
+}
+signal_all() {
+  running_pids | while read -r pid; do
+    [ -n "$pid" ] || continue
+    /bin/kill "-$1" "$pid" 2>/dev/null || true
+  done
+}
 
-ARTIFACTS=("$DMG" "$PKG" "$UPDATER_TARBALL" "$UPDATER_SIG" "$UPDATER_SHA" "$LATEST_JSON")
-ARTIFACT_PURPOSES=(
-  "macOS installer DMG"
-  "macOS installer PKG"
-  "Tauri-compatible updater payload"
-  "Updater minisign/Tauri signature"
-  "Updater payload SHA-256 checksum"
-  "Updater manifest for darwin-universal"
+if ! has_running; then
+  /bin/rm -f "$MARKER_FILE"
+  exit 0
+fi
+u="$(console_user)"; uid="$(console_uid "$u" 2>/dev/null || true)"
+{ printf 'user=%s\n' "$u"; printf 'uid=%s\n' "$uid"; } >"$MARKER_FILE"
+if [ -n "$(matching_pids "$APP_EXEC")" ]; then
+  echo "Requesting $APP_NAME to quit..."
+  run_as_user /usr/bin/osascript -e "tell application id \"$BUNDLE_ID\" to quit" 2>/dev/null \
+    || /usr/bin/osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+fi
+wait_stop 60 && exit 0
+signal_all TERM
+wait_stop 30 && exit 0
+signal_all KILL
+wait_stop 10 && exit 0
+echo "error: unable to stop $APP_NAME before install" >&2
+exit 1
+EOF
+
+cat >"$SCRIPTS_DIR/postinstall" <<'EOF'
+#!/bin/sh
+set -u
+APP_NAME="LiquidCode"
+BUNDLE_ID="moe.aili.LiquidCode"
+MARKER_FILE="/private/tmp/$BUNDLE_ID.was-running"
+[ -f "$MARKER_FILE" ] || exit 0
+uid=""
+while IFS='=' read -r key value; do
+  case "$key" in uid) uid="$value" ;; esac
+done <"$MARKER_FILE"
+/bin/rm -f "$MARKER_FILE"
+if [ -n "$uid" ]; then
+  /bin/launchctl asuser "$uid" /usr/bin/open "/Applications/$APP_NAME.app" >/dev/null 2>&1 \
+    || /bin/launchctl asuser "$uid" /usr/bin/open -b "$BUNDLE_ID" >/dev/null 2>&1 || true
+else
+  /usr/bin/open "/Applications/$APP_NAME.app" >/dev/null 2>&1 || true
+fi
+exit 0
+EOF
+chmod 755 "$SCRIPTS_DIR/preinstall" "$SCRIPTS_DIR/postinstall"
+
+info "pkgbuild component"
+pkgbuild \
+  --root "$STAGING_ROOT" \
+  --scripts "$SCRIPTS_DIR" \
+  --component-plist "$COMPONENT_PLIST" \
+  --install-location / \
+  --identifier "$BUNDLE_ID" \
+  --version "$VERSION" \
+  --ownership recommended \
+  "$COMPONENT_PKG" \
+  2> >(grep -v '^write: Permission denied$' >&2 || true)
+
+productbuild_args=(
+  --distribution "$DISTRIBUTION_XML"
+  --resources "$RESOURCES_DIR"
+  --package-path "$WORK_DIR"
 )
+if [[ -n "${INSTALLER_SIGN_IDENTITY:-}" ]]; then
+  info "productbuild --sign $INSTALLER_SIGN_IDENTITY"
+  productbuild_args+=(--sign "$INSTALLER_SIGN_IDENTITY")
+else
+  info "Unsigned productbuild (no INSTALLER_SIGN_IDENTITY)"
+fi
+rm -f "$PKG"
+productbuild "${productbuild_args[@]}" "$PKG"
 
-info "Release artifact matrix"
-printf "    %-40s %-12s %s\n" "Artifact" "Upload" "Purpose"
-for artifact_index in "${!ARTIFACTS[@]}"; do
-  upload_label="skipped"
-  if release_truthy "$RELEASE_UPLOAD_ENABLED" || release_truthy "$RELEASE_UPLOAD_DRY_RUN_ENABLED"; then
-    upload_label="yes"
+info "Inspect PKG payload"
+CHECK_DIR="$WORK_DIR/check"
+rm -rf "$CHECK_DIR"
+pkgutil --expand-full "$PKG" "$CHECK_DIR"
+COMPONENT_INFO="$CHECK_DIR/$APP_NAME-component.pkg/PackageInfo"
+PACKAGE_APP="$CHECK_DIR/$APP_NAME-component.pkg/Payload/Applications/$APP_NAME.app"
+[[ -f "$COMPONENT_INFO" ]] || fail "Missing PackageInfo"
+grep -q 'install-location="/"' "$COMPONENT_INFO" || fail "Unexpected install-location"
+[[ -x "$PACKAGE_APP/Contents/MacOS/$APP_NAME" ]] || fail "PKG payload binary missing"
+[[ -x "$CHECK_DIR/$APP_NAME-component.pkg/Scripts/preinstall" ]] || fail "Missing preinstall"
+[[ -x "$CHECK_DIR/$APP_NAME-component.pkg/Scripts/postinstall" ]] || fail "Missing postinstall"
+
+if [[ -n "${INSTALLER_SIGN_IDENTITY:-}" ]]; then
+  pkgutil --check-signature "$PKG" || fail "PKG signature check failed"
+fi
+
+if [[ -n "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
+  if [[ -z "${INSTALLER_SIGN_IDENTITY:-}" ]]; then
+    fail "Notarization requires INSTALLER_SIGN_IDENTITY"
   fi
-  printf "    %-40s %-12s %s\n" "$(basename "${ARTIFACTS[$artifact_index]}")" "$upload_label" "${ARTIFACT_PURPOSES[$artifact_index]}"
-done
+  info "notarytool submit PKG"
+  xcrun notarytool submit "$PKG" --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" --wait
+  xcrun stapler staple "$PKG"
+  xcrun stapler validate "$PKG"
+  spctl --assess --type execute --verbose "$APP" || true
+else
+  info "Notarization skipped"
+fi
 
-export RELEASE_NAME="${RELEASE_NAME:-$DISPLAY_NAME $RELEASE_TAG_VALUE}"
-export RELEASE_NOTES="${RELEASE_NOTES:-Archive-derived macOS release for $DISPLAY_NAME $VERSION. Assets: DMG installer, PKG installer, updater tarball, updater signature, checksum, and latest.json manifest.}"
+ARTIFACTS=("$PKG")
+export RELEASE_NAME="${RELEASE_NAME:-$APP_NAME $RELEASE_TAG_VALUE}"
+export RELEASE_NOTES="${RELEASE_NOTES:-macOS PKG installer for $APP_NAME $VERSION.}"
 if release_truthy "$RELEASE_UPLOAD_ENABLED" || release_truthy "$RELEASE_UPLOAD_DRY_RUN_ENABLED"; then
   release_upload_artifacts "$RELEASE_UPLOAD_DRY_RUN_ENABLED" "$RELEASE_TAG_VALUE" "${ARTIFACTS[@]}"
 else
-  info "RELEASE_UPLOAD/RELEASE_UPLOAD_DRY_RUN not set; upload skipped."
+  info "Upload skipped"
 fi
 
-info "Release artifacts"
+info "Done"
 echo "$APP"
-echo "$DMG"
 echo "$PKG"
-echo "$UPDATER_TARBALL"
-echo "$UPDATER_SIG"
-echo "$UPDATER_SHA"
-echo "$LATEST_JSON"

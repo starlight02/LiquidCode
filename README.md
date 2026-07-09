@@ -22,16 +22,35 @@ Provider, MCP, Skills, and CLI setup in Settings instead of scattered dotfiles.
 
 ## Install from a local release build
 
-1. Install Xcode 27 or newer.
-2. Optional: copy `.env.example` to `.env` and set `CODESIGN_IDENTITY` plus
-   `NOTARY_KEYCHAIN_PROFILE` for a notarized Developer ID release.
-3. Run `./scripts/build-release.sh`.
-4. Open the generated `.build-release/LiquidCode-<version>.dmg` and drag
-   `LiquidCode.app` to `/Applications`.
+1. Install Xcode with a modern macOS SDK (26/27).
+2. Optional: copy `.env.example` → `.env` and set signing/notary identities for a notarized release.
+3. Run:
 
-Without signing variables the script creates an ad-hoc signed development DMG
-only. Set `RELEASE_SIGNING_REQUIRED=1` for release gates; missing signing or
-notary variables fail before build.
+```bash
+./scripts/build-release.sh
+# faster local smoke:
+# LIQUIDCODE_ARCHS=arm64 ./scripts/build-release.sh
+```
+
+4. Install the generated `.build-release/LiquidCode-<version>[-unsigned].pkg`.
+
+Without signing variables the script produces an ad-hoc signed app inside an unsigned PKG (Gatekeeper will warn). Set `RELEASE_SIGNING_REQUIRED=1` for production gates.
+
+### Verify
+
+```bash
+./scripts/verify-release-artifacts.sh
+codesign --verify --deep --strict --verbose=2 .build-release/LiquidCode.app
+lipo -archs .build-release/LiquidCode.app/Contents/MacOS/LiquidCode
+```
+
+### Artifacts
+
+- `.pkg` — only installer format (installs to `/Applications/LiquidCode.app`)
+- Intermediate `.build-release/LiquidCode.app` is kept for inspection; not uploaded by CI
+
+In-app update checks (`UpdateService` / `latest.json`) are separate from packaging; packaging no longer emits DMG, updater tarballs, or `latest.json`.
+
 
 ## Release gates
 
@@ -42,42 +61,20 @@ xcodebuild test \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath .xcode-derived
-xcodebuild \
-  -project LiquidCode.xcodeproj \
-  -scheme LiquidCode \
-  -configuration Release \
-  -derivedDataPath .xcode-derived \
-  build
-RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v0.1.0 ./scripts/build-release.sh
-codesign --verify --deep --strict --verbose=2 .build-release/LiquidCode.app
-hdiutil verify .build-release/*.dmg
-lipo -archs .build-release/LiquidCode.app/Contents/MacOS/LiquidCode
-python3 -m json.tool .build-release/latest.json >/tmp/liquidcode-latest-json-check.txt
+LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v0.1.0 ./scripts/build-release.sh
+./scripts/verify-release-artifacts.sh
 ```
 
 ## Release artifacts
 
-- `LiquidCode.app` is copied from the Xcode `.xcarchive` product, not
-  handcrafted by the script.
-- `.dmg` is the macOS installer artifact.
-- `.app.tar.gz` plus `.sha256` is the minimal updater payload/checksum until a
-  signed native updater protocol is finalized.
-- `latest.json` is generated from the built app Info.plist so version, build,
-  and display name match Xcode.
+- `LiquidCode.app` comes from the Xcode `.xcarchive` (kept under `.build-release/` for inspection).
+- `.pkg` is the only shipped installer (installs to `/Applications/LiquidCode.app`).
 
 ## Update
 
-- For local builds, rerun `./scripts/build-release.sh`, open the new DMG,
-  replace `/Applications/LiquidCode.app`, and relaunch.
-- For release upload dry-runs, set
-  `RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v<version>`; the script validates the
-  complete upload matrix without touching GitHub.
-- For production release upload, set `RELEASE_SIGNING_REQUIRED=1`, Developer
-  ID/notary/updater signing variables, and `RELEASE_UPLOAD_DRY_RUN=0`; missing
-  signing/notary material fails before build.
-- The generated `latest.json` is the updater manifest contract: `version`,
-  `build`, app name, DMG URL, updater tarball, signature, and checksum must
-  validate before upload.
+- Local: rerun `./scripts/build-release.sh`, install the new PKG, relaunch.
+- Dry-run upload: `RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v<version> ./scripts/build-release.sh`.
+- Production upload: `RELEASE_SIGNING_REQUIRED=1` plus Developer ID Application, Developer ID Installer, and notary profile; then `RELEASE_UPLOAD=1`.
 
 ## Uninstall
 
@@ -129,7 +126,7 @@ GitHub Actions workflows:
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `CI` (`.github/workflows/ci.yml`) | PR / push to main | Quality gate, unit tests, unsigned arm64 release smoke + artifact upload |
-| `Release` (`.github/workflows/release.yml`) | `v*` tags / published release / manual | Full universal release (DMG+PKG+updater; signed+notarized when secrets present) |
+| `Release` (`.github/workflows/release.yml`) | `v*` tags / published release / manual | Universal PKG release (signed+notarized when secrets present) |
 | `Cut Release` (`.github/workflows/cut-release.yml`) | manual `workflow_dispatch` | Read `MARKETING_VERSION`, create `vX.Y.Z` tag, trigger Release |
 
 Local helpers used by CI:
@@ -138,16 +135,14 @@ Local helpers used by CI:
 ./scripts/verify-version.sh              # MARKETING_VERSION / build number
 ./scripts/verify-version.sh --tag v0.1.0 # tag must match MARKETING_VERSION
 ./scripts/ci-select-xcode.sh             # pick Xcode with macOS 26/27 SDK
-./scripts/build-release.sh               # archive → DMG + updater payload + latest.json
-./scripts/verify-release-artifacts.sh    # post-build codesign/lipo/DMG/PKG/latest.json checks
-./scripts/package-macos-pkg.sh path/to/LiquidCode.app
+./scripts/build-release.sh               # archive → PKG only
+./scripts/verify-release-artifacts.sh    # codesign / lipo / PKG payload checks
 ./scripts/cut-release.sh --dry-run       # preview tag from MARKETING_VERSION
 ./scripts/cut-release.sh                 # create+push vX.Y.Z tag
 ```
 
-Signing mode is all-or-nothing (same rule as alma-onebot-bridge): either configure
-every Apple + updater signing secret, or configure none and accept unsigned
-Gatekeeper warnings. Partial secret sets fail the Release workflow.
+Signing mode is all-or-nothing: configure every Apple app+installer+notary secret,
+or configure none for unsigned PKG. Partial secret sets fail the Release workflow.
 
 ## Acknowledgements
 

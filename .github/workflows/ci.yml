@@ -71,7 +71,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
   build:
-    name: Release build (unsigned)
+    name: PKG build (unsigned)
     runs-on: macos-26
     needs:
       - quality
@@ -105,7 +105,7 @@ jobs:
             ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Archive-derived ad-hoc release artifacts (arm64 smoke)
+      - name: Build ad-hoc PKG (arm64 smoke)
         env:
           RELEASE_SIGNING_REQUIRED: "0"
           LIQUIDCODE_ARCHS: "arm64"
@@ -113,22 +113,17 @@ jobs:
           RELEASE_UPLOAD_DRY_RUN: "0"
         run: ./scripts/build-release.sh
 
-      - name: Verify ad-hoc release artifacts
+      - name: Verify ad-hoc PKG
         env:
           REQUIRE_NOTARIZED: "0"
           LIQUIDCODE_ARCHS: "arm64"
         run: ./scripts/verify-release-artifacts.sh
 
-      - name: Upload ad-hoc smoke artifacts
+      - name: Upload ad-hoc PKG
         uses: actions/upload-artifact@v4
         with:
-          name: LiquidCode-macOS-adhoc-arm64
+          name: LiquidCode-macOS-adhoc-arm64-pkg
           path: |
-            .build-release/*.dmg
             .build-release/*.pkg
-            .build-release/*.app.tar.gz
-            .build-release/*.sha256
-            .build-release/*.app.tar.gz.sig
-            .build-release/latest.json
           if-no-files-found: error
           retention-days: 7

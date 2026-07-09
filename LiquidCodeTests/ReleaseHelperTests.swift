@@ -28,12 +28,7 @@ final class ReleaseHelperTests: XCTestCase {
     func testUploadDryRunValidatesAndListsArtifacts() throws {
         let fixture = try ReleaseFixture()
         let artifacts = [
-            "LiquidCode-0.1.0.dmg",
-            "LiquidCode-0.1.0.pkg",
-            "LiquidCode-0.1.0.app.tar.gz",
-            "LiquidCode-0.1.0.app.tar.gz.sig",
-            "LiquidCode-0.1.0.app.tar.gz.sha256",
-            "latest.json"
+            "LiquidCode-0.1.0.pkg"
         ].map { fixture.root.appendingPathComponent($0) }
         for artifact in artifacts {
             try Data(artifact.lastPathComponent.utf8).write(to: artifact)
@@ -50,10 +45,7 @@ final class ReleaseHelperTests: XCTestCase {
     func testUploadDryRunRejectsIncompleteReleaseArtifactMatrix() throws {
         let fixture = try ReleaseFixture()
         let artifacts = [
-            "LiquidCode-0.1.0.dmg",
-            "LiquidCode-0.1.0.app.tar.gz",
-            "LiquidCode-0.1.0.app.tar.gz.sha256",
-            "latest.json"
+            "LiquidCode-0.1.0.dmg"
         ].map { fixture.root.appendingPathComponent($0) }
         for artifact in artifacts {
             try Data(artifact.lastPathComponent.utf8).write(to: artifact)
@@ -61,8 +53,11 @@ final class ReleaseHelperTests: XCTestCase {
 
         let result = try fixture.runHelper(["upload-dry-run", "v0.1.0"] + artifacts.map(\.path))
 
-        XCTAssertNotEqual(result.status, 0, "Release upload must reject an incomplete artifact matrix, including the updater .sig")
-        XCTAssertTrue(result.combinedOutput.contains(".sig") || result.combinedOutput.localizedCaseInsensitiveContains("artifact"), result.combinedOutput)
+        XCTAssertNotEqual(result.status, 0, "Release upload must reject a matrix without PKG")
+        XCTAssertTrue(
+            result.combinedOutput.contains(".pkg") || result.combinedOutput.localizedCaseInsensitiveContains("artifact"),
+            result.combinedOutput
+        )
     }
 
     func testUploadRealRunHardFailsWithoutReleaseTagBeforeGhUpload() throws {

@@ -18,18 +18,38 @@ CLI 安装/登录/修复都放进设置页，不用再到处翻 dotfiles。
 - 打开 **Settings → CLI**，诊断、安装、更新、修复 Claude Code，或登录
   Claude Code。
 
-## 从本地发布构建安装
+## 从本地 release 构建安装
 
-1. 安装 Xcode 27 或更新版本。
-2. 可选：复制 `.env.example` 为 `.env`，并设置 `CODESIGN_IDENTITY` 和
-   `NOTARY_KEYCHAIN_PROFILE`，用于 notarized Developer ID release。
-3. 运行 `./scripts/build-release.sh`。
-4. 打开生成的 `.build-release/LiquidCode-<version>.dmg`，把 `LiquidCode.app`
-   拖到 `/Applications`。
+1. 安装带现代 macOS SDK（26/27）的 Xcode。
+2. 可选：复制 `.env.example` → `.env`，配置签名/公证身份。
+3. 运行：
 
-如果未设置签名变量，脚本只会创建 ad-hoc signed development DMG。设置
-`RELEASE_SIGNING_REQUIRED=1` 可启用 release gates；缺少签名或公证变量时，
-脚本会在 build 前失败。
+```bash
+./scripts/build-release.sh
+# 本地快速冒烟：
+# LIQUIDCODE_ARCHS=arm64 ./scripts/build-release.sh
+```
+
+4. 安装生成的 `.build-release/LiquidCode-<version>[-unsigned].pkg`。
+
+未配置签名变量时，产物是 ad-hoc 签名 app + unsigned PKG（Gatekeeper 会警告）。
+生产发布请设 `RELEASE_SIGNING_REQUIRED=1`。
+
+### 校验
+
+```bash
+./scripts/verify-release-artifacts.sh
+codesign --verify --deep --strict --verbose=2 .build-release/LiquidCode.app
+lipo -archs .build-release/LiquidCode.app/Contents/MacOS/LiquidCode
+```
+
+### 产物
+
+- `.pkg` — 唯一安装包格式（安装到 `/Applications/LiquidCode.app`）
+- 中间产物 `.build-release/LiquidCode.app` 仅供检查，CI 不上传
+
+应用内更新（`UpdateService` / `latest.json`）与打包分离；打包不再产出 DMG、updater tarball 或 `latest.json`。
+
 
 ## 发布门禁
 
@@ -40,41 +60,20 @@ xcodebuild test \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath .xcode-derived
-xcodebuild \
-  -project LiquidCode.xcodeproj \
-  -scheme LiquidCode \
-  -configuration Release \
-  -derivedDataPath .xcode-derived \
-  build
-RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v0.1.0 ./scripts/build-release.sh
-codesign --verify --deep --strict --verbose=2 .build-release/LiquidCode.app
-hdiutil verify .build-release/*.dmg
-lipo -archs .build-release/LiquidCode.app/Contents/MacOS/LiquidCode
-python3 -m json.tool .build-release/latest.json >/tmp/liquidcode-latest-json-check.txt
+LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v0.1.0 ./scripts/build-release.sh
+./scripts/verify-release-artifacts.sh
 ```
 
 ## 发布产物
 
-- `LiquidCode.app` 从 Xcode `.xcarchive` product 复制，不由脚本手工拼装。
-- `.dmg` 是 macOS 安装器产物。
-- `.app.tar.gz` 加 `.sha256` 是最小 updater payload/checksum，直到 signed
-  native updater protocol 定稿。
-- `latest.json` 从构建出的 app Info.plist 生成，所以 version、build 和
-  display name 会与 Xcode 保持一致。
+- `LiquidCode.app` 来自 Xcode `.xcarchive`（保留在 `.build-release/` 便于检查）。
+- `.pkg` 是唯一分发安装包（安装到 `/Applications/LiquidCode.app`）。
 
 ## 更新
 
-- 本地构建：重新运行 `./scripts/build-release.sh`，打开新的 DMG，替换
-  `/Applications/LiquidCode.app`，然后重新启动。
-- release upload dry-runs：设置
-  `RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v<version>`；脚本会验证完整 upload
-  matrix，不会触碰 GitHub。
-- 生产 release upload：设置 `RELEASE_SIGNING_REQUIRED=1`、Developer
-  ID/notary/updater signing variables 和 `RELEASE_UPLOAD_DRY_RUN=0`；缺少
-  signing/notary material 时，脚本会在 build 前失败。
-- 生成的 `latest.json` 是 updater manifest contract：`version`、`build`、
-  app name、DMG URL、updater tarball、signature 和 checksum 必须在上传前
-  通过验证。
+- 本地：重新运行 `./scripts/build-release.sh`，安装新 PKG 后重启。
+- 上传 dry-run：`RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v<version> ./scripts/build-release.sh`。
+- 生产上传：`RELEASE_SIGNING_REQUIRED=1`，并配置 Developer ID Application、Installer 与 notary profile，再设 `RELEASE_UPLOAD=1`。
 
 ## 卸载
 
@@ -126,7 +125,7 @@ GitHub Actions：
 | Workflow | 触发 | 作用 |
 |---|---|---|
 | `CI` | PR / push main | 质量门禁、单测、未签名 arm64 release smoke |
-| `Release` | `v*` tag / release / 手动 | 通用二进制发布（DMG+PKG+updater；有 secrets 则签名+公证） |
+| `Release` | `v*` tag / release / 手动 | 通用 PKG 发布（有 secrets 则签名+公证） |
 | `Cut Release` | 手动 workflow_dispatch | 读取 MARKETING_VERSION，打 `vX.Y.Z` tag 并触发 Release |
 
 本地脚本：
@@ -135,15 +134,14 @@ GitHub Actions：
 ./scripts/verify-version.sh
 ./scripts/verify-version.sh --tag v0.1.0
 ./scripts/ci-select-xcode.sh
-./scripts/build-release.sh
+./scripts/build-release.sh           # archive → 仅 PKG
 ./scripts/verify-release-artifacts.sh
-./scripts/package-macos-pkg.sh path/to/LiquidCode.app
 ./scripts/cut-release.sh --dry-run   # 读版本预览 tag
 ./scripts/cut-release.sh             # 本地打 tag 并 push
 ```
 
-签名模式与 alma-onebot-bridge 一致：要么配齐全部 Apple + updater secrets，要么
-全部不配走 unsigned；半配会让 Release workflow 失败。
+签名模式：要么配齐 App + Installer + notary secrets，要么全部不配走 unsigned；
+半配会让 Release workflow 失败。
 
 ## 致谢
 

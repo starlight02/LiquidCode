@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Post-build verification for .build-release artifacts (used by CI and local smoke).
+# Post-build verification for PKG-only release artifacts.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,8 +18,7 @@ info() { echo "==> $*"; }
 [[ -f "$PLIST" ]] || fail "Missing Info.plist: $PLIST"
 command -v codesign >/dev/null || fail "codesign not found"
 command -v lipo >/dev/null || fail "lipo not found"
-command -v hdiutil >/dev/null || fail "hdiutil not found"
-command -v python3 >/dev/null || fail "python3 not found"
+command -v pkgutil >/dev/null || fail "pkgutil not found"
 [[ -x "$PLISTBUDDY" ]] || fail "PlistBuddy not found"
 
 info "codesign --verify --deep --strict"
@@ -43,74 +42,31 @@ echo "    Version:   $version ($build)"
 [[ "$bundle_id" == "moe.aili.LiquidCode" ]] || fail "Unexpected bundle id: $bundle_id"
 
 shopt -s nullglob
-dmgs=("$BUILD_DIR"/*.dmg)
 pkgs=("$BUILD_DIR"/*.pkg)
-tarballs=("$BUILD_DIR"/*.app.tar.gz)
-sigs=("$BUILD_DIR"/*.app.tar.gz.sig)
-shas=("$BUILD_DIR"/*.app.tar.gz.sha256)
-latest=("$BUILD_DIR"/latest.json)
 shopt -u nullglob
-
-[[ ${#dmgs[@]} -eq 1 ]] || fail "Expected exactly one DMG in $BUILD_DIR (found ${#dmgs[@]})"
 [[ ${#pkgs[@]} -eq 1 ]] || fail "Expected exactly one PKG in $BUILD_DIR (found ${#pkgs[@]})"
-[[ ${#tarballs[@]} -eq 1 ]] || fail "Expected exactly one .app.tar.gz in $BUILD_DIR"
-[[ ${#sigs[@]} -eq 1 ]] || fail "Expected exactly one .app.tar.gz.sig in $BUILD_DIR"
-[[ ${#shas[@]} -eq 1 ]] || fail "Expected exactly one .app.tar.gz.sha256 in $BUILD_DIR"
-[[ ${#latest[@]} -eq 1 ]] || fail "Expected latest.json in $BUILD_DIR"
-
-dmg="${dmgs[0]}"
 pkg="${pkgs[0]}"
-info "hdiutil verify $(basename "$dmg")"
-hdiutil verify "$dmg"
 
-info "pkgutil --check-signature $(basename "$pkg") (best-effort for unsigned)"
+info "pkgutil inspect $(basename "$pkg")"
 pkgutil --check-signature "$pkg" || true
 
-info "latest.json contract"
-python3 - "$latest" "$version" "$build" "$(basename "$dmg")" "$(basename "${tarballs[0]}")" "$(basename "${sigs[0]}")" "$(awk '{print $1}' "${shas[0]}")" <<'PY'
-import json
-import sys
-
-path, version, build, dmg, updater, sig_file, checksum = sys.argv[1:]
-with open(path, encoding="utf-8") as fh:
-    data = json.load(fh)
-platform = data.get("platforms", {}).get("darwin-universal", {})
-checks = {
-    "version": data.get("version") == version,
-    "build": data.get("build") == build,
-    "url": platform.get("url") == dmg,
-    "updater": platform.get("updater") == updater,
-    "updater_signature": platform.get("updater_signature") == sig_file,
-    "checksum": platform.get("checksum") == checksum,
-    "signature_present": bool(platform.get("signature")),
-}
-failed = [k for k, ok in checks.items() if not ok]
-if failed:
-    raise SystemExit("latest.json validation failed: " + ", ".join(failed))
-print("    latest.json OK")
-PY
+CHECK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/liquidcode-pkg-check.XXXXXX")"
+cleanup() { rm -rf "$CHECK_DIR"; }
+trap cleanup EXIT
+# pkgutil --expand-full requires the destination path to not already exist.
+rmdir "$CHECK_DIR"
+pkgutil --expand-full "$pkg" "$CHECK_DIR"
+package_app="$CHECK_DIR/$APP_NAME-component.pkg/Payload/Applications/$APP_NAME.app"
+[[ -d "$package_app" ]] || fail "PKG payload missing Applications/$APP_NAME.app"
+[[ -x "$package_app/Contents/MacOS/$APP_NAME" ]] || fail "Installed app binary not executable"
+codesign --verify --deep --strict --verbose=2 "$package_app"
 
 if [[ "$REQUIRE_NOTARIZED" == "1" ]]; then
-  info "stapler / spctl (notarized release)"
-  xcrun stapler validate "$dmg"
+  info "stapler validate PKG"
+  xcrun stapler validate "$pkg"
   spctl --assess --type execute --verbose "$APP"
-  spctl --assess --type open --context context:primary-signature --verbose "$dmg"
 else
   info "stapler/spctl skipped (REQUIRE_NOTARIZED!=1)"
 fi
-
-info "DMG install smoke"
-mount_dir="$(mktemp -d "${TMPDIR:-/tmp}/liquidcode-dmg.XXXXXX")"
-install_dir="$(mktemp -d "${TMPDIR:-/tmp}/liquidcode-install.XXXXXX")"
-cleanup() {
-  hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
-  rm -rf "$mount_dir" "$install_dir"
-}
-trap cleanup EXIT
-hdiutil attach -nobrowse -readonly -mountpoint "$mount_dir" "$dmg"
-[[ -d "$mount_dir/$APP_NAME.app" ]] || fail "DMG does not contain $APP_NAME.app"
-ditto "$mount_dir/$APP_NAME.app" "$install_dir/$APP_NAME.app"
-[[ -x "$install_dir/$APP_NAME.app/Contents/MacOS/$APP_NAME" ]] || fail "Installed app binary not executable"
-codesign --verify --deep --strict --verbose=2 "$install_dir/$APP_NAME.app"
 
 info "verify-release-artifacts passed"
