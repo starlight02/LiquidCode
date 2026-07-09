@@ -52,7 +52,7 @@ jobs:
         run: ./scripts/ci-select-xcode.sh
 
       - name: Cache DerivedData
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .xcode-derived
           key: xcode-derived-${{ runner.os }}-${{ hashFiles('LiquidCode.xcodeproj/project.pbxproj', 'LiquidCode/**/*.swift', 'LiquidCodeTests/**/*.swift', 'Config/**') }}
@@ -85,7 +85,7 @@ jobs:
         run: ./scripts/ci-select-xcode.sh
 
       - name: Cache DerivedData
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .xcode-derived
           key: xcode-derived-release-${{ runner.os }}-${{ hashFiles('LiquidCode.xcodeproj/project.pbxproj', 'LiquidCode/**/*.swift', 'Config/**') }}
