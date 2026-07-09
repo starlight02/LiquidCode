@@ -72,6 +72,7 @@ final class AppModel: ObservableObject {
     @Published var gitBranch: String?
     // Path to focus/scroll in Diff Review when opening from a tool or permission card.
     @Published var focusedDiffPath: String?
+    @Published var focusedCheckpointMessageID: String?
     @Published var currentError: AppError?
 
     @Published var composerText = ""

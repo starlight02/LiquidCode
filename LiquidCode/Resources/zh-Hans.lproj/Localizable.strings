@@ -554,3 +554,27 @@
 "Downloading update" = "正在下载更新";
 "Set an update feed URL in Settings → General, or ship LiquidCodeUpdateManifestURL in Info.plist." = "在 设置 → 通用 中填写更新源 URL，或在 Info.plist 配置 LiquidCodeUpdateManifestURL。";
 "Could not resolve updater URL" = "无法解析更新包 URL";
+
+"Timeline" = "时间线";
+"Checkpoint Timeline" = "检查点时间线";
+"Checkpoint" = "检查点";
+"User turn" = "用户回合";
+"Open a chat to browse restore points." = "打开对话以浏览恢复点。";
+"No checkpoints yet" = "尚无检查点";
+"User turns appear here as restore and fork points." = "用户回合会显示在这里，可作为恢复与分叉点。";
+"Restore conversation/code to a user turn, or fork a branch without mutating the original." = "将对话/代码恢复到某个用户回合，或分叉分支而不改动原会话。";
+"Turn %d" = "第 %d 回合";
+"Claude checkpoint" = "Claude 检查点";
+"Conversation only" = "仅对话";
+"Restore chat" = "恢复对话";
+"Fork" = "分叉";
+"Forked chat" = "分叉对话";
+"Forked session" = "已分叉会话";
+"Conversation-only branch created. Original session is unchanged." = "已创建仅对话分支。原会话未改动。";
+"Open checkpoint timeline for this turn" = "打开此回合的检查点时间线";
+"Fork unavailable" = "无法分叉";
+"No session is selected." = "未选择会话。";
+"That user turn is no longer available." = "该用户回合已不可用。";
+"Conversation and files restored to the selected user turn." = "对话与文件已恢复到所选用户回合。";
+"Files restored to the selected Claude checkpoint." = "文件已恢复到所选 Claude 检查点。";
+"Messages after the selected user turn were removed; code files were left unchanged." = "所选用户回合之后的消息已移除；代码文件未改动。";

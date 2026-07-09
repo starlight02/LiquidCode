@@ -2303,6 +2303,7 @@ struct MessageBubbleView: View {
     /// True while this bubble is part of the live streaming strip. Historical thinking
     /// blocks must not keep the progressive "Thinking…" label after the turn ends.
     var isLive = false
+    @EnvironmentObject var model: AppModel
     var body: some View {
         switch message.role {
         case .user:
@@ -2418,35 +2419,55 @@ struct MessageBubbleView: View {
     private var userMessage: some View {
         HStack(alignment: .top, spacing: 10) {
             Spacer(minLength: 120)
-            VStack(alignment: .leading, spacing: 8) {
-                if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text(softWrappedTranscriptText(message.content))
-                        .font(.system(size: 14))
-                        .lineSpacing(3)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .trailing, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(softWrappedTranscriptText(message.content))
+                            .font(.system(size: 14))
+                            .lineSpacing(3)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if !message.displayImages.isEmpty {
+                        MessageImageStackView(images: message.displayImages, inverse: true)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    if !message.nonImageAttachments.isEmpty {
+                        MessageAttachmentStripView(attachments: message.nonImageAttachments, inverse: true)
+                    }
                 }
-                if !message.displayImages.isEmpty {
-                    MessageImageStackView(images: message.displayImages, inverse: true)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                if !message.nonImageAttachments.isEmpty {
-                    MessageAttachmentStripView(attachments: message.nonImageAttachments, inverse: true)
-                }
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .background(
-                LinearGradient(
-                    colors: [Color.primary.opacity(0.90), Color.primary.opacity(0.78)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(
+                    LinearGradient(
+                        colors: [Color.primary.opacity(0.90), Color.primary.opacity(0.78)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
-            .frame(maxWidth: 720, alignment: .trailing)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
+                .frame(maxWidth: 720, alignment: .trailing)
+
+                Button {
+                    model.openCheckpointTimeline(messageID: message.id)
+                } label: {
+                    Label(
+                        message.checkpointUuid == nil ? L("Timeline") : L("Checkpoint"),
+                        systemImage: message.checkpointUuid == nil ? "clock" : "flag.fill"
+                    )
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.primary.opacity(0.05))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .pointingHandCursor()
+                .help(L("Open checkpoint timeline for this turn"))
+            }
         }
     }
 

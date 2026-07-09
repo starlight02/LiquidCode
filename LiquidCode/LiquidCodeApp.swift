@@ -163,6 +163,10 @@ struct LiquidCodeCommands: Commands {
                 LiquidCodeMainWindowController.shared.show(model: model)
                 model.openDiffReview()
             }.keyboardShortcut("6", modifiers: [.command, .option])
+            Button(L("Timeline")) {
+                LiquidCodeMainWindowController.shared.show(model: model)
+                model.openCheckpointTimeline()
+            }.keyboardShortcut("7", modifiers: [.command, .option])
             Button(L("Skills")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .skills }.keyboardShortcut("2", modifiers: [.command, .option])
             Button(L("Plan")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .plan }.keyboardShortcut("5", modifiers: [.command, .option])
             Button("MCP") { LiquidCodeMainWindowController.shared.show(model: model); model.settingsTab = .mcp; model.settingsOpen = true }.keyboardShortcut(

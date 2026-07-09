@@ -9,9 +9,20 @@ extension AppModel {
     func performRewind(_ action: RewindAction) {
         guard
             let id = selectedSessionID,
-            let session = sessions.first(where: { $0.id == id }),
             let turn = lastUserMessage(in: id) else {
             showError("Rewind unavailable", "No user turn is available to rewind.")
+            return
+        }
+        performRewind(toMessageID: turn.id, action: action)
+    }
+
+    /// Rewinds to a specific user turn (timeline / bubble entry points).
+    func performRewind(toMessageID messageID: String, action: RewindAction) {
+        guard
+            let id = selectedSessionID,
+            let session = sessions.first(where: { $0.id == id }),
+            let turn = (messagesBySession[id] ?? []).first(where: { $0.id == messageID && $0.role == .user }) else {
+            showError("Rewind unavailable", "That user turn is no longer available.")
             return
         }
 
@@ -21,19 +32,71 @@ extension AppModel {
                 return
             }
             rewindConversation(sessionID: id, toMessageID: turn.id)
-            toastInfo("Rewind restored", output.isEmpty ? "Conversation and files restored to the last user turn." : output)
+            toastInfo("Rewind restored", output.isEmpty ? "Conversation and files restored to the selected user turn." : output)
         case .restoreCode:
             guard let output = restoreCodeToCheckpoint(session: session, turn: turn) else {
                 return
             }
-            toastInfo("Code restored", output.isEmpty ? "Files restored to the last Claude checkpoint." : output)
+            toastInfo("Code restored", output.isEmpty ? "Files restored to the selected Claude checkpoint." : output)
         case .restoreConversation:
             rewindConversation(sessionID: id, toMessageID: turn.id)
-            toastInfo("Conversation restored", "Messages after the last user turn were removed; code files were left unchanged.")
+            toastInfo("Conversation restored", "Messages after the selected user turn were removed; code files were left unchanged.")
         case .summarize:
             setComposerText("/compact Summarize the conversation from this point and preserve open tasks.")
             toastInfo("Summary command ready", "Review and send the /compact command when ready.")
         }
+    }
+
+    /// Conversation-only fork: new desk draft with messages up to the chosen user turn.
+    /// Does not copy `cliResumeID` (CLI fork is unstable / out of scope for v1).
+    func forkSession(fromMessageID messageID: String) {
+        guard
+            let sourceID = selectedSessionID,
+            let source = sessions.first(where: { $0.id == sourceID }) else {
+            showError("Fork unavailable", "No session is selected.")
+            return
+        }
+        let sourceMessages = messagesBySession[sourceID] ?? []
+        guard let index = sourceMessages.firstIndex(where: { $0.id == messageID && $0.role == .user }) else {
+            showError("Fork unavailable", "That user turn is no longer available.")
+            return
+        }
+
+        let forkedMessages = Array(sourceMessages.prefix(index + 1))
+        let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
+        let preview = forkedMessages.last?.transcriptPreview ?? L("Forked chat")
+        var session = SessionRecord(
+            id: id,
+            path: nil,
+            project: source.project,
+            projectDir: source.projectDir,
+            modifiedAt: Date(),
+            preview: preview,
+            cliResumeID: nil,
+            isDraft: true
+        )
+        session.createdAt = Date()
+        session.lastCheckpointUUID = forkedMessages.last(where: { $0.checkpointUuid != nil })?.checkpointUuid
+
+        snapshotComposerState(for: selectedSessionID)
+        snapshotComposerConfiguration(for: selectedSessionID)
+        sessions.insert(session, at: 0)
+        setMessages(forkedMessages, for: id)
+        selectedSessionID = id
+        composerTextBySession[id] = ""
+        attachmentsBySession[id] = []
+        restoreComposerState(for: id)
+        restoreComposerConfiguration(for: id)
+        if workingDirectory != source.projectDir {
+            workingDirectory = source.projectDir
+            fileSystem.registerWorkspace(source.projectDir)
+            startWatchingWorkspaceDeferred()
+            refreshGitBranch()
+            reloadFileTreeDeferred()
+        }
+        saveSessionMeta()
+        toastInfo("Forked session", "Conversation-only branch created. Original session is unchanged.")
+        openCheckpointTimeline(messageID: messageID)
     }
 
     func lastUserMessage(in sessionID: String) -> ChatMessage? {

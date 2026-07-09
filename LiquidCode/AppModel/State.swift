@@ -154,6 +154,13 @@ extension AppModel {
         secondaryOpen = true
     }
 
+    /// Opens the Checkpoint Timeline and optionally focuses a user-turn message.
+    func openCheckpointTimeline(messageID: String? = nil) {
+        focusedCheckpointMessageID = messageID
+        secondaryTab = .timeline
+        secondaryOpen = true
+    }
+
     func rebuildTranscriptDisplayItems(sessionID: String) {
         let messages = messagesBySession[sessionID] ?? []
         displayItemsBySession[sessionID] = TranscriptDisplayBuilder.displayItems(

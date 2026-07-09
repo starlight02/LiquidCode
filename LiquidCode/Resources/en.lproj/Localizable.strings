@@ -554,3 +554,27 @@
 "Downloading update" = "Downloading update";
 "Set an update feed URL in Settings → General, or ship LiquidCodeUpdateManifestURL in Info.plist." = "Set an update feed URL in Settings → General, or ship LiquidCodeUpdateManifestURL in Info.plist.";
 "Could not resolve updater URL" = "Could not resolve updater URL";
+
+"Timeline" = "Timeline";
+"Checkpoint Timeline" = "Checkpoint Timeline";
+"Checkpoint" = "Checkpoint";
+"User turn" = "User turn";
+"Open a chat to browse restore points." = "Open a chat to browse restore points.";
+"No checkpoints yet" = "No checkpoints yet";
+"User turns appear here as restore and fork points." = "User turns appear here as restore and fork points.";
+"Restore conversation/code to a user turn, or fork a branch without mutating the original." = "Restore conversation/code to a user turn, or fork a branch without mutating the original.";
+"Turn %d" = "Turn %d";
+"Claude checkpoint" = "Claude checkpoint";
+"Conversation only" = "Conversation only";
+"Restore chat" = "Restore chat";
+"Fork" = "Fork";
+"Forked chat" = "Forked chat";
+"Forked session" = "Forked session";
+"Conversation-only branch created. Original session is unchanged." = "Conversation-only branch created. Original session is unchanged.";
+"Open checkpoint timeline for this turn" = "Open checkpoint timeline for this turn";
+"Fork unavailable" = "Fork unavailable";
+"No session is selected." = "No session is selected.";
+"That user turn is no longer available." = "That user turn is no longer available.";
+"Conversation and files restored to the selected user turn." = "Conversation and files restored to the selected user turn.";
+"Files restored to the selected Claude checkpoint." = "Files restored to the selected Claude checkpoint.";
+"Messages after the selected user turn were removed; code files were left unchanged." = "Messages after the selected user turn were removed; code files were left unchanged.";

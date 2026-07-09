@@ -1901,6 +1901,7 @@ struct SecondaryPanelView: View {
                 case .agent: AgentInspectorView()
                 case .skills: SkillsPanelView()
                 case .diffs: SessionDiffReviewView()
+                case .timeline: CheckpointTimelineView()
                 }
             }
         }
