@@ -56,9 +56,13 @@ jobs:
             exit 0
           fi
 
-          author="$(gh pr view "$pr_number" --repo "$REPO" --json author --jq '.author.login')"
-          if [[ "$author" != "dependabot[bot]" ]]; then
-            echo "PR #$pr_number author is $author; refusing merge."
+          # Dependabot's login surfaces as "dependabot[bot]" via the REST API (pulls endpoint,
+          # used above to resolve the PR) but as "app/dependabot" via the GraphQL-backed
+          # `gh pr view`. Accept either spelling so the author recheck cannot reject a PR
+          # the REST lookup already classified as Dependabot's.
+          author_rest="$(gh api "repos/${REPO}/pulls/${pr_number}" --jq '.user.login')"
+          if [[ "$author_rest" != "dependabot[bot]" ]]; then
+            echo "PR #$pr_number REST author is $author_rest; refusing merge."
             exit 0
           fi
 
