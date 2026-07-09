@@ -45,20 +45,11 @@ jobs:
             exit 0
           fi
 
-          # Map workflow_run -> pull request(s) for this head SHA.
-          pr_json="$(
-            gh api "repos/${REPO}/commits/${HEAD_SHA}/pulls" \
-              -H "Accept: application/vnd.github.groot-preview+json"
-          )"
+          # Map workflow_run head SHA -> open Dependabot pull request.
           pr_number="$(
-            printf '%s' "$pr_json" | python3 -c '
-import json, sys
-prs = json.load(sys.stdin)
-bots = [p for p in prs if (p.get("user") or {}).get("login") == "dependabot[bot]" and p.get("state") == "open"]
-if not bots:
-    sys.exit(0)
-print(bots[0]["number"])
-'
+            gh api "repos/${REPO}/commits/${HEAD_SHA}/pulls" \
+              -H "Accept: application/vnd.github.groot-preview+json" \
+              --jq '[.[] | select(.user.login == "dependabot[bot]" and .state == "open") | .number] | first // empty'
           )"
           if [[ -z "${pr_number:-}" ]]; then
             echo "No open Dependabot PR for ${HEAD_SHA}; nothing to merge."
