@@ -102,7 +102,7 @@ struct CheckpointTimelineView: View {
                 }
                 Spacer()
             }
-            Text(L("Restore conversation/code to a user turn, or fork a branch without mutating the original."))
+            Text(L("Restore conversation/code to a user turn, or fork a UI-only branch. Fork does not carry model context."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -130,7 +130,7 @@ struct CheckpointTimelineView: View {
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
-                Text(point.timestamp, style: .time)
+                Text(point.timestamp, format: .dateTime.month().day().hour().minute())
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -148,6 +148,7 @@ struct CheckpointTimelineView: View {
                 }
                 .buttonStyle(.plain)
                 .pointingHandCursor()
+                .help(L("Remove messages after this turn. Files stay unchanged."))
                 if point.hasClaudeCheckpoint {
                     Button {
                         model.performRewind(toMessageID: point.messageID, action: .restoreCode)
@@ -157,6 +158,7 @@ struct CheckpointTimelineView: View {
                     }
                     .buttonStyle(.plain)
                     .pointingHandCursor()
+                    .help(L("Restore workspace files to this Claude checkpoint."))
                     Button {
                         model.performRewind(toMessageID: point.messageID, action: .restoreAll)
                     } label: {
@@ -165,6 +167,7 @@ struct CheckpointTimelineView: View {
                     }
                     .buttonStyle(.plain)
                     .pointingHandCursor()
+                    .help(L("Restore conversation and files to this turn."))
                 }
                 Spacer()
                 Button {
@@ -175,6 +178,7 @@ struct CheckpointTimelineView: View {
                 }
                 .buttonStyle(.plain)
                 .pointingHandCursor()
+                .help(L("UI-only branch. Next message starts a fresh Claude session."))
             }
         }
         .padding(12)

@@ -578,3 +578,16 @@
 "Conversation and files restored to the selected user turn." = "对话与文件已恢复到所选用户回合。";
 "Files restored to the selected Claude checkpoint." = "文件已恢复到所选 Claude 检查点。";
 "Messages after the selected user turn were removed; code files were left unchanged." = "所选用户回合之后的消息已移除；代码文件未改动。";
+
+"Restore conversation and files?" = "恢复对话与文件？";
+"Messages after this turn will be removed and workspace files will be restored to the Claude checkpoint. This cannot be undone." = "此回合之后的消息将被移除，工作区文件会恢复到 Claude 检查点。此操作无法撤销。";
+"Restore conversation?" = "恢复对话？";
+"Messages after this turn will be removed. Code files will not be changed." = "此回合之后的消息将被移除。代码文件不会改动。";
+"Restore" = "恢复";
+"This turn has no Claude checkpoint UUID for file restore." = "此回合没有可用于文件恢复的 Claude 检查点 UUID。";
+"UI-only branch with the selected history. The next message starts a fresh Claude session without that context." = "已创建仅 UI 分支（含所选历史）。下一条消息会开启全新 Claude 会话，不会继承该上下文。";
+"Restore conversation/code to a user turn, or fork a UI-only branch. Fork does not carry model context." = "将对话/代码恢复到某个用户回合，或分叉仅 UI 分支。分叉不会携带模型上下文。";
+"Remove messages after this turn. Files stay unchanged." = "移除此回合之后的消息。文件保持不变。";
+"Restore workspace files to this Claude checkpoint." = "将工作区文件恢复到此 Claude 检查点。";
+"Restore conversation and files to this turn." = "将对话与文件恢复到此回合。";
+"UI-only branch. Next message starts a fresh Claude session." = "仅 UI 分支。下一条消息会开启全新 Claude 会话。";

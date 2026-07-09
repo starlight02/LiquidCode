@@ -191,10 +191,6 @@ enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
         rawValue
     }
 
-    var label: String {
-        L(rawValue)
-    }
-
     var systemImage: String {
         switch self {
         case .files: "folder"

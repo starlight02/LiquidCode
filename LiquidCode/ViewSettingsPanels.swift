@@ -1873,23 +1873,15 @@ struct SecondaryPanelView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 6) {
                     ForEach(SecondaryTab.allCases) { tab in
-                        Button { model.secondaryTab = tab } label: {
-                            Label(tab.label, systemImage: tab.systemImage)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(model.secondaryTab == tab ? Color.white : Color.primary.opacity(0.74))
-                                .padding(.horizontal, 11)
-                                .padding(.vertical, 7)
-                                .liquidGlassControl(
-                                    Capsule(),
-                                    active: model.secondaryTab == tab,
-                                    fallbackRadius: 16,
-                                    fallbackIntensity: model.secondaryTab == tab ? .prominent : .subtle
-                                )
+                        ToolbarIconButton(
+                            systemImage: tab.systemImage,
+                            help: tab.rawValue,
+                            active: model.secondaryTab == tab
+                        ) {
+                            model.secondaryTab = tab
                         }
-                        .buttonStyle(.plain)
-                        .help(tab.label)
                     }
-                    Spacer()
+                    Spacer(minLength: 4)
                     ToolbarIconButton(systemImage: "xmark", help: "Close panel", action: onClose)
                 }
                 .padding(.horizontal, 14)

@@ -2450,23 +2450,24 @@ struct MessageBubbleView: View {
                 .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
                 .frame(maxWidth: 720, alignment: .trailing)
 
-                Button {
-                    model.openCheckpointTimeline(messageID: message.id)
-                } label: {
-                    Label(
-                        message.checkpointUuid == nil ? L("Timeline") : L("Checkpoint"),
-                        systemImage: message.checkpointUuid == nil ? "clock" : "flag.fill"
-                    )
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.primary.opacity(0.05))
-                    .clipShape(Capsule())
+                // Only surface a marker when Claude recorded a file checkpoint — keeps the
+                // transcript quiet for ordinary user turns.
+                if let checkpoint = message.checkpointUuid, !checkpoint.isEmpty {
+                    Button {
+                        model.openCheckpointTimeline(messageID: message.id)
+                    } label: {
+                        Label(L("Checkpoint"), systemImage: "flag.fill")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.primary.opacity(0.05))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
+                    .help(L("Open checkpoint timeline for this turn"))
                 }
-                .buttonStyle(.plain)
-                .pointingHandCursor()
-                .help(L("Open checkpoint timeline for this turn"))
             }
         }
     }

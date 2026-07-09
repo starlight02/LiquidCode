@@ -41,37 +41,6 @@ final class CheckpointTimelineRegressionTests: XCTestCase {
         XCTAssertEqual(model.focusedCheckpointMessageID, "msg-42")
     }
 
-    func testPerformRewindToMessageTruncatesConversation() {
-        let model = AppModel(engine: TimelineStubEngine())
-        let sessionID = "sess-1"
-        model.sessions = [
-            SessionRecord(
-                id: sessionID,
-                path: nil,
-                project: "/tmp/proj",
-                projectDir: "/tmp/proj",
-                modifiedAt: Date(),
-                preview: "p",
-                isDraft: false
-            )
-        ]
-        model.selectedSessionID = sessionID
-        model.setMessages(
-            [
-                ChatMessage(id: "u1", role: .user, content: "one"),
-                ChatMessage(id: "a1", role: .assistant, content: "reply1"),
-                ChatMessage(id: "u2", role: .user, content: "two"),
-                ChatMessage(id: "a2", role: .assistant, content: "reply2")
-            ],
-            for: sessionID
-        )
-
-        model.performRewind(toMessageID: "u1", action: .restoreConversation)
-
-        let remaining = model.messagesBySession[sessionID] ?? []
-        XCTAssertEqual(remaining.map(\.id), ["u1"])
-    }
-
     func testForkSessionCreatesConversationOnlyDraftWithoutCliResume() {
         let model = AppModel(engine: TimelineStubEngine())
         let sourceID = "source-sess"
@@ -124,6 +93,67 @@ final class CheckpointTimelineRegressionTests: XCTestCase {
         XCTAssertEqual(model.focusedCheckpointMessageID, "u1")
     }
 
+    func testRestoreCodeWithoutTurnCheckpointDoesNotFallBackToSessionUUID() {
+        let engine = TimelineStubEngine()
+        let model = AppModel(engine: engine)
+        let sessionID = "sess-code"
+        model.sessions = [
+            SessionRecord(
+                id: sessionID,
+                path: nil,
+                project: "/tmp/proj",
+                projectDir: "/tmp/proj",
+                modifiedAt: Date(),
+                preview: "p",
+                lastCheckpointUUID: "session-level-cp",
+                isDraft: false
+            )
+        ]
+        model.selectedSessionID = sessionID
+        model.setMessages(
+            [
+                ChatMessage(id: "u1", role: .user, content: "no turn checkpoint")
+            ],
+            for: sessionID
+        )
+
+        model.performRewind(toMessageID: "u1", action: .restoreCode)
+
+        XCTAssertEqual(engine.rewindCallCount, 0, "must not rewind using session-level checkpoint")
+    }
+
+    func testRestoreCodeUsesTurnCheckpointOnly() {
+        let engine = TimelineStubEngine()
+        let model = AppModel(engine: engine)
+        let sessionID = "sess-code-2"
+        model.sessions = [
+            SessionRecord(
+                id: sessionID,
+                path: nil,
+                project: "/tmp/proj",
+                projectDir: "/tmp/proj",
+                modifiedAt: Date(),
+                preview: "p",
+                cliResumeID: "cli-1",
+                lastCheckpointUUID: "session-level-cp",
+                isDraft: false
+            )
+        ]
+        model.selectedSessionID = sessionID
+        model.workingDirectory = "/tmp/proj"
+        model.setMessages(
+            [
+                ChatMessage(id: "u1", role: .user, content: "with cp", checkpointUuid: "turn-cp")
+            ],
+            for: sessionID
+        )
+
+        model.performRewind(toMessageID: "u1", action: .restoreCode)
+
+        XCTAssertEqual(engine.rewindCallCount, 1)
+        XCTAssertEqual(engine.lastCheckpointUUID, "turn-cp")
+    }
+
     func testTimelineSurfaceIsWired() throws {
         let models = try Self.source("LiquidCode/Models.swift")
         XCTAssertTrue(models.contains("case timeline = \"Timeline\""))
@@ -139,18 +169,28 @@ final class CheckpointTimelineRegressionTests: XCTestCase {
         XCTAssertTrue(rewind.contains("func forkSession(fromMessageID"))
         XCTAssertTrue(rewind.contains("func performRewind(toMessageID"))
         XCTAssertTrue(rewind.contains("cliResumeID: nil"))
+        XCTAssertTrue(rewind.contains("confirmDestructiveRewind"))
+        XCTAssertTrue(rewind.contains("usageBySession.removeValue"))
+        // Strict binding: turn checkpoint only
+        XCTAssertFalse(rewind.contains("turn.checkpointUuid ?? session.lastCheckpointUUID"))
 
         let views = try Self.source("LiquidCode/CheckpointTimelineViews.swift")
         XCTAssertTrue(views.contains("struct CheckpointTimelineView"))
         XCTAssertTrue(views.contains("SessionCheckpointBuilder"))
+        XCTAssertTrue(views.contains("UI-only"))
 
         let panels = try Self.source("LiquidCode/ViewSettingsPanels.swift")
         XCTAssertTrue(panels.contains("case .timeline: CheckpointTimelineView()"))
+        // Icon-only secondary tabs via ToolbarIconButton (no Label title+icon capsules)
+        XCTAssertTrue(panels.contains("ToolbarIconButton("))
+        XCTAssertTrue(panels.contains("active: model.secondaryTab == tab"))
 
         let app = try Self.source("LiquidCode/LiquidCodeApp.swift")
         XCTAssertTrue(app.contains("openCheckpointTimeline()"))
 
         let bubble = try Self.source("LiquidCode/ViewComponents.swift")
+        // Bubble marker only when a Claude checkpoint exists
+        XCTAssertTrue(bubble.contains("if let checkpoint = message.checkpointUuid"))
         XCTAssertTrue(bubble.contains("openCheckpointTimeline(messageID: message.id)"))
     }
 
@@ -169,9 +209,17 @@ final class CheckpointTimelineRegressionTests: XCTestCase {
     }
 
     private final class TimelineStubEngine: ClaudeEngine, @unchecked Sendable {
+        var rewindCallCount = 0
+        var lastCheckpointUUID: String?
+
         func startSession(_ request: ClaudeSessionStartRequest, eventSink: @escaping @Sendable (ClaudeEvent) -> Void) throws {}
         func sendMessage(sessionID: String, content: ClaudeUserMessageContent) throws {}
-        func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String? { "rewound" }
+        func rewindFiles(sessionID: String, cliSessionID: String?, checkpointUUID: String, cwd: String) throws -> String? {
+            rewindCallCount += 1
+            lastCheckpointUUID = checkpointUUID
+            return "rewound"
+        }
+
         func updateRuntimeConfiguration(sessionID: String, model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) throws {}
         func isSessionRunning(sessionID: String) -> Bool { false }
         func respondPermission(_ permission: PermissionRequest, allow: Bool, updatedInputJSON: String?, message: String?) throws {}

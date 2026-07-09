@@ -578,3 +578,16 @@
 "Conversation and files restored to the selected user turn." = "Conversation and files restored to the selected user turn.";
 "Files restored to the selected Claude checkpoint." = "Files restored to the selected Claude checkpoint.";
 "Messages after the selected user turn were removed; code files were left unchanged." = "Messages after the selected user turn were removed; code files were left unchanged.";
+
+"Restore conversation and files?" = "Restore conversation and files?";
+"Messages after this turn will be removed and workspace files will be restored to the Claude checkpoint. This cannot be undone." = "Messages after this turn will be removed and workspace files will be restored to the Claude checkpoint. This cannot be undone.";
+"Restore conversation?" = "Restore conversation?";
+"Messages after this turn will be removed. Code files will not be changed." = "Messages after this turn will be removed. Code files will not be changed.";
+"Restore" = "Restore";
+"This turn has no Claude checkpoint UUID for file restore." = "This turn has no Claude checkpoint UUID for file restore.";
+"UI-only branch with the selected history. The next message starts a fresh Claude session without that context." = "UI-only branch with the selected history. The next message starts a fresh Claude session without that context.";
+"Restore conversation/code to a user turn, or fork a UI-only branch. Fork does not carry model context." = "Restore conversation/code to a user turn, or fork a UI-only branch. Fork does not carry model context.";
+"Remove messages after this turn. Files stay unchanged." = "Remove messages after this turn. Files stay unchanged.";
+"Restore workspace files to this Claude checkpoint." = "Restore workspace files to this Claude checkpoint.";
+"Restore conversation and files to this turn." = "Restore conversation and files to this turn.";
+"UI-only branch. Next message starts a fresh Claude session." = "UI-only branch. Next message starts a fresh Claude session.";
