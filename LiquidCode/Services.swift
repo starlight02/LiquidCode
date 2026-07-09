@@ -1554,7 +1554,7 @@ final class SessionIndexService: @unchecked Sendable {
                 project: projectDirPath,
                 projectDir: projectDirPath,
                 createdAt: info.createdAt ?? attrs?.creationDate ?? attrs?.contentModificationDate,
-                modifiedAt: attrs?.contentModificationDate ?? .distantPast,
+                modifiedAt: attrs?.contentModificationDate ?? Date.distantPast,
                 preview: preview,
                 cliResumeID: id,
                 generatedTitle: info.generatedTitle.isEmpty ? nil : info.generatedTitle
@@ -1606,7 +1606,7 @@ final class SessionIndexService: @unchecked Sendable {
                     project: projectDirPath,
                     projectDir: projectDirPath,
                     createdAt: info.createdAt ?? attrs?.creationDate ?? attrs?.contentModificationDate,
-                    modifiedAt: attrs?.contentModificationDate ?? .distantPast,
+                    modifiedAt: attrs?.contentModificationDate ?? Date.distantPast,
                     preview: info.preview.isEmpty ? "Claude session" : info.preview,
                     cliResumeID: id,
                     generatedTitle: info.generatedTitle.isEmpty ? nil : info.generatedTitle
@@ -1625,7 +1625,7 @@ final class SessionIndexService: @unchecked Sendable {
                 if lhs.modifiedAt != rhs.modifiedAt {
                     return lhs.modifiedAt > rhs.modifiedAt
                 }
-                return (lhs.createdAt ?? .distantPast) > (rhs.createdAt ?? .distantPast)
+                return (lhs.createdAt ?? Date.distantPast) > (rhs.createdAt ?? Date.distantPast)
             }
             .first { !$0.projectDir.isEmpty && directoryExists($0.projectDir) }?
             .projectDir

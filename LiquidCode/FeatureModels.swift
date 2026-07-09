@@ -166,7 +166,7 @@ enum TodoPayloadParser {
                 continue
             }
             let activeForm = (raw["activeForm"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let status = TodoItem.Status(rawValue: (raw["status"] as? String) ?? "pending") ?? .pending
+            let status = TodoItem.Status(rawValue: (raw["status"] as? String) ?? "pending") ?? TodoItem.Status.pending
             todos.append(TodoItem(id: "\(index)_\(content.hashValue)", content: content, activeForm: activeForm, status: status))
         }
         // An empty `todos` array is a valid payload the CLI sends to clear the list;

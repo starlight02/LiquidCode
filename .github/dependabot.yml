@@ -1,0 +1,19 @@
+# Dependency update bot for LiquidCode.
+# Ecosystem coverage matches what this repo actually consumes on GitHub:
+# - github-actions: workflow action pins (checkout/cache/claude-code-action/...)
+# Homebrew formulae in Brewfile are intentionally out of scope (no Dependabot ecosystem).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:17"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: ci
+      include: scope

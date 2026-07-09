@@ -790,7 +790,7 @@ struct FilePreviewShellView: View {
         }
         .onChange(of: fileName) { _, _ in
             if !availableModes.contains(model.filePreviewMode) {
-                model.filePreviewMode = availableModes.first ?? .preview
+                model.filePreviewMode = availableModes.first ?? FilePreviewMode.preview
             }
         }
     }
@@ -1038,7 +1038,7 @@ func buildSidebarSessionPlan(
         return ProjectSessionGroup(
             path: path,
             sessions: sorted,
-            latest: sorted.first?.modifiedAt ?? .distantPast,
+            latest: sorted.first?.modifiedAt ?? Date.distantPast,
             firstConversationAt: sorted.reduce(Date.distantFuture) { partial, session in
                 min(partial, session.createdAt ?? session.modifiedAt)
             }

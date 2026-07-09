@@ -26,6 +26,8 @@ shopt -u nullglob
 
 if [[ -z "$selected" ]]; then
   echo "No installed Xcode provides a matching macOS SDK ($prefer_sdks)." >&2
+  echo "Installed Xcode apps:" >&2
+  ls -d /Applications/Xcode*.app 2>/dev/null || true
   xcodebuild -version || true
   xcodebuild -showsdks || true
   exit 1

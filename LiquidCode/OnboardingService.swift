@@ -306,7 +306,7 @@ final class OnboardingService {
                 id: id,
                 name: raw["name"] as? String ?? id,
                 baseURL: baseURL,
-                apiFormat: ProviderRecord.APIFormat(rawValue: formatRaw) ?? .anthropic,
+                apiFormat: ProviderRecord.APIFormat(rawValue: formatRaw) ?? ProviderRecord.APIFormat.anthropic,
                 modelMappings: mappings,
                 extraEnv: raw["extra_env"] as? [String: String] ?? [:],
                 preset: raw["preset"] as? String,
