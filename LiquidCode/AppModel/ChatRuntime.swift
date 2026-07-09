@@ -183,6 +183,7 @@ extension AppModel {
             } else {
                 turnPhaseBySession.removeValue(forKey: permission.sessionID)
             }
+            refreshDockBadge()
         } catch { showError("Permission response failed", error.localizedDescription) }
     }
 
@@ -681,6 +682,19 @@ extension AppModel {
         flushStreamingMessage(sessionID: sessionID)
         finishTurn(sessionID: sessionID, shouldDrainQueue: true)
         reloadSessions()
+        let title = sessions.first(where: { $0.id == sessionID })?.title
+        AttentionNotificationService.shared.postTurnCompleted(
+            sessionID: sessionID,
+            sessionTitle: title,
+            enabled: settings.notificationsEnabled
+        )
+        refreshDockBadge()
+    }
+
+    func refreshDockBadge() {
+        let count = pendingAttentionCount
+        NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+        NSApp.dockTile.display()
     }
 
     /// Surfaces a permission card, or silently auto-allows when a session rule matches.
@@ -697,6 +711,8 @@ extension AppModel {
         // the right card while the turn is still running.
         recordSubagentAgentLink(agentID: permission.agentID, toolUseID: permission.parentToolUseID, sessionID: permission.sessionID)
         turnPhaseBySession[permission.sessionID] = permissionPhase(for: permission)
+        AttentionNotificationService.shared.postPermission(permission, enabled: settings.notificationsEnabled)
+        refreshDockBadge()
         var tool = ToolCall(
             id: permission.toolUseID ?? permission.requestID,
             sessionID: permission.sessionID,

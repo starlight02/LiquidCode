@@ -230,6 +230,8 @@ struct AppSettings: Codable, Sendable {
     var locale: String = Locale.current.identifier
     var lastSeenVersion: String = ""
     var sessionConfigurations: [String: ComposerSendConfiguration] = [:]
+    /// Post system notifications for permission/question/plan/turn when app is inactive.
+    var notificationsEnabled: Bool = true
 }
 
 struct SessionRecord: Identifiable, Codable, Hashable, Sendable {

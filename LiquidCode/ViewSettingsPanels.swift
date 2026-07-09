@@ -2766,6 +2766,22 @@ struct SettingsPanelView: View {
                 }
             }
 
+            SettingsSectionCard(title: L("Notifications"), subtitle: L("Alert when Claude needs you while LiquidCode is in the background"), icon: "bell") {
+                Toggle(isOn: Binding(
+                    get: { model.settings.notificationsEnabled },
+                    set: { model.settings.notificationsEnabled = $0; model.persistSettings() }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("Background notifications"))
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(L("Permission, questions, plan review, and turn completion when the app is inactive."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+            }
+
             SettingsSectionCard(title: L("Composer defaults"), subtitle: L("Mode, thinking and typography used by new sends"), icon: "text.cursor") {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading) {

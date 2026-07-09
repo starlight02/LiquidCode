@@ -8,6 +8,8 @@ final class LiquidCodeAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        AttentionNotificationRouter.shared.bind(model)
+        AttentionNotificationService.shared.configure()
         DispatchQueue.main.async {
             LiquidCodeMainWindowController.shared.show(model: self.model)
             NSApp.activate(ignoringOtherApps: true)
@@ -33,7 +35,7 @@ final class LiquidCodeAppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @MainActor
-private final class LiquidCodeMainWindowController: NSObject, NSWindowDelegate {
+final class LiquidCodeMainWindowController: NSObject, NSWindowDelegate {
     static let shared = LiquidCodeMainWindowController()
     private var window: NSWindow?
 

@@ -135,7 +135,16 @@ extension AppModel {
         ids.formUnion(streamingMessagesBySession.keys)
         ids.formUnion(streamingTextBySession.compactMap { id, text in text.isEmpty ? nil : id })
         ids.formUnion(pendingPermissions.map(\.sessionID))
+        // Also count engine-live sessions (warm CLI still attached between turns).
+        for session in sessions where engine.isSessionRunning(sessionID: session.id) {
+            ids.insert(session.id)
+        }
         return ids
+    }
+
+    /// Global pending-interaction count for Dock badge (permission / question / plan).
+    var pendingAttentionCount: Int {
+        pendingPermissions.count
     }
 
     func rebuildTranscriptDisplayItems(sessionID: String) {

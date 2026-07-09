@@ -437,11 +437,25 @@ struct SectionCaption: View {
 
 struct StatusDot: View {
     var color: Color
+    var pulsing: Bool = false
+    @State private var pulse = false
+
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: 9, height: 9)
-            .shadow(color: color.opacity(0.45), radius: 4)
+            .shadow(color: color.opacity(pulse && pulsing ? 0.85 : 0.45), radius: pulse && pulsing ? 7 : 4)
+            .scaleEffect(pulse && pulsing ? 1.18 : 1.0)
+            .animation(
+                pulsing ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default,
+                value: pulse
+            )
+            .onAppear {
+                pulse = pulsing
+            }
+            .onChange(of: pulsing) { _, newValue in
+                pulse = newValue
+            }
     }
 }
 
@@ -1405,7 +1419,10 @@ struct SessionRowView: View {
                 Image(systemName: checked ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(checked ? Color.primary.opacity(0.78) : .secondary)
             } else {
-                StatusDot(color: running ? .green : (session.isDraft ? .orange : .mint.opacity(0.8)))
+                StatusDot(
+                    color: running ? .green : (session.isDraft ? .orange : .mint.opacity(0.8)),
+                    pulsing: running
+                )
             }
             Text(session.title)
                 .lineLimit(1)

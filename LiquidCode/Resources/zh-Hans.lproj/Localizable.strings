@@ -495,3 +495,12 @@
 "CLI Session Sync" = "CLI 会话同步";
 "Following external Claude" = "正在跟随外部 Claude";
 "LiquidCode can follow an external claude --resume live. Messages you send here do not reverse-sync into an already-running external CLI process." = "LiquidCode 可以实时跟随终端里的外部 claude --resume；你在 GUI 里发送的消息不会反向同步到已经在运行的外部 CLI 进程。";
+"Notifications" = "通知";
+"Background notifications" = "后台通知";
+"Alert when Claude needs you while LiquidCode is in the background" = "当 LiquidCode 在后台时，Claude 需要你时发出提醒";
+"Permission, questions, plan review, and turn completion when the app is inactive." = "应用未激活时推送权限、提问、计划审阅与回合完成通知。";
+"Permission needed" = "需要权限";
+"Answer needed" = "需要回答";
+"Plan ready for review" = "计划待审阅";
+"Turn completed" = "回合完成";
+"Claude finished a turn" = "Claude 完成了一轮回复";

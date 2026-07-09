@@ -495,3 +495,12 @@
 "CLI Session Sync" = "CLI Session Sync";
 "Following external Claude" = "Following external Claude";
 "This turn" = "This turn";
+"Notifications" = "Notifications";
+"Background notifications" = "Background notifications";
+"Alert when Claude needs you while LiquidCode is in the background" = "Alert when Claude needs you while LiquidCode is in the background";
+"Permission, questions, plan review, and turn completion when the app is inactive." = "Permission, questions, plan review, and turn completion when the app is inactive.";
+"Permission needed" = "Permission needed";
+"Answer needed" = "Answer needed";
+"Plan ready for review" = "Plan ready for review";
+"Turn completed" = "Turn completed";
+"Claude finished a turn" = "Claude finished a turn";
