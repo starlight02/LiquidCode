@@ -132,6 +132,98 @@ final class PlanTodoRegressionTests: XCTestCase {
         XCTAssertEqual(tool.toolName, "TodoWrite")
     }
 
+    // MARK: - SessionTodoStateBuilder / AppModel aggregation
+
+    func testSessionTodoStateBuilderKeepsOnlyLatestTodoWrite() {
+        let first = ChatMessage(
+            id: "m1",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(
+                    kind: .toolUse,
+                    toolUseID: "todo-1",
+                    toolName: "TodoWrite",
+                    inputJSON: #"{"todos":[{"content":"Old","status":"pending"}]}"#
+                )
+            ]
+        )
+        let second = ChatMessage(
+            id: "m2",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(
+                    kind: .toolUse,
+                    toolUseID: "todo-2",
+                    toolName: "TodoWrite",
+                    inputJSON: #"{"todos":[{"content":"New A","status":"completed"},{"content":"New B","status":"in_progress"}]}"#
+                )
+            ]
+        )
+
+        let state = SessionTodoStateBuilder.latest(from: [first, second])
+
+        XCTAssertEqual(state?.sourceMessageID, "m2")
+        XCTAssertEqual(state?.items.map(\.content), ["New A", "New B"])
+        XCTAssertEqual(state?.completedCount, 1)
+    }
+
+    func testSessionTodoStateBuilderTreatsEmptyTodosAsClear() {
+        let message = ChatMessage(
+            id: "clear",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(kind: .toolUse, toolUseID: "todo-clear", toolName: "TodoWrite", inputJSON: #"{"todos":[]}"#)
+            ]
+        )
+
+        let state = SessionTodoStateBuilder.latest(from: [message])
+
+        XCTAssertNotNil(state)
+        XCTAssertEqual(state?.items.count, 0)
+        XCTAssertEqual(state?.sourceMessageID, "clear")
+    }
+
+    func testSetMessagesRebuildsTodosBySession() {
+        let model = AppModel(engine: PlanRecordingEngine())
+        let older = ChatMessage(
+            id: "older",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(
+                    kind: .toolUse,
+                    toolUseID: "todo-old",
+                    toolName: "TodoWrite",
+                    inputJSON: #"{"todos":[{"content":"Stale","status":"pending"}]}"#
+                )
+            ]
+        )
+        let newer = ChatMessage(
+            id: "newer",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(
+                    kind: .toolUse,
+                    toolUseID: "todo-new",
+                    toolName: "TodoWrite",
+                    inputJSON: #"{"todos":[{"content":"Fresh","status":"in_progress"}]}"#
+                )
+            ]
+        )
+
+        model.setMessages([older, newer], for: "session-a")
+
+        XCTAssertEqual(model.todosBySession["session-a"]?.items.map(\.content), ["Fresh"])
+        XCTAssertEqual(model.todosBySession["session-a"]?.sourceMessageID, "newer")
+
+        model.setMessages([], for: "session-a")
+        XCTAssertNil(model.todosBySession["session-a"])
+    }
+
     // MARK: - submitPlanRevision
 
     func testSubmitPlanRevisionDeniesAndSendsWhenIdle() throws {
@@ -205,6 +297,10 @@ final class PlanTodoRegressionTests: XCTestCase {
         XCTAssertTrue(
             inspector.contains("PlanPayloadParser.parse"),
             "Plan regression: the inspector must parse plan content structurally."
+        )
+        XCTAssertTrue(
+            inspector.contains("Current todos") || inspector.contains("L(\"Current todos\")") || inspector.contains("currentTodosSection"),
+            "Plan regression: the inspector must surface the current TodoWrite checklist."
         )
         XCTAssertFalse(
             inspector.contains("lower.contains(\"todo\")"),

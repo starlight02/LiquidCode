@@ -479,3 +479,10 @@
 "Select thinking level" = "选择思考强度";
 "Select model" = "选择模型";
 "Toggle thinking details" = "展开或收起思考过程";
+"Current todos" = "当前待办";
+"Current checklist and plans Claude drafted this session. Approve or revise from the composer card." = "当前清单与本会话中 Claude 起草的计划。请在输入框卡片中批准或修订。";
+"Running tools…" = "正在运行工具…";
+"Running %@" = "正在运行 %@";
+"Waiting for permission…" = "等待权限批准…";
+"Waiting for your answer…" = "等待你的回答…";
+"Todo list cleared." = "待办列表已清空。";

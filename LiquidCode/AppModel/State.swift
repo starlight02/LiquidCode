@@ -82,6 +82,13 @@ extension AppModel {
         turnPhaseBySession[selectedSessionID ?? ""]
     }
 
+    var selectedTodoState: SessionTodoState? {
+        guard let selectedSessionID else {
+            return nil
+        }
+        return todosBySession[selectedSessionID]
+    }
+
     var activeProvider: ProviderRecord? {
         nil
     }
@@ -125,10 +132,12 @@ extension AppModel {
     }
 
     func rebuildTranscriptDisplayItems(sessionID: String) {
+        let messages = messagesBySession[sessionID] ?? []
         displayItemsBySession[sessionID] = TranscriptDisplayBuilder.displayItems(
-            messages: messagesBySession[sessionID] ?? [],
+            messages: messages,
             subagentActivities: subagentActivityMap(for: sessionID)
         )
+        refreshTodoState(sessionID: sessionID, messages: messages)
     }
 
     func setMessages(_ messages: [ChatMessage], for sessionID: String, displayItems: [TranscriptDisplayItem]? = nil) {
@@ -137,5 +146,17 @@ extension AppModel {
             messages: messages,
             subagentActivities: subagentActivityMap(for: sessionID)
         )
+        refreshTodoState(sessionID: sessionID, messages: messages)
+    }
+
+    /// Recomputes the session's current TodoWrite checklist from message history so
+    /// reloads and live appends stay in sync without depending on streaming alone.
+    func refreshTodoState(sessionID: String, messages: [ChatMessage]? = nil) {
+        let source = messages ?? messagesBySession[sessionID] ?? []
+        if let state = SessionTodoStateBuilder.latest(from: source) {
+            todosBySession[sessionID] = state
+        } else {
+            todosBySession.removeValue(forKey: sessionID)
+        }
     }
 }

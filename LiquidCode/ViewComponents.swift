@@ -1942,8 +1942,12 @@ struct ActivityPillView: View {
             ProgressView().controlSize(.small)
             if let permission = model.pendingPermissionsForSelectedSession.first {
                 Text(LF("Awaiting: %@", permission.toolName))
+            } else if case .toolRunning(let name)? = model.selectedTurnPhase, !name.isEmpty {
+                Text(LF("Running %@", name))
             } else if !model.selectedStreamingText.isEmpty {
                 Text(L("Writing"))
+            } else if let progress = todoProgressLabel {
+                Text(progress)
             } else {
                 Text(L("Running"))
             }
@@ -1953,6 +1957,13 @@ struct ActivityPillView: View {
         .padding(.vertical, 5)
         .background(.thinMaterial)
         .clipShape(Capsule())
+    }
+
+    private var todoProgressLabel: String? {
+        guard let state = model.selectedTodoState, !state.items.isEmpty else {
+            return nil
+        }
+        return "\(state.completedCount)/\(state.items.count)"
     }
 }
 
@@ -1966,6 +1977,16 @@ struct ThinkingIndicatorView: View {
         switch phase {
         case .connecting:
             L("Connecting Claude Code…")
+        case .toolRunning(let name):
+            if name.isEmpty {
+                L("Running tools…")
+            } else {
+                LF("Running %@", name)
+            }
+        case .waitingPermission:
+            L("Waiting for permission…")
+        case .waitingUser:
+            L("Waiting for your answer…")
         case .thinking, .none:
             L("Claude is thinking…")
         }

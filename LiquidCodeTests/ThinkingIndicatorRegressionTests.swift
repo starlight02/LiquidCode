@@ -103,7 +103,7 @@ final class ThinkingIndicatorRegressionTests: XCTestCase {
         XCTAssertNil(model.activeTurnSnapshots["session-1"])
     }
 
-    func testTextDeltaAndToolStartedClearTurnPhase() throws {
+    func testTextDeltaClearsTurnPhaseAndToolStartedTracksToolRunning() throws {
         let model = AppModel(engine: ThinkingRecordingEngine())
         model.selectedSessionID = "session-1"
         model.turnPhaseBySession["session-1"] = .thinking
@@ -116,7 +116,19 @@ final class ThinkingIndicatorRegressionTests: XCTestCase {
             sessionID: "session-1",
             ToolCall(id: "tool-1", sessionID: "session-1", name: "Read", inputPreview: "{}", status: .running)
         ))
-        XCTAssertNil(model.turnPhaseBySession["session-1"])
+        XCTAssertEqual(model.turnPhaseBySession["session-1"], .toolRunning(name: "Read"))
+
+        model.handle(.permissionRequested(PermissionRequest(
+            id: "perm-1",
+            sessionID: "session-1",
+            requestID: "req-1",
+            toolName: "Bash",
+            title: "Claude wants to use Bash",
+            summary: "npm test",
+            inputJSON: #"{"command":"npm test"}"#,
+            risk: .shell
+        )))
+        XCTAssertEqual(model.turnPhaseBySession["session-1"], .waitingPermission)
     }
 
     // MARK: - StreamEventParser
@@ -174,6 +186,18 @@ final class ThinkingIndicatorRegressionTests: XCTestCase {
         XCTAssertTrue(
             indicator.contains("Claude is thinking…") || indicator.contains("L(\"Claude is thinking…\")"),
             "Thinking phase must use the thinking label."
+        )
+        XCTAssertTrue(
+            indicator.contains("Running tools…") || indicator.contains("L(\"Running tools…\")") || indicator.contains("toolRunning"),
+            "Tool-running phase must have a dedicated label."
+        )
+        XCTAssertTrue(
+            indicator.contains("Waiting for permission…") || indicator.contains("L(\"Waiting for permission…\")"),
+            "Permission wait phase must have a dedicated label."
+        )
+        XCTAssertTrue(
+            indicator.contains("Waiting for your answer…") || indicator.contains("L(\"Waiting for your answer…\")"),
+            "User-wait phase must have a dedicated label."
         )
         XCTAssertTrue(
             bubble.contains("isLive ? L(\"Thinking…\") : L(\"Thought\")") || bubble.contains("isLive"),

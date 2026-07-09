@@ -56,10 +56,13 @@ final class AppModel: ObservableObject {
     // loader so reloaded sessions can attribute persisted sidechain records.
     @Published var subagentMetasBySession: [String: [SubagentMeta]] = [:]
     @Published var focusedSubagentID: String?
-    // Pre-first-token phase of an active turn, per session. Drives the in-transcript
-    // thinking indicator's wording; cleared once any visible output streams in.
+    // Pre-first-token / live phase of an active turn, per session. Drives the
+    // thinking indicator and activity pill; cleared once the turn ends.
     @Published var turnPhaseBySession: [String: TurnPhase] = [:]
+    // Latest TodoWrite checklist per session (authoritative current list, not history).
+    @Published var todosBySession: [String: SessionTodoState] = [:]
     @Published var currentError: AppError?
+
     @Published var composerText = ""
     @Published var composerTextBySession: [String: String] = [:]
     @Published var searchText = ""

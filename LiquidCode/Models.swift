@@ -581,15 +581,20 @@ enum ClaudeEvent: Sendable {
     case failed(sessionID: String, String)
 }
 
-/// The phase of a turn before any visible output has streamed. Drives the wording of
-/// the in-transcript thinking indicator; its visibility is gated separately on there
-/// being no streamed content yet, so a missed transition can never leave it stuck.
-enum TurnPhase: Sendable {
+/// The phase of an active agent turn. Pre-first-token phases (connecting/thinking) drive
+/// the in-transcript thinking indicator; later phases feed the activity pill / session
+/// status so the user can see tools, permission waits, and questions without scanning
+/// the transcript. Cleared when the turn ends.
+enum TurnPhase: Equatable, Sendable {
     case connecting // request is being sent to / cold-starting the Claude Code subprocess
     case thinking // Claude Code has received the request and is generating the first token
+    case toolRunning(name: String) // a tool call is streaming or executing
+    case waitingPermission // a tool permission card is pending
+    case waitingUser // AskUserQuestion or plan review needs a human answer
 }
 
 let defaultModels = [
+
     "fable",
     "opus",
     "sonnet",

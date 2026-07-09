@@ -107,6 +107,46 @@ struct TodoItem: Identifiable, Equatable, Sendable {
     let status: Status
 }
 
+/// Latest authoritative TodoWrite payload for a session. Transcript history keeps every
+/// TodoWrite card; this state only tracks the most recent list so the Plan inspector
+/// can show "what the agent is working on now" without scanning the timeline.
+struct SessionTodoState: Equatable, Sendable {
+    var items: [TodoItem]
+    var updatedAt: Date
+    var sourceMessageID: String?
+
+    var completedCount: Int {
+        items.filter { $0.status == .completed }.count
+    }
+}
+
+/// Walks messages newest-first and returns the latest recognizable `TodoWrite` payload.
+/// An empty `todos` array is a valid clear and still becomes a state (with no items).
+enum SessionTodoStateBuilder {
+    static func latest(from messages: [ChatMessage]) -> SessionTodoState? {
+        for message in messages.reversed() {
+            for block in message.blocks.reversed() where block.kind == .toolUse && block.toolName == "TodoWrite" {
+                guard let items = TodoPayloadParser.parse(inputJSON: block.inputJSON ?? "") else {
+                    continue
+                }
+                return SessionTodoState(items: items, updatedAt: message.timestamp, sourceMessageID: message.id)
+            }
+            // Legacy transcript lines may only expose TodoWrite via toolName + content.
+            if message.toolName == "TodoWrite", let items = TodoPayloadParser.parse(inputJSON: cleanLegacyTodoPayload(message.content)) {
+                return SessionTodoState(items: items, updatedAt: message.timestamp, sourceMessageID: message.id)
+            }
+        }
+        return nil
+    }
+
+    private static func cleanLegacyTodoPayload(_ content: String) -> String {
+        if let jsonStart = content.firstIndex(of: "{") {
+            return String(content[jsonStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return content
+    }
+}
+
 /// Decodes a `TodoWrite` tool call's `inputJSON` into structured todo items.
 /// Returns `nil` when the payload is not a recognizable todo list, so the caller
 /// can fall back to the generic tool card instead of rendering a broken checklist.

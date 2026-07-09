@@ -166,6 +166,14 @@ extension AppModel {
             pendingPermissions.removeAll { $0.id == permission.id }
             let state = allow ? L("Allowed") : L("Denied")
             appendMessage(ChatMessage(role: .system, content: "\(state) \(permission.toolName): \(permission.summary)"), sessionID: permission.sessionID)
+            // After answering, drop waiting phase unless another permission is still open.
+            if pendingPermissions.contains(where: { $0.sessionID == permission.sessionID }) {
+                turnPhaseBySession[permission.sessionID] = permissionPhase(for: permission.sessionID)
+            } else if hasActiveTurn(for: permission.sessionID) {
+                turnPhaseBySession[permission.sessionID] = .thinking
+            } else {
+                turnPhaseBySession.removeValue(forKey: permission.sessionID)
+            }
         } catch { showError("Permission response failed", error.localizedDescription) }
     }
 
@@ -239,9 +247,24 @@ extension AppModel {
             appendMessage(message, sessionID: sessionID)
         case .toolStarted(let sessionID, let tool),
              .toolUpdated(let sessionID, let tool):
-            // A tool is visible activity — drop the thinking indicator so it never
-            // reappears between tool cards and the final assistant message.
-            turnPhaseBySession.removeValue(forKey: sessionID)
+            // Tools are visible activity. Keep a live "tool running" phase so the
+            // activity pill can show the tool name; the pre-token thinking indicator
+            // stays hidden because streaming/permission gates own that surface.
+            if tool.status == .waitingForPermission {
+                turnPhaseBySession[sessionID] = .waitingPermission
+            } else if tool.status == .streamingInput || tool.status == .running {
+                turnPhaseBySession[sessionID] = .toolRunning(name: tool.name)
+            } else {
+                // Succeeded/failed/denied: prefer waiting on any remaining permission,
+                // otherwise stay in a generic thinking phase until turnCompleted.
+                if pendingPermissions.contains(where: { $0.sessionID == sessionID }) {
+                    turnPhaseBySession[sessionID] = permissionPhase(for: sessionID)
+                } else if hasActiveTurn(for: sessionID) {
+                    turnPhaseBySession[sessionID] = .thinking
+                } else {
+                    turnPhaseBySession.removeValue(forKey: sessionID)
+                }
+            }
             upsertTool(tool, sessionID: sessionID)
         case .permissionRequested(let permission):
             upsertPendingPermission(permission)
@@ -249,6 +272,7 @@ extension AppModel {
             // block's toolUseID. Harvest that link so live sidechain records attribute to
             // the right card while the turn is still running.
             recordSubagentAgentLink(agentID: permission.agentID, toolUseID: permission.parentToolUseID, sessionID: permission.sessionID)
+            turnPhaseBySession[permission.sessionID] = permissionPhase(for: permission)
             var tool = ToolCall(
                 id: permission.toolUseID ?? permission.requestID,
                 sessionID: permission.sessionID,
@@ -654,5 +678,23 @@ extension AppModel {
         } else {
             pendingPermissions.append(permission)
         }
+    }
+
+    /// Maps a pending permission to the right wait phase: questions/plan reviews need a
+    /// human answer (waitingUser); ordinary tool approvals are waitingPermission.
+    private func permissionPhase(for permission: PermissionRequest) -> TurnPhase {
+        switch InteractionAdapter(permission: permission).kind {
+        case .question, .planReview:
+            return .waitingUser
+        case .permission:
+            return .waitingPermission
+        }
+    }
+
+    private func permissionPhase(for sessionID: String) -> TurnPhase {
+        guard let permission = pendingPermissions.first(where: { $0.sessionID == sessionID }) else {
+            return .waitingPermission
+        }
+        return permissionPhase(for: permission)
     }
 }

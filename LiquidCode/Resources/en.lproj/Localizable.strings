@@ -479,3 +479,10 @@
 "Select thinking level" = "Select thinking level";
 "Select model" = "Select model";
 "Toggle thinking details" = "Toggle thinking details";
+"Current todos" = "Current todos";
+"Current checklist and plans Claude drafted this session. Approve or revise from the composer card." = "Current checklist and plans Claude drafted this session. Approve or revise from the composer card.";
+"Running tools…" = "Running tools…";
+"Running %@" = "Running %@";
+"Waiting for permission…" = "Waiting for permission…";
+"Waiting for your answer…" = "Waiting for your answer…";
+"Todo list cleared." = "Todo list cleared.";
