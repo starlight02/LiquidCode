@@ -304,7 +304,7 @@ final class SidecarClaudeEngine: ClaudeEngine, @unchecked Sendable {
     }
 
     private func startProcessIfNeeded() throws {
-        let running = queue.sync { process?.isRunning == true }
+        let running = queue.sync { self.process?.isRunning == true }
         if running { return }
         guard FileManager.default.isReadableFile(atPath: sidecarScript.path) else {
             throw makeError("Sidecar script not found at \(sidecarScript.path)")
@@ -312,26 +312,26 @@ final class SidecarClaudeEngine: ClaudeEngine, @unchecked Sendable {
         guard let nodePath = Self.resolveNodeExecutable(home: home.path, base: baseEnvironment) else {
             throw makeError("Node executable not found for sidecar runtime")
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: nodePath)
-        process.arguments = [sidecarScript.path]
-        process.currentDirectoryURL = sidecarScript.deletingLastPathComponent()
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: nodePath)
+        child.arguments = [sidecarScript.path]
+        child.currentDirectoryURL = sidecarScript.deletingLastPathComponent()
         let nodeDir = URL(fileURLWithPath: nodePath).deletingLastPathComponent().path
         var env = baseEnvironment
         env["PATH"] = "\(nodeDir):\(enrichedPath())"
-        process.environment = env
+        child.environment = env
         let inPipe = Pipe(); let outPipe = Pipe(); let errPipe = Pipe()
-        process.standardInput = inPipe
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        try process.run()
+        child.standardInput = inPipe
+        child.standardOutput = outPipe
+        child.standardError = errPipe
+        try child.run()
         queue.sync {
-            self.process = process
+            self.process = child
             stdin = inPipe.fileHandleForWriting
             initialized = false
         }
         attachReaders(stdout: outPipe.fileHandleForReading, stderr: errPipe.fileHandleForReading)
-        process.terminationHandler = { [weak self] _ in self?.handleSidecarExit() }
+        child.terminationHandler = { [weak self] _ in self?.handleSidecarExit() }
     }
 
     private func sendRPC(method: String, params: [String: Any], timeout: TimeInterval) throws -> [String: Any] {

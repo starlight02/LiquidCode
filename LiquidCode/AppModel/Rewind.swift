@@ -123,6 +123,10 @@ extension AppModel {
     }
 
     private func confirmDestructiveRewind(title: String, message: String) -> Bool {
+        // XCTest has no interactive alert session; auto-confirm so rewind logic stays unit-testable.
+        if NSClassFromString("XCTestCase") != nil {
+            return true
+        }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message

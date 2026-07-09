@@ -1291,6 +1291,27 @@ final class FeatureModelRegressionTests: XCTestCase {
         let engine = RecordingEngine()
         let model = AppModel(engine: engine)
         model.sessions = [
+            // Session-level lastCheckpointUUID must NOT be used; only the selected turn's UUID.
+            SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: root.path, modifiedAt: Date(), preview: "Alpha", lastCheckpointUUID: "checkpoint-session")
+        ]
+        model.selectedSessionID = "alpha"
+        model.messagesBySession["alpha"] = [
+            ChatMessage(id: "u1", role: .user, content: "first", checkpointUuid: "checkpoint-turn"),
+            ChatMessage(id: "a1", role: .assistant, content: "first answer")
+        ]
+
+        model.performRewind(.restoreCode)
+
+        XCTAssertEqual(engine.rewindCalls.map(\.checkpointUUID), ["checkpoint-turn"])
+        XCTAssertEqual(model.messagesBySession["alpha"]?.map(\.id), ["u1", "a1"])
+    }
+
+    func testRewindCodeOnlyWithoutTurnCheckpointDoesNotFallBackToSessionCheckpoint() throws {
+        let root = try temporaryDirectory(prefix: "lc-rewind-code-no-turn")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let engine = RecordingEngine()
+        let model = AppModel(engine: engine)
+        model.sessions = [
             SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: root.path, modifiedAt: Date(), preview: "Alpha", lastCheckpointUUID: "checkpoint-session")
         ]
         model.selectedSessionID = "alpha"
@@ -1301,8 +1322,9 @@ final class FeatureModelRegressionTests: XCTestCase {
 
         model.performRewind(.restoreCode)
 
-        XCTAssertEqual(engine.rewindCalls.map { $0.checkpointUUID }, ["checkpoint-session"])
+        XCTAssertTrue(engine.rewindCalls.isEmpty)
         XCTAssertEqual(model.messagesBySession["alpha"]?.map(\.id), ["u1", "a1"])
+        XCTAssertEqual(model.currentError?.title, L("Rewind unavailable"))
     }
 
     func testMCPAddUpdateDeletePersistOnlyAppLocalServers() throws {
