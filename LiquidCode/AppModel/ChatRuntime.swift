@@ -4,6 +4,7 @@ import Foundation
 extension AppModel {
     private func finishTurn(sessionID: String, shouldDrainQueue: Bool) {
         activeTurnSnapshots.removeValue(forKey: sessionID)
+        turnPhaseBySession.removeValue(forKey: sessionID)
         guard shouldDrainQueue, let queued = pendingUserMessagesBySession[sessionID], !queued.isEmpty else {
             return
         }
@@ -18,6 +19,7 @@ extension AppModel {
 
     private func restoreActiveTurnToDraft(sessionID: String) {
         let stopped = activeTurnSnapshots.removeValue(forKey: sessionID)
+        turnPhaseBySession.removeValue(forKey: sessionID)
         let queued = pendingUserMessagesBySession.removeValue(forKey: sessionID) ?? []
         let existingDraft = sessionID == selectedSessionID ? composerText : composerTextBySession[sessionID] ?? ""
         let parts = ([stopped?.content, existingDraft] + queued.map(\.content)).compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
@@ -105,6 +107,9 @@ extension AppModel {
                 streamingTextBySession[id] = ""
             }
             if shouldStartSession(session, sessionID: id, configuration: configuration) {
+                // Cold start: the request first has to spawn/connect the Claude Code
+                // subprocess, so begin in the connecting phase; `.cliReady` promotes it.
+                turnPhaseBySession[id] = .connecting
                 fileSystem.registerWorkspace(cwd)
                 try engine.startSession(ClaudeSessionStartRequest(
                     prompt: payload.text,
@@ -119,12 +124,16 @@ extension AppModel {
                     providerAPIKey: activeProviderID.flatMap { providerVault.apiKey(providerID: $0) }
                 ), eventSink: { [weak self] event in Task { @MainActor in self?.handle(event) } })
             } else {
+                // Warm turn: the subprocess is already running, so the model is thinking
+                // immediately — no connecting phase.
+                turnPhaseBySession[id] = .thinking
                 try engine.sendMessage(sessionID: id, content: payload)
             }
             sendConfigurationBySession[id] = configuration
             persistSettings()
         } catch {
             activeTurnSnapshots.removeValue(forKey: id)
+            turnPhaseBySession.removeValue(forKey: id)
             setComposerText(text, for: id)
             setAttachments(attachments, for: id)
             showError("Failed to send", error.localizedDescription)
@@ -185,6 +194,12 @@ extension AppModel {
                 sessions[idx].cliResumeID = cliID ?? sessions[idx].cliResumeID
                 sessions[idx].isDraft = false
             }
+        case .cliReady(let sessionID):
+            // Claude Code has received the request and is now working. Promote the
+            // indicator from connecting to thinking (only while still pre-first-token).
+            if turnPhaseBySession[sessionID] == .connecting {
+                turnPhaseBySession[sessionID] = .thinking
+            }
         case .textDelta(let sessionID, let text):
             appendStreamingBlockDelta(sessionID: sessionID, index: nil, kind: .text, text: text)
         case .streamBlockStarted(let sessionID, let index, let block):
@@ -217,11 +232,16 @@ extension AppModel {
                 return
             }
             if message.role == .assistant || message.role == .error {
+                // First visible assistant/error content ends the pre-token thinking phase.
+                turnPhaseBySession.removeValue(forKey: sessionID)
                 clearStreamingMessage(sessionID: sessionID)
             }
             appendMessage(message, sessionID: sessionID)
         case .toolStarted(let sessionID, let tool),
              .toolUpdated(let sessionID, let tool):
+            // A tool is visible activity — drop the thinking indicator so it never
+            // reappears between tool cards and the final assistant message.
+            turnPhaseBySession.removeValue(forKey: sessionID)
             upsertTool(tool, sessionID: sessionID)
         case .permissionRequested(let permission):
             upsertPendingPermission(permission)
@@ -445,6 +465,8 @@ extension AppModel {
     }
 
     private func upsertStreamingBlock(sessionID: String, index: Int?, block: ChatContentBlock) {
+        // First streamed block is the first visible token — clear the pre-token phase.
+        turnPhaseBySession.removeValue(forKey: sessionID)
         var message = streamingMessagesBySession[sessionID] ?? ChatMessage(
             id: "streaming_\(sessionID)",
             role: .assistant,
@@ -472,6 +494,8 @@ extension AppModel {
         guard !text.isEmpty else {
             return
         }
+        // First non-empty delta is the first visible token — clear the pre-token phase.
+        turnPhaseBySession.removeValue(forKey: sessionID)
         var message = streamingMessagesBySession[sessionID] ?? ChatMessage(
             id: "streaming_\(sessionID)",
             role: .assistant,

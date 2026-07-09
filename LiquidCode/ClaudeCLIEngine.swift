@@ -543,7 +543,10 @@ enum StreamEventParser {
             type == "system",
             !(obj["subtype"] as? String == "local_command" && claudeControlTranscriptEvent(from: obj["content"]) != nil) {
             let cliSessionID = obj["session_id"] as? String ?? obj["sessionId"] as? String
-            return [.sessionStarted(sessionID: sessionID, cliSessionID: cliSessionID)]
+            // The CLI's system-init line is the reliable signal that Claude Code has
+            // received the request and is now working — distinct from the process merely
+            // having spawned. `.cliReady` promotes the thinking indicator to its second phase.
+            return [.sessionStarted(sessionID: sessionID, cliSessionID: cliSessionID), .cliReady(sessionID: sessionID)]
         }
         if type == "result" {
             return [.turnCompleted(sessionID: sessionID)]

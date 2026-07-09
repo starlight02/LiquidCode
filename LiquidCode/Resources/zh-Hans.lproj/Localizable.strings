@@ -74,6 +74,7 @@
 "Claude Login" = "Claude 登录";
 "Claude asks a question" = "Claude 有个问题";
 "Claude is still working" = "Claude 仍在工作";
+"Claude is thinking…" = "Claude 正在思考…";
 "Claude login opened in Terminal" = "已在终端打开 Claude 登录";
 "Claude session delete failed" = "删除 Claude 对话失败";
 "Clear Project" = "清除当前项目";
@@ -91,6 +92,7 @@
 "Commands" = "命令";
 "Completed with no textual output." = "已完成，但没有文本输出。";
 "Composer defaults" = "输入区默认值";
+"Connecting Claude Code…" = "连接 Claude Code…";
 "Conversation and files restored to the last user turn." = "对话和文件已恢复到上一条用户消息。";
 "Conversation restored" = "对话已恢复";
 "Copied diagnostics" = "已复制诊断信息";

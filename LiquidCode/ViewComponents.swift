@@ -1880,6 +1880,17 @@ struct ChatPanelView: View {
                     if !streamingDisplayItems.isEmpty {
                         Color.clear.frame(height: 1).id("streaming")
                     }
+                    // Pre-first-token thinking indicator: only while a turn is active and
+                    // nothing has streamed yet. Phase only drives the label; visibility is
+                    // gated on streaming/permissions so a missed clear can never leave it stuck.
+                    if
+                        model.selectedHasActiveTurn
+                        && streamingDisplayItems.isEmpty
+                        && model.pendingPermissionsForSelectedSession.isEmpty {
+                        ThinkingIndicatorView(phase: model.selectedTurnPhase)
+                            .id("thinking_indicator")
+                            .transition(.opacity)
+                    }
                     ForEach(model.selectedPendingUserMessages) { pending in QueuedUserMessageView(message: pending).id("queued_\(pending.id)") }
                     // Reserved trailing space so the last message clears the floating input
                     // bar that overlaps the transcript bottom in the parent ZStack.
@@ -1939,6 +1950,90 @@ struct ActivityPillView: View {
         .padding(.vertical, 5)
         .background(.thinMaterial)
         .clipShape(Capsule())
+    }
+}
+
+/// In-transcript pre-first-token indicator. Shows while a turn is active but nothing has
+/// streamed yet. The phase only changes the label (connecting vs thinking); visibility is
+/// gated by the parent so a missed clear can never leave the row stuck on screen.
+struct ThinkingIndicatorView: View {
+    let phase: TurnPhase?
+
+    private var label: String {
+        switch phase {
+        case .connecting:
+            L("Connecting Claude Code…")
+        case .thinking, .none:
+            L("Claude is thinking…")
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            TranscriptAvatar(
+                systemImage: "chevron.left.forwardslash.chevron.right",
+                foreground: .white,
+                background: .primary
+            )
+            HStack(spacing: 8) {
+                ThinkingDotsView()
+                Text(label)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.secondary.opacity(0.055))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(0.12), lineWidth: 1)
+            )
+            Spacer(minLength: 60)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Three soft bouncing dots used by the thinking indicator. Driven by TimelineView so it
+/// animates without @State timers and respects reduced-motion environments gracefully.
+private struct ThinkingDotsView: View {
+    private let period: TimeInterval = 1.05
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
+            let now = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 4) {
+                ForEach(0 ..< 3, id: \.self) { index in
+                    Circle()
+                        .fill(Color.secondary.opacity(0.72))
+                        .frame(width: 5, height: 5)
+                        .opacity(dotOpacity(at: now, index: index))
+                        .offset(y: dotOffset(at: now, index: index))
+                }
+            }
+            .frame(height: 10)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func phase(at time: TimeInterval, index: Int) -> Double {
+        let offset = Double(index) * 0.18
+        return ((time + offset).truncatingRemainder(dividingBy: period)) / period
+    }
+
+    private func dotOpacity(at time: TimeInterval, index: Int) -> Double {
+        let cycle = phase(at: time, index: index)
+        // Soft pulse peaking near the middle of each cycle.
+        return 0.35 + 0.55 * sin(cycle * .pi)
+    }
+
+    private func dotOffset(at time: TimeInterval, index: Int) -> CGFloat {
+        let cycle = phase(at: time, index: index)
+        return CGFloat(-2.4 * sin(cycle * .pi))
     }
 }
 

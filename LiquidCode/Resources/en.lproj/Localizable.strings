@@ -74,6 +74,7 @@
 "Claude Login" = "Claude Login";
 "Claude asks a question" = "Claude asks a question";
 "Claude is still working" = "Claude is still working";
+"Claude is thinking…" = "Claude is thinking…";
 "Claude login opened in Terminal" = "Claude login opened in Terminal";
 "Claude session delete failed" = "Claude session delete failed";
 "Clear Project" = "Clear Project";
@@ -91,6 +92,7 @@
 "Commands" = "Commands";
 "Completed with no textual output." = "Completed with no textual output.";
 "Composer defaults" = "Composer defaults";
+"Connecting Claude Code…" = "Connecting Claude Code…";
 "Conversation and files restored to the last user turn." = "Conversation and files restored to the last user turn.";
 "Conversation restored" = "Conversation restored";
 "Copied diagnostics" = "Copied diagnostics";

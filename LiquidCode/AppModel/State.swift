@@ -78,6 +78,10 @@ extension AppModel {
         subagentActivitiesBySession[selectedSessionID ?? ""] ?? []
     }
 
+    var selectedTurnPhase: TurnPhase? {
+        turnPhaseBySession[selectedSessionID ?? ""]
+    }
+
     var activeProvider: ProviderRecord? {
         nil
     }

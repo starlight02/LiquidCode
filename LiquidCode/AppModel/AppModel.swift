@@ -56,6 +56,9 @@ final class AppModel: ObservableObject {
     // loader so reloaded sessions can attribute persisted sidechain records.
     @Published var subagentMetasBySession: [String: [SubagentMeta]] = [:]
     @Published var focusedSubagentID: String?
+    // Pre-first-token phase of an active turn, per session. Drives the in-transcript
+    // thinking indicator's wording; cleared once any visible output streams in.
+    @Published var turnPhaseBySession: [String: TurnPhase] = [:]
     @Published var currentError: AppError?
     @Published var composerText = ""
     @Published var composerTextBySession: [String: String] = [:]

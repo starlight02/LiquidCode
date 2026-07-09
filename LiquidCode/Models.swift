@@ -560,6 +560,7 @@ struct ClaudeSessionStartRequest: Sendable {
 
 enum ClaudeEvent: Sendable {
     case sessionStarted(sessionID: String, cliSessionID: String?)
+    case cliReady(sessionID: String)
     case textDelta(sessionID: String, text: String)
     case streamBlockStarted(sessionID: String, index: Int?, ChatContentBlock)
     case streamBlockDelta(sessionID: String, index: Int?, kind: ChatContentBlockKind, text: String)
@@ -571,6 +572,14 @@ enum ClaudeEvent: Sendable {
     case stderr(sessionID: String, String)
     case exited(sessionID: String)
     case failed(sessionID: String, String)
+}
+
+/// The phase of a turn before any visible output has streamed. Drives the wording of
+/// the in-transcript thinking indicator; its visibility is gated separately on there
+/// being no streamed content yet, so a missed transition can never leave it stuck.
+enum TurnPhase: Sendable {
+    case connecting // request is being sent to / cold-starting the Claude Code subprocess
+    case thinking // Claude Code has received the request and is generating the first token
 }
 
 let defaultModels = [
