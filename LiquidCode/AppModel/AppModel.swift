@@ -13,6 +13,8 @@ final class AppModel: ObservableObject {
     @Published var streamingMessagesBySession: [String: ChatMessage] = [:]
     @Published var toolCallsBySession: [String: [ToolCall]] = [:]
     @Published var pendingPermissions: [PermissionRequest] = []
+    // Session-scoped auto-allow rules for ordinary tool permissions. Never persisted.
+    @Published var permissionRulesBySession: [String: [SessionPermissionRule]] = [:]
     @Published var workingDirectory: String = ""
     @Published var recentProjects: [RecentProject] = []
     @Published var fileTree: [FileNode] = []

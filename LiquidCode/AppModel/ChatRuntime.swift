@@ -160,12 +160,20 @@ extension AppModel {
         do { try engine.interrupt(sessionID: id) } catch { showError("Failed to interrupt", error.localizedDescription) }
     }
 
-    func respondPermission(_ permission: PermissionRequest, allow: Bool, editedInput: String? = nil) {
+    func respondPermission(_ permission: PermissionRequest, allow: Bool, editedInput: String? = nil, rememberForSession: Bool = false) {
         do {
             try engine.respondPermission(permission, allow: allow, updatedInputJSON: editedInput, message: allow ? nil : L("User denied this operation"))
             pendingPermissions.removeAll { $0.id == permission.id }
-            let state = allow ? L("Allowed") : L("Denied")
-            appendMessage(ChatMessage(role: .system, content: "\(state) \(permission.toolName): \(permission.summary)"), sessionID: permission.sessionID)
+            if allow, rememberForSession, let rule = SessionPermissionRemember.makeRule(from: permission) {
+                var rules = permissionRulesBySession[permission.sessionID] ?? []
+                SessionPermissionRemember.appendRule(rule, to: &rules)
+                permissionRulesBySession[permission.sessionID] = rules
+                let state = L("Allowed for session")
+                appendMessage(ChatMessage(role: .system, content: "\(state) \(permission.toolName): \(permission.summary)"), sessionID: permission.sessionID)
+            } else {
+                let state = allow ? L("Allowed") : L("Denied")
+                appendMessage(ChatMessage(role: .system, content: "\(state) \(permission.toolName): \(permission.summary)"), sessionID: permission.sessionID)
+            }
             // After answering, drop waiting phase unless another permission is still open.
             if pendingPermissions.contains(where: { $0.sessionID == permission.sessionID }) {
                 turnPhaseBySession[permission.sessionID] = permissionPhase(for: permission.sessionID)
@@ -267,22 +275,7 @@ extension AppModel {
             }
             upsertTool(tool, sessionID: sessionID)
         case .permissionRequested(let permission):
-            upsertPendingPermission(permission)
-            // A subagent's permission request carries its agentID plus the parent spawn
-            // block's toolUseID. Harvest that link so live sidechain records attribute to
-            // the right card while the turn is still running.
-            recordSubagentAgentLink(agentID: permission.agentID, toolUseID: permission.parentToolUseID, sessionID: permission.sessionID)
-            turnPhaseBySession[permission.sessionID] = permissionPhase(for: permission)
-            var tool = ToolCall(
-                id: permission.toolUseID ?? permission.requestID,
-                sessionID: permission.sessionID,
-                name: permission.toolName,
-                inputPreview: permission.inputJSON,
-                status: .waitingForPermission,
-                parentID: permission.parentToolUseID
-            )
-            tool.resultPreview = permission.summary
-            upsertTool(tool, sessionID: permission.sessionID)
+            handlePermissionRequested(permission)
         case .turnCompleted(let sessionID):
             flushStreamingMessage(sessionID: sessionID)
             finishTurn(sessionID: sessionID, shouldDrainQueue: true)
@@ -664,6 +657,59 @@ extension AppModel {
             tools.append(tool)
         }
         toolCallsBySession[sessionID] = tools
+    }
+
+    /// Surfaces a permission card, or silently auto-allows when a session rule matches.
+    private func handlePermissionRequested(_ permission: PermissionRequest) {
+        // Session remember: identical Bash/Edit/Write/Read permissions auto-allow
+        // without surfacing a card. Destructive/network/MCP/questions never match.
+        if tryAutoAllowRememberedPermission(permission) {
+            recordSubagentAgentLink(agentID: permission.agentID, toolUseID: permission.parentToolUseID, sessionID: permission.sessionID)
+            return
+        }
+        upsertPendingPermission(permission)
+        // A subagent's permission request carries its agentID plus the parent spawn
+        // block's toolUseID. Harvest that link so live sidechain records attribute to
+        // the right card while the turn is still running.
+        recordSubagentAgentLink(agentID: permission.agentID, toolUseID: permission.parentToolUseID, sessionID: permission.sessionID)
+        turnPhaseBySession[permission.sessionID] = permissionPhase(for: permission)
+        var tool = ToolCall(
+            id: permission.toolUseID ?? permission.requestID,
+            sessionID: permission.sessionID,
+            name: permission.toolName,
+            inputPreview: permission.inputJSON,
+            status: .waitingForPermission,
+            parentID: permission.parentToolUseID
+        )
+        tool.resultPreview = permission.summary
+        upsertTool(tool, sessionID: permission.sessionID)
+    }
+
+    /// Auto-allows a permission when a session rule matches. Returns true when the
+    /// request was answered and must not enter `pendingPermissions`.
+    @discardableResult
+    private func tryAutoAllowRememberedPermission(_ permission: PermissionRequest) -> Bool {
+        let rules = permissionRulesBySession[permission.sessionID] ?? []
+        guard SessionPermissionRemember.findMatch(in: rules, permission: permission) != nil else {
+            return false
+        }
+        do {
+            try engine.respondPermission(permission, allow: true, updatedInputJSON: nil, message: nil)
+            let state = L("Allowed for session")
+            appendMessage(
+                ChatMessage(role: .system, content: "\(state) \(permission.toolName): \(permission.summary)"),
+                sessionID: permission.sessionID
+            )
+            if hasActiveTurn(for: permission.sessionID) {
+                turnPhaseBySession[permission.sessionID] = .thinking
+            } else {
+                turnPhaseBySession.removeValue(forKey: permission.sessionID)
+            }
+            return true
+        } catch {
+            // Fall through to the normal pending card if the engine rejects the response.
+            return false
+        }
     }
 
     private func upsertPendingPermission(_ permission: PermissionRequest) {

@@ -69,6 +69,7 @@ extension AppModel {
         streamingMessagesBySession.removeValue(forKey: sessionID)
         pendingUserMessagesBySession[sessionID] = []
         pendingPermissions.removeAll { $0.sessionID == sessionID }
+        permissionRulesBySession.removeValue(forKey: sessionID)
         toolCallsBySession[sessionID] = []
         activeTurnSnapshots.removeValue(forKey: sessionID)
         engine.kill(sessionID: sessionID)

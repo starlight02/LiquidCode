@@ -32,7 +32,9 @@
 "Agent" = "代理";
 "Agents Panel" = "代理面板";
 "Agents" = "代理";
+"Allow for Session" = "本次会话允许";
 "Allow Once" = "允许一次";
+"Allowed for session" = "已对本会话允许";
 "Allowed" = "已允许";
 "App-local MCP profile updated" = "App 本地 MCP 配置已更新";
 "Approve Plan" = "批准计划";

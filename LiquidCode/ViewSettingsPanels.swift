@@ -685,6 +685,20 @@ struct PermissionInlineCardView: View {
                     .buttonStyle(.plain)
                     .liquidGlassButton(radius: 11)
                 Spacer()
+                if SessionPermissionRemember.isRememberable(permission) {
+                    Button {
+                        model.respondPermission(
+                            permission,
+                            allow: true,
+                            editedInput: editedInput.isEmpty ? permission.inputJSON : editedInput,
+                            rememberForSession: true
+                        )
+                    } label: {
+                        Label(L("Allow for Session"), systemImage: "checkmark.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(radius: 11)
+                }
                 Button {
                     model.respondPermission(permission, allow: true, editedInput: editedInput.isEmpty ? permission.inputJSON : editedInput)
                 } label: {
@@ -2522,11 +2536,28 @@ struct PermissionSheetView: View {
                             Text(permission.title).font(.title3.bold()); Text(permission.risk.rawValue).font(.caption).foregroundStyle(.secondary) }; Spacer() }
                 Text(permission.summary).font(.callout).foregroundStyle(.secondary)
                 TextEditor(text: $editedInput).font(.system(.caption, design: .monospaced)).frame(height: 180).onAppear { editedInput = permission.inputJSON }
-                HStack { Button(L("Deny"), role: .destructive) { model.respondPermission(permission, allow: false) }; Spacer(); Button(L("Allow Once")) { model.respondPermission(
-                    permission,
-                    allow: true,
-                    editedInput: editedInput
-                ) }.buttonStyle(.borderedProminent) }
+                HStack {
+                    Button(L("Deny"), role: .destructive) { model.respondPermission(permission, allow: false) }
+                    Spacer()
+                    if SessionPermissionRemember.isRememberable(permission) {
+                        Button(L("Allow for Session")) {
+                            model.respondPermission(
+                                permission,
+                                allow: true,
+                                editedInput: editedInput,
+                                rememberForSession: true
+                            )
+                        }
+                    }
+                    Button(L("Allow Once")) {
+                        model.respondPermission(
+                            permission,
+                            allow: true,
+                            editedInput: editedInput
+                        )
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
             .padding(22)
             .frame(width: 620)
