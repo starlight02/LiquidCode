@@ -2823,6 +2823,34 @@ struct SettingsPanelView: View {
                 .toggleStyle(.switch)
             }
 
+            SettingsSectionCard(title: L("Updates"), subtitle: L("Check the release feed and verify signed downloads"), icon: "arrow.down.app") {
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField(L("latest.json URL (optional)"), text: Binding(
+                        get: { model.settings.updateManifestURL },
+                        set: { model.settings.updateManifestURL = $0; model.persistSettings() }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    HStack(spacing: 10) {
+                        Button(model.appUpdateChecking ? L("Checking…") : L("Check for Updates")) {
+                            model.checkForAppUpdates(openDownload: false)
+                        }
+                        .buttonStyle(.plain)
+                        .liquidGlassButton(active: true, radius: 10)
+                        .disabled(model.appUpdateChecking)
+                        if case .available(_, let latest, _) = model.appUpdateStatus {
+                            Button(LF("Download %@", latest)) {
+                                model.checkForAppUpdates(openDownload: true)
+                            }
+                            .buttonStyle(.plain)
+                            .liquidGlassButton(radius: 10)
+                        }
+                    }
+                    Text(updateStatusLabel(model.appUpdateStatus))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             SettingsSectionCard(title: L("Composer defaults"), subtitle: L("Mode, thinking and typography used by new sends"), icon: "text.cursor") {
                 HStack(spacing: 16) {
                     VStack(alignment: .leading) {
@@ -2921,6 +2949,17 @@ struct SettingsPanelView: View {
                     ContentUnavailableView(L("No MCP servers"), systemImage: "server.rack")
                 }
             }
+        }
+    }
+
+    private func updateStatusLabel(_ status: UpdateAvailability) -> String {
+        switch status {
+        case .upToDate(let current):
+            return LF("Up to date · %@", current)
+        case .available(let current, let latest, let build):
+            return LF("Update available · %@ → %@ (build %@)", current, latest, build)
+        case .unknown(let reason):
+            return reason
         }
     }
 

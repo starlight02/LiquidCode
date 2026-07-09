@@ -213,6 +213,93 @@ extension AppModel {
         changelogOpen = true
     }
 
+    func checkForAppUpdates(openDownload: Bool = false) {
+        guard !appUpdateChecking else {
+            return
+        }
+        guard let feed = UpdateService.resolvedManifestURL(settingsURL: settings.updateManifestURL) else {
+            appUpdateStatus = .unknown(reason: "No update feed configured")
+            toastWarning("Updates", "Set an update feed URL in Settings → General, or ship LiquidCodeUpdateManifestURL in Info.plist.")
+            return
+        }
+        appUpdateChecking = true
+        let localVersion = UpdateService.currentAppVersion()
+        let localBuild = UpdateService.currentAppBuild()
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let data = try UpdateService.fetchData(from: feed)
+                let manifest = try UpdateService.parseManifest(data)
+                let availability = UpdateService.availability(
+                    manifest: manifest,
+                    localVersion: localVersion,
+                    localBuild: localBuild
+                )
+                Task { @MainActor in
+                    self.appUpdateStatus = availability
+                    self.appUpdateChecking = false
+                    switch availability {
+                    case .upToDate(let current):
+                        self.toastSuccess("Up to date", LF("LiquidCode %@ is current.", current))
+                    case .available(_, let latest, _):
+                        self.toastInfo("Update available", LF("LiquidCode %@ is ready.", latest))
+                        if openDownload {
+                            self.downloadAndVerifyUpdate(manifest: manifest, manifestURL: feed)
+                        }
+                    case .unknown(let reason):
+                        self.toastWarning("Updates", reason)
+                    }
+                }
+            } catch {
+                Task { @MainActor in
+                    self.appUpdateChecking = false
+                    self.appUpdateStatus = .unknown(reason: error.localizedDescription)
+                    self.toastWarning("Update check failed", error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// Downloads the updater tarball, verifies checksum + signature, then reveals it in Finder.
+    func downloadAndVerifyUpdate(manifest: UpdateManifest, manifestURL: URL) {
+        guard let artifactURL = UpdateService.artifactURL(named: manifest.platform.updater, manifestURL: manifestURL) else {
+            toastWarning("Update download failed", "Could not resolve updater URL")
+            return
+        }
+        toastInfo("Downloading update", artifactURL.lastPathComponent)
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let payload = try UpdateService.fetchData(from: artifactURL, timeout: 120)
+                let verification = UpdateService.verify(
+                    payload: payload,
+                    checksum: manifest.platform.checksum,
+                    signature: manifest.platform.signature
+                )
+                switch verification {
+                case .rejected(let reason):
+                    Task { @MainActor in
+                        self.toastWarning("Update rejected", reason)
+                    }
+                case .verified(let kind):
+                    let dir = AppPaths.shared.appSupport.appendingPathComponent("Updates", isDirectory: true)
+                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    let dest = dir.appendingPathComponent(manifest.platform.updater)
+                    try payload.write(to: dest, options: [.atomic])
+                    Task { @MainActor in
+                        NSWorkspace.shared.activateFileViewerSelecting([dest])
+                        self.toastSuccess(
+                            "Update verified",
+                            LF("%@ ready · %@ — quit LiquidCode and replace the app to install.", dest.lastPathComponent, kind.rawValue)
+                        )
+                    }
+                }
+            } catch {
+                Task { @MainActor in
+                    self.toastWarning("Update download failed", error.localizedDescription)
+                }
+            }
+        }
+    }
+
     private func showToast(_ kind: ToastMessage.Kind, _ title: String, _ message: String) {
         let next = ToastMessage(kind: kind, title: L(title), message: L(message))
         toast = next

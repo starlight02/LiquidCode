@@ -235,6 +235,8 @@ struct AppSettings: Codable, Sendable {
     var sessionConfigurations: [String: ComposerSendConfiguration] = [:]
     /// Post system notifications for permission/question/plan/turn when app is inactive.
     var notificationsEnabled: Bool = true
+    /// Optional HTTPS (or file) URL to `latest.json` for in-app update checks.
+    var updateManifestURL: String = ""
 }
 
 struct SessionRecord: Identifiable, Codable, Hashable, Sendable {

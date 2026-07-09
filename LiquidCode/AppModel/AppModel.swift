@@ -94,6 +94,8 @@ final class AppModel: ObservableObject {
     @Published var toast: ToastMessage?
     @Published var changelogOpen = false
     @Published var cliStatus = CLIStatus()
+    @Published var appUpdateStatus: UpdateAvailability = .unknown(reason: "Not checked")
+    @Published var appUpdateChecking = false
     @Published var setupProgress = SetupProgress()
     @Published var onboardingPlan = OnboardingPlan.ready
     @Published var chatFindText = ""
