@@ -77,7 +77,7 @@ LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 ./scripts/build-release.sh
 
 - **Source of truth:** `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `LiquidCode.xcodeproj`.
 - **Inspect:** `./scripts/verify-version.sh`
-- **Cut a release tag:** `./scripts/cut-release.sh` (creates `v${MARKETING_VERSION}`) or the `Cut Release` workflow.
+- **Cut a release tag:** automatic — every green push to `main` makes CI tag `v${MARKETING_VERSION}` and publish an unsigned PKG release. Manual escape hatch: `./scripts/cut-release.sh`.
 - **Optional override:** `RELEASE_TAG` only for upload override; it must still match `MARKETING_VERSION`. Leave it unset to use `v${MARKETING_VERSION}` automatically.
 
 ## Update
@@ -136,9 +136,8 @@ GitHub Actions workflows:
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `CI` (`.github/workflows/ci.yml`) | PR / push to main | Quality gate, unit tests, unsigned arm64 release smoke + artifact upload |
-| `Release` (`.github/workflows/release.yml`) | `v*` tags / published release / manual | Universal PKG release (signed+notarized when secrets present) |
-| `Cut Release` (`.github/workflows/cut-release.yml`) | manual `workflow_dispatch` | Read `MARKETING_VERSION`, create `vX.Y.Z` tag, trigger Release |
+| `CI` (`.github/workflows/ci.yml`) | PR / push to main | Quality gate, unit tests, unsigned arm64 PKG build; on green `main` auto-tags `v${MARKETING_VERSION}` and publishes an unsigned PKG release |
+| `Release` (`.github/workflows/release.yml`) | `v*` tags / published release / manual | Signed + notarized PKG release (when Apple secrets present) |
 
 Local helpers used by CI:
 

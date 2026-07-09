@@ -4,7 +4,8 @@
 #   ./scripts/cut-release.sh              # create + push tag for current MARKETING_VERSION
 #   ./scripts/cut-release.sh --dry-run    # print tag only
 #   ./scripts/cut-release.sh --local      # create annotated tag, do not push
-# CI (cut-release.yml) invokes this after checkout on main.
+# CI auto-tags on green main pushes (see .github/workflows/ci.yml `release` job);
+# this script is the local/manual escape hatch for cutting the same tag by hand.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

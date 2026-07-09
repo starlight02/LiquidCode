@@ -75,7 +75,7 @@ LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 ./scripts/build-release.sh
 
 - **唯一来源：** `LiquidCode.xcodeproj` 里的 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`。
 - **查看：** `./scripts/verify-version.sh`
-- **打发布 tag：** `./scripts/cut-release.sh`（生成 `v${MARKETING_VERSION}`）或 GitHub 的 `Cut Release` workflow。
+- **打发布 tag：** 自动——每次 push 到 `main` 且 CI 全绿，CI 会打 `v${MARKETING_VERSION}` tag 并发布 unsigned PKG release。手动逃生口：`./scripts/cut-release.sh`。
 - **可选覆盖：** 仅上传时才需要 `RELEASE_TAG`；不设则自动用 `v${MARKETING_VERSION}`，且必须与 Xcode 版本一致。
 
 ## 更新
@@ -134,9 +134,8 @@ GitHub Actions：
 
 | Workflow | 触发 | 作用 |
 |---|---|---|
-| `CI` | PR / push main | 质量门禁、单测、未签名 arm64 release smoke |
-| `Release` | `v*` tag / release / 手动 | 通用 PKG 发布（有 secrets 则签名+公证） |
-| `Cut Release` | 手动 workflow_dispatch | 读取 MARKETING_VERSION，打 `vX.Y.Z` tag 并触发 Release |
+| `CI` | PR / push main | 质量门禁、单测、未签名 arm64 PKG 构建；main 全绿后自动打 `v${MARKETING_VERSION}` tag 并发布 unsigned PKG release |
+| `Release` | `v*` tag / release / 手动 | 签名 + 公证 PKG 发布（配齐 Apple secrets 时） |
 
 本地脚本：
 

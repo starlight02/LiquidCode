@@ -129,3 +129,91 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
+
+  release:
+    name: Tag + publish unsigned release
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    # Mainline only, never PRs. Idempotent: a release ships only when the
+    # v${MARKETING_VERSION} tag/release does not exist yet, so bumping the Xcode
+    # MARKETING_VERSION is what cuts a new release. GITHUB_TOKEN (contents: write)
+    # can create the tag + release directly — no PAT, no workflow chaining.
+    if: >
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve version and tag
+        id: ver
+        run: |
+          set -euo pipefail
+          out="$(./scripts/verify-version.sh)"
+          version="$(printf '%s\n' "$out" | awk -F= '/^MARKETING_VERSION=/{print $2; exit}')"
+          build="$(printf '%s\n' "$out" | awk -F= '/^CURRENT_PROJECT_VERSION=/{print $2; exit}')"
+          [ -n "$version" ] && [ -n "$build" ] || { echo "Could not parse version metadata" >&2; exit 1; }
+          {
+            echo "version=$version"
+            echo "build=$build"
+            echo "tag=v$version"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Skip when the release already exists
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "fresh=false" >>"$GITHUB_OUTPUT"
+            echo "Release $TAG already published; no version bump, nothing to ship."
+          else
+            echo "fresh=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the unsigned PKG built by CI
+        if: steps.guard.outputs.fresh == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: LiquidCode-macOS-adhoc-arm64-pkg
+          path: release-assets
+
+      - name: Create and push the annotated tag
+        if: steps.guard.outputs.fresh == 'true'
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          BUILD: ${{ steps.ver.outputs.build }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already on origin; reusing it."
+          else
+            git tag -a "$TAG" -m "LiquidCode $TAG (build $BUILD, unsigned/ad-hoc)"
+            git push origin "refs/tags/$TAG"
+          fi
+
+      - name: Publish the GitHub Release
+        if: steps.guard.outputs.fresh == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          BUILD: ${{ steps.ver.outputs.build }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "LiquidCode $TAG" \
+            --notes "Automated unsigned/ad-hoc macOS PKG for $TAG (build $BUILD) from ${COMMIT:0:7}. Gatekeeper will warn — no Developer ID signature or notarization; not for production distribution." \
+            release-assets/*.pkg
+          echo "Published release $TAG with the unsigned PKG."
