@@ -96,6 +96,126 @@ final class SubagentRegressionTests: XCTestCase {
         XCTAssertEqual(activities.first?.childToolCalls.first?.toolName, "Read")
     }
 
+    func testCompletionsDerivedFromTaskNotificationInHistory() {
+        let spawn = ChatMessage(
+            id: "main",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(kind: .toolUse, toolUseID: "spawn-1", toolName: "Agent", inputJSON: #"{"subagent_type":"Explore","description":"Map files"}"#)
+            ]
+        )
+        let notification = ChatMessage(
+            id: "notify",
+            role: .system,
+            content: "Mapped the project layout.",
+            blocks: [
+                ChatContentBlock(
+                    kind: .text,
+                    text: "Mapped the project layout.",
+                    toolUseID: "spawn-1",
+                    rawType: ClaudeControlTranscriptEvent.Kind.taskNotification.rawValue
+                )
+            ],
+            agentID: "a99"
+        )
+        let meta = SubagentMeta(agentID: "a99", agentType: "Explore", description: "Map files", toolUseID: "spawn-1", spawnDepth: 1)
+
+        // History path previously passed completions:[:] and left status .running forever.
+        let activities = SubagentActivityBuilder.activities(
+            mainMessages: [spawn, notification],
+            sidechainMessages: [],
+            metas: [meta],
+            childCallsByAgentID: [:],
+            completions: [:]
+        )
+
+        XCTAssertEqual(activities.count, 1)
+        XCTAssertEqual(activities.first?.status, .succeeded)
+        XCTAssertEqual(activities.first?.summary, "Mapped the project layout.")
+        XCTAssertEqual(activities.first?.agentID, "a99")
+    }
+
+    func testCompletionsFallbackToSpawnToolResultWhenNotificationMissing() {
+        let spawn = ChatMessage(
+            id: "main",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(kind: .toolUse, toolUseID: "spawn-2", toolName: "Agent", inputJSON: #"{"subagent_type":"Explore","description":"Search"}"#)
+            ]
+        )
+        let result = ChatMessage(
+            id: "result",
+            role: .user,
+            content: "agent finished",
+            blocks: [
+                ChatContentBlock(kind: .toolResult, text: "agent finished", toolUseID: "spawn-2", isError: false)
+            ]
+        )
+
+        let derived = SubagentActivityBuilder.completions(from: [spawn, result])
+        XCTAssertEqual(derived["spawn-2"]?.status, .succeeded)
+        XCTAssertEqual(derived["spawn-2"]?.summary, "agent finished")
+
+        let activities = SubagentActivityBuilder.activities(
+            mainMessages: [spawn, result],
+            sidechainMessages: [],
+            metas: [],
+            childCallsByAgentID: [:],
+            completions: [:]
+        )
+        XCTAssertEqual(activities.first?.status, .succeeded)
+        XCTAssertEqual(activities.first?.summary, "agent finished")
+    }
+
+    func testChildToolCallsDedupAcrossSidechainAndHistoryLoad() {
+        let main = ChatMessage(
+            id: "main",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(kind: .toolUse, toolUseID: "spawn-1", toolName: "Agent", inputJSON: #"{"subagent_type":"Explore","description":"Inspect"}"#)
+            ]
+        )
+        let side = ChatMessage(
+            id: "side",
+            role: .assistant,
+            content: "",
+            blocks: [
+                ChatContentBlock(kind: .toolUse, toolUseID: "read-1", toolName: "Read", inputJSON: #"{"file_path":"A.md"}"#)
+            ],
+            agentID: "a1"
+        )
+        let meta = SubagentMeta(agentID: "a1", agentType: "Explore", description: "Inspect", toolUseID: "spawn-1", spawnDepth: 1)
+        let sideItems = TranscriptDisplayBuilder.displayItems(messages: [side]).flatMap { item -> [TranscriptToolItem] in
+            switch item {
+            case .tool(let tool): [tool]
+            case .toolRun(let tools): tools
+            default: []
+            }
+        }
+        XCTAssertFalse(sideItems.isEmpty)
+
+        let activities = SubagentActivityBuilder.activities(
+            mainMessages: [main],
+            sidechainMessages: [side],
+            metas: [meta],
+            childCallsByAgentID: ["a1": sideItems],
+            completions: ["spawn-1": SubagentCompletion(status: .succeeded, summary: "ok")]
+        )
+        XCTAssertEqual(activities.first?.childToolUseCount, 1, "duplicate child tools must not double-count")
+    }
+
+    func testAgentInspectorPrefetchesChildCallsAndDropsStatusRail() throws {
+        let source = try Self.source("LiquidCode/SubagentViews.swift")
+        XCTAssertTrue(source.contains("loadKnownChildCalls"))
+        XCTAssertFalse(
+            source.contains("Rectangle().fill(statusColor).frame(width: 3)"),
+            "leading status rail is not macOS 27 chrome; StatusDot + tint suffice"
+        )
+    }
+
     func testLoadSubagentChildCallsReadsCompanionTranscriptOnDemand() throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

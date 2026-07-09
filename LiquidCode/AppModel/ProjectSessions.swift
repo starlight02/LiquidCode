@@ -109,12 +109,15 @@ extension AppModel {
                 // Lightweight `.meta.json` companions build the subagent shells; the large
                 // per-subagent transcripts are only read when a card is expanded.
                 let metas = index.loadSubagentMetas(mainPath: path)
+                // Rebuild terminal status from task-notifications / Agent tool results so
+                // reloaded sessions do not leave every subagent stuck on "Running".
+                let completions = SubagentActivityBuilder.completions(from: loadedMessages)
                 let activities = SubagentActivityBuilder.activities(
                     mainMessages: loadedMessages,
                     sidechainMessages: [],
                     metas: metas,
                     childCallsByAgentID: [:],
-                    completions: [:]
+                    completions: completions
                 )
                 let activityMap = Dictionary(activities.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 let displayItems = TranscriptDisplayBuilder.displayItems(messages: loadedMessages, subagentActivities: activityMap)
@@ -125,6 +128,7 @@ extension AppModel {
                         return
                     }
                     self.subagentMetasBySession[id] = metas
+                    self.subagentCompletionsBySession[id] = completions
                     self.subagentActivitiesBySession[id] = activities
                     self.setMessages(loadedMessages, for: id, displayItems: displayItems)
                     self.toolCallsBySession[id] = toolCalls

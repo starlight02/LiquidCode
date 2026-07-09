@@ -957,6 +957,41 @@ enum AgentActivityBuilder {
 /// the completion notifications (status + summary). The main transcript is never
 /// touched, so subagent-internal tool calls stay out of it.
 enum SubagentActivityBuilder {
+    /// Extracts terminal status from a single message when it is a task-notification
+    /// control event. Live and history paths share this so reload does not leave
+    /// subagents stuck on `.running`.
+    static func completion(from message: ChatMessage) -> (toolUseID: String, completion: SubagentCompletion)? {
+        guard
+            let block = message.blocks.first,
+            let rawType = block.rawType,
+            rawType == ClaudeControlTranscriptEvent.Kind.taskNotification.rawValue
+            || rawType == ClaudeControlTranscriptEvent.Kind.taskFailure.rawValue,
+            let toolUseID = block.toolUseID?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !toolUseID.isEmpty
+        else {
+            return nil
+        }
+        let status: SubagentActivity.Status =
+            rawType == ClaudeControlTranscriptEvent.Kind.taskFailure.rawValue ? .failed : .succeeded
+        let summary = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (toolUseID, SubagentCompletion(status: status, summary: summary.isEmpty ? nil : summary))
+    }
+
+    /// Rebuilds completions from the main transcript: task-notifications first, then
+    /// Agent/Task tool_result blocks as a fallback when the notification was lost.
+    static func completions(from messages: [ChatMessage]) -> [String: SubagentCompletion] {
+        let spawnIDs = spawnToolUseIDs(in: messages)
+        var result: [String: SubagentCompletion] = [:]
+        for message in messages {
+            if let parsed = completion(from: message) {
+                result[parsed.toolUseID] = parsed.completion
+                continue
+            }
+            applyToolResultFallback(message: message, spawnIDs: spawnIDs, into: &result)
+        }
+        return result
+    }
+
     static func activities(
         mainMessages: [ChatMessage],
         sidechainMessages: [ChatMessage],
@@ -965,17 +1000,75 @@ enum SubagentActivityBuilder {
         childCallsByAgentID: [String: [TranscriptToolItem]],
         completions: [String: SubagentCompletion]
     ) -> [SubagentActivity] {
-        // 1. Authoritative shells: one per spawn block in the main transcript.
+        var shells = spawnShells(from: mainMessages)
+        let indexByToolUseID = Dictionary(uniqueKeysWithValues: shells.enumerated().map { ($0.element.id, $0.offset) })
+        let toolUseIDByAgentID = attributeAgentIDs(
+            shells: &shells,
+            indexByToolUseID: indexByToolUseID,
+            metas: metas,
+            agentLinks: agentLinks,
+            mainMessages: mainMessages
+        )
+        attachChildToolCalls(
+            shells: &shells,
+            indexByToolUseID: indexByToolUseID,
+            toolUseIDByAgentID: toolUseIDByAgentID,
+            sidechainMessages: sidechainMessages,
+            childCallsByAgentID: childCallsByAgentID
+        )
+        applyCompletions(
+            shells: &shells,
+            indexByToolUseID: indexByToolUseID,
+            mainMessages: mainMessages,
+            liveCompletions: completions
+        )
+        return shells
+    }
+
+    // MARK: - Private helpers
+
+    private static func spawnToolUseIDs(in messages: [ChatMessage]) -> Set<String> {
+        var spawnIDs = Set<String>()
+        for message in messages {
+            for block in message.blocks where block.kind == .toolUse && SubagentSpawnParser.isSpawnTool(block.toolName) {
+                spawnIDs.insert(block.toolUseID ?? block.id)
+            }
+        }
+        return spawnIDs
+    }
+
+    private static func applyToolResultFallback(
+        message: ChatMessage,
+        spawnIDs: Set<String>,
+        into result: inout [String: SubagentCompletion]
+    ) {
+        for block in message.blocks where block.kind == .toolResult {
+            guard
+                let toolUseID = block.toolUseID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !toolUseID.isEmpty,
+                spawnIDs.contains(toolUseID),
+                result[toolUseID] == nil
+            else {
+                continue
+            }
+            let summary = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            result[toolUseID] = SubagentCompletion(
+                status: block.isError ? .failed : .succeeded,
+                summary: summary.isEmpty ? nil : String(summary.prefix(240))
+            )
+        }
+    }
+
+    private static func spawnShells(from mainMessages: [ChatMessage]) -> [SubagentActivity] {
         var shells: [SubagentActivity] = []
-        var indexByToolUseID: [String: Int] = [:]
+        var seen = Set<String>()
         for message in mainMessages {
             for block in message.blocks where block.kind == .toolUse && SubagentSpawnParser.isSpawnTool(block.toolName) {
                 let toolUseID = block.toolUseID ?? block.id
-                guard indexByToolUseID[toolUseID] == nil else {
+                guard seen.insert(toolUseID).inserted else {
                     continue
                 }
                 let parsed = SubagentSpawnParser.parse(inputJSON: block.inputJSON ?? "")
-                indexByToolUseID[toolUseID] = shells.count
                 shells.append(SubagentActivity(
                     id: toolUseID,
                     subagentType: parsed?.subagentType ?? "Subagent",
@@ -984,9 +1077,16 @@ enum SubagentActivityBuilder {
                 ))
             }
         }
+        return shells
+    }
 
-        // 2. Map agentID → toolUseID from metas (history) so sidechain records can be
-        //    attributed to the right shell.
+    private static func attributeAgentIDs(
+        shells: inout [SubagentActivity],
+        indexByToolUseID: [String: Int],
+        metas: [SubagentMeta],
+        agentLinks: [String: String],
+        mainMessages: [ChatMessage]
+    ) -> [String: String] {
         var toolUseIDByAgentID: [String: String] = [:]
         for meta in metas {
             guard let idx = indexByToolUseID[meta.toolUseID] else {
@@ -1003,9 +1103,6 @@ enum SubagentActivityBuilder {
                 shells[idx].description = meta.description
             }
         }
-        // Live sources (permission requests, completion notifications) also link an
-        // agentID to a spawn toolUseID. Merge them so live sidechain records attribute
-        // even when no meta.json is available yet.
         for (agentID, toolUseID) in agentLinks {
             guard let idx = indexByToolUseID[toolUseID] else {
                 continue
@@ -1017,10 +1114,32 @@ enum SubagentActivityBuilder {
                 shells[idx].agentID = agentID
             }
         }
+        for message in mainMessages {
+            guard
+                let parsed = completion(from: message),
+                let agentID = message.agentID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                !agentID.isEmpty,
+                let idx = indexByToolUseID[parsed.toolUseID]
+            else {
+                continue
+            }
+            if toolUseIDByAgentID[agentID] == nil {
+                toolUseIDByAgentID[agentID] = parsed.toolUseID
+            }
+            if shells[idx].agentID == nil {
+                shells[idx].agentID = agentID
+            }
+        }
+        return toolUseIDByAgentID
+    }
 
-        // 3. Group sidechain messages by agentID, run them through the SAME display
-        //    pipeline as the main transcript, and attach the extracted tool items to the
-        //    matching shell. Pre-loaded child calls (history) are merged in too.
+    private static func attachChildToolCalls(
+        shells: inout [SubagentActivity],
+        indexByToolUseID: [String: Int],
+        toolUseIDByAgentID: [String: String],
+        sidechainMessages: [ChatMessage],
+        childCallsByAgentID: [String: [TranscriptToolItem]]
+    ) {
         var messagesByAgentID: [String: [ChatMessage]] = [:]
         for message in sidechainMessages {
             guard let agentID = message.agentID, !agentID.isEmpty else {
@@ -1050,20 +1169,37 @@ enum SubagentActivityBuilder {
             }
             shells[idx].childToolCalls.append(contentsOf: calls)
         }
+        // Live sidechain + on-demand history load can both contribute the same child;
+        // keep the first occurrence so the tool badge does not double-count.
+        for index in shells.indices {
+            var seen = Set<String>()
+            shells[index].childToolCalls = shells[index].childToolCalls.filter { seen.insert($0.id).inserted }
+        }
+    }
 
-        // 4. Merge completion status/summary by toolUseID.
-        for (toolUseID, completion) in completions {
+    private static func applyCompletions(
+        shells: inout [SubagentActivity],
+        indexByToolUseID: [String: Int],
+        mainMessages: [ChatMessage],
+        liveCompletions: [String: SubagentCompletion]
+    ) {
+        // Transcript-derived completions fill history/reload; explicit live completions win.
+        var merged = completions(from: mainMessages)
+        for (toolUseID, completion) in liveCompletions {
+            merged[toolUseID] = completion
+        }
+        for (toolUseID, completion) in merged {
             guard let idx = indexByToolUseID[toolUseID] else {
                 continue
             }
             shells[idx].status = completion.status
-            shells[idx].summary = completion.summary
+            if let summary = completion.summary, !summary.isEmpty {
+                shells[idx].summary = summary
+            }
             if shells[idx].finishedAt == nil {
                 shells[idx].finishedAt = Date()
             }
         }
-
-        return shells
     }
 }
 

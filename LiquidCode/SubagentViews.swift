@@ -48,7 +48,6 @@ struct SubagentCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { StandardContentCardBackground(cornerRadius: 16, tint: statusColor) }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(alignment: .leading) { Rectangle().fill(statusColor).frame(width: 3) }
         }
     }
 
@@ -153,6 +152,29 @@ struct AgentInspectorView: View {
                 .padding(12)
             }
         }
+        .onAppear {
+            loadKnownChildCalls()
+        }
+        .onChange(of: model.selectedSessionID) { _, _ in
+            loadKnownChildCalls()
+        }
+        .onChange(of: model.selectedSubagentActivities.map(\.id)) { _, _ in
+            loadKnownChildCalls()
+        }
+    }
+
+    /// Prefetch child tool transcripts for every known agentID so the collapsed
+    /// list can show real tool counts without forcing the user to expand each card.
+    private func loadKnownChildCalls() {
+        guard let sessionID = model.selectedSessionID else {
+            return
+        }
+        for activity in model.selectedSubagentActivities {
+            guard let agentID = activity.agentID else {
+                continue
+            }
+            model.loadSubagentChildCallsIfNeeded(sessionID: sessionID, agentID: agentID)
+        }
     }
 
     private var header: some View {
@@ -239,7 +261,6 @@ private struct SubagentActivitySectionView: View {
         .padding(12)
         .background { StandardContentCardBackground(cornerRadius: 16, tint: statusColor) }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(alignment: .leading) { Rectangle().fill(statusColor).frame(width: 3) }
         .onAppear {
             if defaultExpanded {
                 loadChildrenIfNeeded()

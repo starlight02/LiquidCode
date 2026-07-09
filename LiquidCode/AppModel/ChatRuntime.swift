@@ -411,19 +411,7 @@ extension AppModel {
     /// onto the first block by the parser). Returns that id plus the parsed completion,
     /// or nil when the message is not a subagent completion.
     private func subagentCompletion(from message: ChatMessage) -> (toolUseID: String, completion: SubagentCompletion)? {
-        guard
-            let block = message.blocks.first,
-            let rawType = block.rawType,
-            rawType == ClaudeControlTranscriptEvent.Kind.taskNotification.rawValue
-            || rawType == ClaudeControlTranscriptEvent.Kind.taskFailure.rawValue,
-            let toolUseID = block.toolUseID?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !toolUseID.isEmpty
-        else {
-            return nil
-        }
-        let status: SubagentActivity.Status = rawType == ClaudeControlTranscriptEvent.Kind.taskFailure.rawValue ? .failed : .succeeded
-        let summary = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (toolUseID, SubagentCompletion(status: status, summary: summary.isEmpty ? nil : summary))
+        SubagentActivityBuilder.completion(from: message)
     }
 
     private func recordSubagentCompletion(_ toolUseID: String, _ completion: SubagentCompletion, sessionID: String) {
