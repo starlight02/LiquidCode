@@ -1330,7 +1330,14 @@ enum ClaudeChildEnvironmentBuilder {
         }
         env["PATH"] = enrichedPath
         let isNative = provider.map(isNativeAnthropic) ?? true
-        let capabilities = provider.map { capabilities(for: $0, isNative: isNative) } ?? ProviderRuntimeCapabilities.nativeAnthropic
+        // Avoid shadowing the static helper named capabilities(for:isNative:) — Xcode 26.5
+        // treats `capabilities(for:)` inside the map closure as a call on the local binding.
+        let runtimeCapabilities: ProviderRuntimeCapabilities
+        if let provider {
+            runtimeCapabilities = makeCapabilities(for: provider, isNative: isNative)
+        } else {
+            runtimeCapabilities = ProviderRuntimeCapabilities.nativeAnthropic
+        }
 
         if let provider {
             if !isNative {
@@ -1364,7 +1371,7 @@ enum ClaudeChildEnvironmentBuilder {
             }
         }
 
-        if capabilities.isNativeAnthropic {
+        if runtimeCapabilities.isNativeAnthropic {
             env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] ?? "64000"
             env["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"] = "1"
             if thinkingLevel == .off {
@@ -1381,14 +1388,14 @@ enum ClaudeChildEnvironmentBuilder {
         // try to reintroduce an SDK entrypoint and hide the session from CLI /resume.
         env["CLAUDE_CODE_ENTRYPOINT"] = transcriptEntrypoint
         removed = Array(Set(removed)).sorted()
-        return ClaudeEnvironmentPlan(environment: env, removedKeys: removed, extraArgs: [], capabilities: capabilities)
+        return ClaudeEnvironmentPlan(environment: env, removedKeys: removed, extraArgs: [], capabilities: runtimeCapabilities)
     }
 
     private static func isNativeAnthropic(_ provider: ProviderRecord) -> Bool {
         provider.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || provider.baseURL.lowercased().contains("api.anthropic.com")
     }
 
-    private static func capabilities(for provider: ProviderRecord, isNative: Bool) -> ProviderRuntimeCapabilities {
+    private static func makeCapabilities(for provider: ProviderRecord, isNative: Bool) -> ProviderRuntimeCapabilities {
         if isNative {
             return ProviderRuntimeCapabilities.nativeAnthropic
         }
