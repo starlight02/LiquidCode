@@ -33,7 +33,10 @@ extension AppModel {
             }
             loaded.append(item)
         }
-        for draft in drafts where seen.insert(draft.id).inserted {
+        // Prefer current in-memory drafts over the snapshot taken when reload started so a
+        // slow discovery cannot wipe desk drafts created after bootstrap/reload began.
+        let pendingDrafts = sessions.filter(\.isDraft) + drafts
+        for draft in pendingDrafts where seen.insert(draft.id).inserted {
             loaded.insert(draft, at: 0)
         }
         sessions = loaded.sorted { lhs, rhs in

@@ -568,6 +568,9 @@ final class FeatureModelRegressionTests: XCTestCase {
 
                 let model = AppModel(engine: RecordingEngine(), claudeUserSettings: service)
                 model.bootstrap()
+                // Cancel any in-flight discovery started by bootstrap so a late applyDiscoveredSessions
+                // cannot race the synthetic sessions this test installs below.
+                model.reloadSessionsGeneration &+= 1
 
                 XCTAssertEqual(
                     model.defaultComposerConfiguration,

@@ -2557,59 +2557,6 @@ struct FlowBadges: View {
     }
 }
 
-// periphery:ignore — retained for sheet-style permission UI + source-level regression checks
-struct PermissionSheetView: View {
-    @EnvironmentObject var model: AppModel
-    let permission: PermissionRequest
-    @State private var editedInput: String = ""
-    var body: some View {
-        Color.black.opacity(0.24).ignoresSafeArea()
-        GlassPanel(role: .permissionSheet, prominence: .prominent, cornerRadius: 24) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Image(systemName: icon)
-                        .font(.title)
-                        .foregroundStyle(color); VStack(alignment: .leading) {
-                            Text(permission.title).font(.title3.bold()); Text(permission.risk.rawValue).font(.caption).foregroundStyle(.secondary) }; Spacer() }
-                Text(permission.summary).font(.callout).foregroundStyle(.secondary)
-                TextEditor(text: $editedInput).font(.system(.caption, design: .monospaced)).frame(height: 180).onAppear { editedInput = permission.inputJSON }
-                HStack {
-                    Button(L("Deny"), role: .destructive) { model.respondPermission(permission, allow: false) }
-                    Spacer()
-                    if SessionPermissionRemember.isRememberable(permission) {
-                        Button(L("Allow for Session")) {
-                            model.respondPermission(
-                                permission,
-                                allow: true,
-                                editedInput: editedInput,
-                                rememberForSession: true
-                            )
-                        }
-                    }
-                    Button(L("Allow Once")) {
-                        model.respondPermission(
-                            permission,
-                            allow: true,
-                            editedInput: editedInput
-                        )
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-            }
-            .padding(22)
-            .frame(width: 620)
-        }
-    }
-
-    private var icon: String {
-        permission.risk == .destructive ? "exclamationmark.triangle.fill" : permission.risk == .shell ? "terminal.fill" : "checkmark.shield.fill"
-    }
-
-    private var color: Color {
-        permission.risk == .destructive ? .red : permission.risk == .shell ? .orange : .accentColor
-    }
-}
-
 struct SettingsPanelView: View {
     @EnvironmentObject var model: AppModel
     @State private var mcpName = ""

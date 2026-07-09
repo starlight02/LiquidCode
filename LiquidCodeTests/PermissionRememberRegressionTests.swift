@@ -216,12 +216,9 @@ final class PermissionRememberRegressionTests: XCTestCase {
     func testPermissionCardsExposeAllowForSession() throws {
         let source = try Self.source("LiquidCode/ViewSettingsPanels.swift")
         let inline = try XCTUnwrap(Self.typeBody(named: "PermissionInlineCardView", in: source))
-        let sheet = try XCTUnwrap(Self.typeBody(named: "PermissionSheetView", in: source))
         XCTAssertTrue(inline.contains("Allow for Session"), "inline card must offer session remember")
         XCTAssertTrue(inline.contains("rememberForSession: true"))
         XCTAssertTrue(inline.contains("SessionPermissionRemember.isRememberable"))
-        XCTAssertTrue(sheet.contains("Allow for Session"), "sheet must offer session remember")
-        XCTAssertTrue(sheet.contains("rememberForSession: true"))
     }
 
     // MARK: - Helpers
