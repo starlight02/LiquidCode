@@ -235,7 +235,7 @@ jobs:
         run: ./scripts/verify-release-artifacts.sh
 
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: LiquidCode-macOS-${{ env.SIGNING_MODE }}
           path: |
