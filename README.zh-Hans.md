@@ -32,8 +32,8 @@ CLI 安装/登录/修复都放进设置页，不用再到处翻 dotfiles。
 
 4. 安装生成的 `.build-release/LiquidCode-<version>[-unsigned].pkg`。
 
-未配置签名变量时，产物是 ad-hoc 签名 app + unsigned PKG（Gatekeeper 会警告）。
-生产发布请设 `RELEASE_SIGNING_REQUIRED=1`。
+版本号来自 Xcode 的 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`（写入 app Info.plist）。未配置签名变量时，产物是 ad-hoc 签名 app + unsigned PKG（Gatekeeper 会警告）。生产发布请设 `RELEASE_SIGNING_REQUIRED=1`。
+
 
 ### 校验
 
@@ -60,7 +60,8 @@ xcodebuild test \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath .xcode-derived
-LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v0.1.0 ./scripts/build-release.sh
+LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 ./scripts/build-release.sh
+
 ./scripts/verify-release-artifacts.sh
 ```
 
@@ -68,12 +69,21 @@ LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v0.1.0 ./scripts/bui
 
 - `LiquidCode.app` 来自 Xcode `.xcarchive`（保留在 `.build-release/` 便于检查）。
 - `.pkg` 是唯一分发安装包（安装到 `/Applications/LiquidCode.app`）。
+- PKG 文件名使用构建出的 app 的 `CFBundleShortVersionString`（来自 Xcode `MARKETING_VERSION`）。
+
+## 版本与 tag
+
+- **唯一来源：** `LiquidCode.xcodeproj` 里的 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`。
+- **查看：** `./scripts/verify-version.sh`
+- **打发布 tag：** `./scripts/cut-release.sh`（生成 `v${MARKETING_VERSION}`）或 GitHub 的 `Cut Release` workflow。
+- **可选覆盖：** 仅上传时才需要 `RELEASE_TAG`；不设则自动用 `v${MARKETING_VERSION}`，且必须与 Xcode 版本一致。
 
 ## 更新
 
 - 本地：重新运行 `./scripts/build-release.sh`，安装新 PKG 后重启。
-- 上传 dry-run：`RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v<version> ./scripts/build-release.sh`。
+- 上传 dry-run：`RELEASE_UPLOAD_DRY_RUN=1 ./scripts/build-release.sh`（tag 默认从 Xcode 读）。
 - 生产上传：`RELEASE_SIGNING_REQUIRED=1`，并配置 Developer ID Application、Installer 与 notary profile，再设 `RELEASE_UPLOAD=1`。
+
 
 ## 卸载
 
@@ -132,12 +142,13 @@ GitHub Actions：
 
 ```bash
 ./scripts/verify-version.sh
-./scripts/verify-version.sh --tag v0.1.0
+./scripts/verify-version.sh --tag vX.Y.Z
 ./scripts/ci-select-xcode.sh
-./scripts/build-release.sh           # archive → 仅 PKG
+./scripts/build-release.sh           # archive → 仅 PKG（版本来自 Xcode）
 ./scripts/verify-release-artifacts.sh
 ./scripts/cut-release.sh --dry-run   # 读版本预览 tag
 ./scripts/cut-release.sh             # 本地打 tag 并 push
+
 ```
 
 签名模式：要么配齐 App + Installer + notary secrets，要么全部不配走 unsigned；

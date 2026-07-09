@@ -67,7 +67,8 @@ final class ReleaseHelperTests: XCTestCase {
 
         let result = try fixture.runHelper(["upload-real", "", artifact.path])
         XCTAssertNotEqual(result.status, 0)
-        XCTAssertTrue(result.combinedOutput.contains("RELEASE_UPLOAD=1 requires RELEASE_TAG or GITHUB_REF_NAME"), result.combinedOutput)
+        XCTAssertTrue(result.combinedOutput.contains("RELEASE_UPLOAD=1 requires a release tag"), result.combinedOutput)
+
     }
 }
 

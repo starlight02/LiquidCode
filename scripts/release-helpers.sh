@@ -12,22 +12,47 @@ release_truthy() {
   esac
 }
 
+release_helpers_root() {
+  local self="${BASH_SOURCE[0]:-$0}"
+  cd "$(dirname "$self")/.." && pwd
+}
+
+
+# Source of truth: Xcode MARKETING_VERSION (via verify-version.sh / project.pbxproj).
+release_marketing_version() {
+  local out marketing
+  out="$("$(release_helpers_root)/scripts/verify-version.sh")"
+  marketing="$(printf '%s\n' "$out" | awk -F= '/^MARKETING_VERSION=/{print $2; exit}')"
+  [[ -n "$marketing" ]] || fail "Could not read MARKETING_VERSION from Xcode project"
+  printf '%s' "$marketing"
+}
+
 release_upload_enabled_value() { printf '%s' "${RELEASE_UPLOAD:-0}"; }
 release_upload_dry_run_value() { printf '%s' "${RELEASE_UPLOAD_DRY_RUN:-0}"; }
 release_create_draft_value() { printf '%s' "${RELEASE_CREATE_DRAFT:-0}"; }
 release_name_value() { printf '%s' "${RELEASE_NAME:-}"; }
 release_notes_value() { printf '%s' "${RELEASE_NOTES:-}"; }
+
+# Tag resolution order:
+#   1. explicit RELEASE_TAG (override only)
+#   2. GitHub tag ref (v*) when running on a tag push
+#   3. v${MARKETING_VERSION} from the Xcode project (default)
 release_tag_value() {
-  if [[ -n "${RELEASE_TAG:-}" ]]; then printf '%s' "$RELEASE_TAG"
-  elif [[ -n "${GITHUB_REF_NAME:-}" ]]; then printf '%s' "$GITHUB_REF_NAME"
-  else printf '%s' ""; fi
+  if [[ -n "${RELEASE_TAG:-}" ]]; then
+    printf '%s' "$RELEASE_TAG"
+  elif [[ -n "${GITHUB_REF_NAME:-}" && "${GITHUB_REF_NAME}" =~ ^v[0-9] ]]; then
+    printf '%s' "$GITHUB_REF_NAME"
+  else
+    printf 'v%s' "$(release_marketing_version)"
+  fi
 }
 
 release_version_from_tag() {
   local tag="$1"
-  [[ -n "$tag" ]] || fail "Release artifact matrix validation requires RELEASE_TAG or GITHUB_REF_NAME"
+  [[ -n "$tag" ]] || fail "Release artifact matrix validation requires a release tag"
   echo "${tag#v}"
 }
+
 
 validate_release_artifacts() {
   local artifact
@@ -55,7 +80,8 @@ validate_release_artifact_matrix() {
 
 preflight_real_release_upload() {
   local tag="$1"
-  [[ -n "$tag" ]] || fail "RELEASE_UPLOAD=1 requires RELEASE_TAG or GITHUB_REF_NAME"
+  [[ -n "$tag" ]] || fail "RELEASE_UPLOAD=1 requires a release tag (set RELEASE_TAG or use MARKETING_VERSION)"
+
   command -v gh >/dev/null || fail "RELEASE_UPLOAD=1 requires gh"
   gh auth status >/dev/null || fail "RELEASE_UPLOAD=1 requires authenticated gh (run gh auth login or set GH_TOKEN)"
 }
@@ -66,7 +92,8 @@ ensure_github_draft_release() {
   local release_name="$3"
   local release_notes="$4"
   release_truthy "$create_draft" || return 0
-  [[ -n "$tag" ]] || fail "RELEASE_CREATE_DRAFT=1 requires RELEASE_TAG or GITHUB_REF_NAME"
+  [[ -n "$tag" ]] || fail "RELEASE_CREATE_DRAFT=1 requires a release tag"
+
 
   if gh release view "$tag" >/dev/null 2>&1; then
     info "GitHub release already exists for $tag; uploading assets to existing release"
@@ -93,7 +120,8 @@ release_upload_artifacts() {
     if [[ -n "$tag" ]]; then
       info "GitHub release upload dry-run for $tag"
     else
-      info "GitHub release upload dry-run (RELEASE_TAG unset)"
+      info "GitHub release upload dry-run (tag unset)"
+
     fi
     echo "    Would upload artifacts:"
     local artifact
@@ -148,8 +176,17 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
       tag="$2"; shift 2
       release_upload_artifacts 0 "$tag" "$@"
       ;;
-    *)
-      fail "Usage: $0 {dev-signature|upload-dry-run|upload-real} ..."
+    marketing-version)
+      release_marketing_version
+      echo
       ;;
+    tag)
+      release_tag_value
+      echo
+      ;;
+    *)
+      fail "Usage: $0 {dev-signature|upload-dry-run|upload-real|marketing-version|tag} ..."
+      ;;
+
   esac
 fi

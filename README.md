@@ -34,7 +34,8 @@ Provider, MCP, Skills, and CLI setup in Settings instead of scattered dotfiles.
 
 4. Install the generated `.build-release/LiquidCode-<version>[-unsigned].pkg`.
 
-Without signing variables the script produces an ad-hoc signed app inside an unsigned PKG (Gatekeeper will warn). Set `RELEASE_SIGNING_REQUIRED=1` for production gates.
+Version comes from Xcode `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` (written into the app Info.plist). Without signing variables the script produces an ad-hoc signed app inside an unsigned PKG (Gatekeeper will warn). Set `RELEASE_SIGNING_REQUIRED=1` for production gates.
+
 
 ### Verify
 
@@ -61,7 +62,8 @@ xcodebuild test \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath .xcode-derived
-LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v0.1.0 ./scripts/build-release.sh
+LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 ./scripts/build-release.sh
+
 ./scripts/verify-release-artifacts.sh
 ```
 
@@ -69,12 +71,21 @@ LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v0.1.0 ./scripts/bui
 
 - `LiquidCode.app` comes from the Xcode `.xcarchive` (kept under `.build-release/` for inspection).
 - `.pkg` is the only shipped installer (installs to `/Applications/LiquidCode.app`).
+- PKG filename uses `CFBundleShortVersionString` from the built app (sourced from Xcode `MARKETING_VERSION`).
+
+## Versioning & tags
+
+- **Source of truth:** `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` in `LiquidCode.xcodeproj`.
+- **Inspect:** `./scripts/verify-version.sh`
+- **Cut a release tag:** `./scripts/cut-release.sh` (creates `v${MARKETING_VERSION}`) or the `Cut Release` workflow.
+- **Optional override:** `RELEASE_TAG` only for upload override; it must still match `MARKETING_VERSION`. Leave it unset to use `v${MARKETING_VERSION}` automatically.
 
 ## Update
 
 - Local: rerun `./scripts/build-release.sh`, install the new PKG, relaunch.
-- Dry-run upload: `RELEASE_UPLOAD_DRY_RUN=1 RELEASE_TAG=v<version> ./scripts/build-release.sh`.
+- Dry-run upload: `RELEASE_UPLOAD_DRY_RUN=1 ./scripts/build-release.sh` (tag defaults from Xcode).
 - Production upload: `RELEASE_SIGNING_REQUIRED=1` plus Developer ID Application, Developer ID Installer, and notary profile; then `RELEASE_UPLOAD=1`.
+
 
 ## Uninstall
 
@@ -133,12 +144,13 @@ Local helpers used by CI:
 
 ```bash
 ./scripts/verify-version.sh              # MARKETING_VERSION / build number
-./scripts/verify-version.sh --tag v0.1.0 # tag must match MARKETING_VERSION
+./scripts/verify-version.sh --tag vX.Y.Z # tag must match MARKETING_VERSION
 ./scripts/ci-select-xcode.sh             # pick Xcode with macOS 26/27 SDK
-./scripts/build-release.sh               # archive → PKG only
+./scripts/build-release.sh               # archive → PKG only (version from Xcode)
 ./scripts/verify-release-artifacts.sh    # codesign / lipo / PKG payload checks
 ./scripts/cut-release.sh --dry-run       # preview tag from MARKETING_VERSION
 ./scripts/cut-release.sh                 # create+push vX.Y.Z tag
+
 ```
 
 Signing mode is all-or-nothing: configure every Apple app+installer+notary secret,
