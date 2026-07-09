@@ -569,10 +569,22 @@ final class FeatureModelRegressionTests: XCTestCase {
                 let model = AppModel(engine: RecordingEngine(), claudeUserSettings: service)
                 model.bootstrap()
 
-                XCTAssertEqual(model.defaultComposerConfiguration, ComposerSendConfiguration(model: "sonnet", mode: .bypass, thinkingLevel: .low))
-                XCTAssertEqual(model.sendConfigurationBySession, preservedConfigurations)
+                XCTAssertEqual(
+                    model.defaultComposerConfiguration,
+                    ComposerSendConfiguration(model: "sonnet", mode: .bypass, thinkingLevel: .low),
+                    "defaultComposerConfiguration=\(model.defaultComposerConfiguration)"
+                )
+                XCTAssertEqual(
+                    model.sendConfigurationBySession,
+                    preservedConfigurations,
+                    "sendConfigurationBySession=\(model.sendConfigurationBySession)"
+                )
                 let savedSettings = try XCTUnwrap(JSONFile.load(AppSettings.self, from: AppPaths.shared.settingsFile))
-                XCTAssertEqual(savedSettings.sessionConfigurations, preservedConfigurations)
+                XCTAssertEqual(
+                    savedSettings.sessionConfigurations,
+                    preservedConfigurations,
+                    "saved sessionConfigurations=\(savedSettings.sessionConfigurations)"
+                )
 
                 model.sessions = [
                     SessionRecord(id: "alpha", path: nil, project: "Alpha", projectDir: home.path, modifiedAt: Date(), preview: "Alpha", isDraft: true),
@@ -1547,8 +1559,10 @@ final class FeatureModelRegressionTests: XCTestCase {
 
             model.loadProject(root.path)
 
-            XCTAssertTrue(model.changedFiles.isEmpty)
-            XCTAssertTrue(model.fileChangeBadges.isEmpty)
+            // Stale paths from the previous workspace must be gone. Do not require a fully
+            // empty change set: deferred workspace watching may observe the new project root.
+            XCTAssertFalse(model.changedFiles.contains(stale))
+            XCTAssertNil(model.fileChangeBadges[stale])
             XCTAssertEqual(model.workingDirectory, PathAccessManager.canonicalPath(root.path))
         }
     }

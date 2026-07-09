@@ -51,6 +51,7 @@ jobs:
             -configuration Debug \
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath .xcode-derived \
+            -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO
 
   macos-release:

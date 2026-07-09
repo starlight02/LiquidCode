@@ -2557,44 +2557,7 @@ struct FlowBadges: View {
     }
 }
 
-struct MCPPanelView: View {
-    @EnvironmentObject var model: AppModel
-    @State private var serverName = ""
-    @State private var command = ""
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack { Text(L("MCP Servers")).font(.headline); Spacer(); Button(L("Reload")) { model.reloadMCPAndSkills() } }
-            HStack { TextField(L("name"), text: $serverName); TextField(L("command"), text: $command); Button(L("Add")) { if !serverName.isEmpty {
-                model.addMCPServer(
-                    name: serverName,
-                    command: command
-                ); serverName = ""; command = "" } } }
-            List(model.mcpServers) { server in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(server.name).font(.headline)
-                        Spacer()
-                        MCPRuntimeBadge(server: server)
-                        Text(server.transport).font(.caption).padding(4).background(.thinMaterial).clipShape(Capsule())
-                    }
-                    Text(server.command ?? server.url ?? L("No command/url")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    if let error = server.lastError, server.runtimeStatus == .failed {
-                        Text(error).font(.caption2).foregroundStyle(.red).lineLimit(2)
-                    }
-                    HStack {
-                        Text(server.source).font(.caption2).foregroundStyle(.tertiary); Spacer(); Button(L("Test")) { model.testMCPServer(server) }; if
-                            server
-                                .source != "Claude" {
-                            Button(
-                                L("Delete"),
-                                role: .destructive
-                            ) { model.deleteMCPServer(server) } } }
-                }.padding(.vertical, 4)
-            }
-        }.padding(12)
-    }
-}
-
+// periphery:ignore — retained for sheet-style permission UI + source-level regression checks
 struct PermissionSheetView: View {
     @EnvironmentObject var model: AppModel
     let permission: PermissionRequest
