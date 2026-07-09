@@ -1220,6 +1220,14 @@ struct ClaudeEnvironmentPlan: Equatable, Sendable {
 }
 
 enum ClaudeChildEnvironmentBuilder {
+    /// Claude Code tags every transcript record with `entrypoint`. Interactive `/resume`
+    /// deliberately hides sessions whose entrypoint is in `{sdk-cli, sdk-ts, sdk-py}`
+    /// (see Claude 2.1.x `uTr` / `jPi`). LiquidCode launches with `--input-format stream-json`,
+    /// which Claude treats as non-interactive and would auto-stamp `sdk-cli` when the env
+    /// var is unset — making GUI chats invisible in the terminal resume picker. Force a
+    /// desktop entrypoint that is accepted by Claude and NOT in that filter set.
+    static let transcriptEntrypoint = "claude-desktop"
+
     static let envRemoveList = [
         "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
         "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "CLAUDE_CODE_ENTRYPOINT",
@@ -1291,6 +1299,9 @@ enum ClaudeChildEnvironmentBuilder {
             env.removeValue(forKey: "CLAUDE_CODE_MAX_OUTPUT_TOKENS")
             env.removeValue(forKey: "CLAUDE_CODE_EFFORT_LEVEL")
         }
+        // Always last: survive host env strips and provider extraEnv overrides that might
+        // try to reintroduce an SDK entrypoint and hide the session from CLI /resume.
+        env["CLAUDE_CODE_ENTRYPOINT"] = transcriptEntrypoint
         removed = Array(Set(removed)).sorted()
         return ClaudeEnvironmentPlan(environment: env, removedKeys: removed, extraArgs: [], capabilities: capabilities)
     }

@@ -75,7 +75,45 @@ final class RuntimeParityTests: XCTestCase {
         XCTAssertNil(plan.environment["CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING"])
         XCTAssertNil(plan.environment["CLAUDE_CODE_MAX_OUTPUT_TOKENS"])
         XCTAssertEqual(plan.environment["all_proxy"], "socks5://127.0.0.1:1080")
+        // Desktop entrypoint must still be forced so CLI /resume can see the session.
+        XCTAssertEqual(plan.environment["CLAUDE_CODE_ENTRYPOINT"], ClaudeChildEnvironmentBuilder.transcriptEntrypoint)
         XCTAssertFalse(plan.capabilities.isNativeAnthropic)
+    }
+
+    func testChildEnvironmentForcesDesktopEntrypointForResumeVisibility() throws {
+        // Host may carry an SDK entrypoint (e.g. nested Claude). LiquidCode must strip it
+        // and re-stamp a resume-visible desktop value — never leave sdk-cli/sdk-ts/sdk-py.
+        let base = [
+            "CLAUDE_CODE_ENTRYPOINT": "sdk-ts",
+            "CLAUDE_CODE_ENTRY": "sdk",
+            "PATH": "/usr/bin"
+        ]
+        let native = ClaudeChildEnvironmentBuilder.buildNative(base: base, enrichedPath: "/bin:/usr/bin")
+        XCTAssertEqual(native.environment["CLAUDE_CODE_ENTRYPOINT"], "claude-desktop")
+        XCTAssertNil(native.environment["CLAUDE_CODE_ENTRY"])
+        XCTAssertTrue(native.removedKeys.contains("CLAUDE_CODE_ENTRYPOINT"))
+
+        // Provider extraEnv must not reintroduce an SDK entrypoint that would hide the chat.
+        let provider = ProviderRecord(
+            id: "hostile",
+            name: "Hostile",
+            baseURL: "https://provider.example/v1",
+            apiFormat: .anthropic,
+            modelMappings: [:],
+            extraEnv: ["CLAUDE_CODE_ENTRYPOINT": "sdk-cli"],
+            preset: nil,
+            proxyURL: nil
+        )
+        let thirdParty = ClaudeChildEnvironmentBuilder.build(
+            base: base,
+            provider: provider,
+            apiKey: "k",
+            thinkingLevel: .high,
+            enrichedPath: "/bin"
+        )
+        XCTAssertEqual(thirdParty.environment["CLAUDE_CODE_ENTRYPOINT"], "claude-desktop")
+        // The forced value is intentionally not in Claude's resume-hide set.
+        XCTAssertFalse(["sdk-cli", "sdk-ts", "sdk-py"].contains(thirdParty.environment["CLAUDE_CODE_ENTRYPOINT"] ?? ""))
     }
 
     func testOpenAICompatibleProviderDoesNotLeakNativeOnlySettings() throws {
