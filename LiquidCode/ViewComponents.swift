@@ -1634,6 +1634,9 @@ struct ChatPanelView: View {
             if model.selectedHasActiveTurn {
                 ActivityPillView()
             }
+            if let label = model.selectedSessionUsage?.compactLabel {
+                UsageMeterView(label: label)
+            }
             Spacer()
             HStack(spacing: 10) {
                 if !model.workingDirectory.isEmpty {
@@ -1932,6 +1935,22 @@ extension AppModel {
             let key = permission.toolUseID ?? permission.requestID
             return seen.insert(key).inserted
         }
+    }
+}
+
+/// Compact session usage chip for the chat header. Hidden when the provider omits usage.
+struct UsageMeterView: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(.thinMaterial)
+            .clipShape(Capsule())
+            .help(L("Session usage"))
     }
 }
 

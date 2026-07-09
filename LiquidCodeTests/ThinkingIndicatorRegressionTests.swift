@@ -86,7 +86,7 @@ final class ThinkingIndicatorRegressionTests: XCTestCase {
         model.activeTurnSnapshots["session-1"] = ActiveTurnSnapshot(messageID: "u1", content: "hi", attachments: [])
         model.turnPhaseBySession["session-1"] = .thinking
 
-        model.handle(.turnCompleted(sessionID: "session-1"))
+        model.handle(.turnCompleted(sessionID: "session-1", usage: nil))
         XCTAssertNil(model.turnPhaseBySession["session-1"])
         XCTAssertNil(model.activeTurnSnapshots["session-1"])
 

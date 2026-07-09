@@ -549,7 +549,7 @@ enum StreamEventParser {
             return [.sessionStarted(sessionID: sessionID, cliSessionID: cliSessionID), .cliReady(sessionID: sessionID)]
         }
         if type == "result" {
-            return [.turnCompleted(sessionID: sessionID)]
+            return [.turnCompleted(sessionID: sessionID, usage: TurnUsageParser.parse(from: obj))]
         }
         var output: [ClaudeEvent] = []
         if let started = streamBlockStart(in: obj) {
@@ -1202,6 +1202,84 @@ enum StreamEventParser {
             return String(describing: value)
         }
         return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+/// Extracts token/cost fields from a Claude Code `type == "result"` payload.
+/// Tolerates missing keys and alternate spellings so third-party providers that omit
+/// cost still yield token totals when present.
+enum TurnUsageParser {
+    static func parse(from obj: [String: Any]) -> TurnUsage? {
+        let usageObject = obj["usage"] as? [String: Any]
+        let input = intValue(in: usageObject, keys: ["input_tokens", "inputTokens"])
+            ?? intValue(in: obj, keys: ["input_tokens", "inputTokens"])
+            ?? 0
+        let output = intValue(in: usageObject, keys: ["output_tokens", "outputTokens"])
+            ?? intValue(in: obj, keys: ["output_tokens", "outputTokens"])
+            ?? 0
+        let cacheRead = intValue(
+            in: usageObject,
+            keys: ["cache_read_input_tokens", "cache_read_tokens", "cacheReadInputTokens", "cacheReadTokens"]
+        ) ?? 0
+        let cacheWrite = intValue(
+            in: usageObject,
+            keys: ["cache_creation_input_tokens", "cache_write_input_tokens", "cache_creation_tokens", "cacheWriteInputTokens", "cacheWriteTokens"]
+        ) ?? 0
+        let cost = doubleValue(in: obj, keys: ["total_cost_usd", "total_cost", "cost", "totalCostUSD", "totalCost"])
+            ?? doubleValue(in: usageObject, keys: ["total_cost_usd", "total_cost", "cost", "totalCostUSD"])
+
+        if input == 0, output == 0, cacheRead == 0, cacheWrite == 0, cost == nil {
+            return nil
+        }
+        return TurnUsage(
+            inputTokens: input,
+            outputTokens: output,
+            cacheReadTokens: cacheRead,
+            cacheWriteTokens: cacheWrite,
+            totalCostUSD: cost
+        )
+    }
+
+    private static func intValue(in object: [String: Any]?, keys: [String]) -> Int? {
+        guard let object else {
+            return nil
+        }
+        for key in keys {
+            if let value = object[key] as? Int {
+                return value
+            }
+            if let value = object[key] as? Double {
+                return Int(value)
+            }
+            if let value = object[key] as? NSNumber {
+                return value.intValue
+            }
+            if let value = object[key] as? String, let parsed = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return parsed
+            }
+        }
+        return nil
+    }
+
+    private static func doubleValue(in object: [String: Any]?, keys: [String]) -> Double? {
+        guard let object else {
+            return nil
+        }
+        for key in keys {
+            if let value = object[key] as? Double {
+                return value
+            }
+            if let value = object[key] as? Int {
+                return Double(value)
+            }
+            if let value = object[key] as? NSNumber {
+                return value.doubleValue
+            }
+            if let value = object[key] as? String, let parsed = Double(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return parsed
+            }
+        }
+        return nil
     }
 }
 

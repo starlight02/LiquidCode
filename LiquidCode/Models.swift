@@ -565,6 +565,80 @@ struct ClaudeSessionStartRequest: Sendable {
     }
 }
 
+/// Token and cost totals for a single agent turn, parsed from the CLI `result` event.
+struct TurnUsage: Equatable, Sendable {
+    var inputTokens: Int = 0
+    var outputTokens: Int = 0
+    var cacheReadTokens: Int = 0
+    var cacheWriteTokens: Int = 0
+    var totalCostUSD: Double?
+
+}
+
+/// Cumulative usage for one session. Only lives in memory for the app process.
+struct SessionUsage: Equatable, Sendable {
+    var totalInput: Int = 0
+    var totalOutput: Int = 0
+    var totalCacheRead: Int = 0
+    var totalCacheWrite: Int = 0
+    var totalCostUSD: Double = 0
+    var lastTurn: TurnUsage?
+
+    var hasData: Bool {
+        totalInput > 0 || totalOutput > 0 || totalCacheRead > 0 || totalCacheWrite > 0 || totalCostUSD > 0
+    }
+
+    mutating func accumulate(_ turn: TurnUsage) {
+        totalInput += turn.inputTokens
+        totalOutput += turn.outputTokens
+        totalCacheRead += turn.cacheReadTokens
+        totalCacheWrite += turn.cacheWriteTokens
+        if let cost = turn.totalCostUSD {
+            totalCostUSD += cost
+        }
+        lastTurn = turn
+    }
+
+    /// Compact header label like `12.4k ↑ / 3.1k ↓ · $0.08`. Nil when nothing to show.
+    var compactLabel: String? {
+        guard hasData else {
+            return nil
+        }
+        var parts: [String] = []
+        if totalInput > 0 || totalOutput > 0 {
+            parts.append("\(Self.formatTokens(totalInput)) ↑ / \(Self.formatTokens(totalOutput)) ↓")
+        }
+        if totalCostUSD > 0 {
+            parts.append(Self.formatCost(totalCostUSD))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private static func formatTokens(_ count: Int) -> String {
+        if count >= 1_000_000 {
+            return String(format: "%.1fM", Double(count) / 1_000_000)
+        }
+        if count >= 1_000 {
+            let value = Double(count) / 1_000
+            if value >= 100 {
+                return String(format: "%.0fk", value)
+            }
+            return String(format: "%.1fk", value)
+        }
+        return "\(count)"
+    }
+
+    private static func formatCost(_ cost: Double) -> String {
+        if cost < 0.01 {
+            return String(format: "$%.4f", cost)
+        }
+        if cost < 1 {
+            return String(format: "$%.3f", cost)
+        }
+        return String(format: "$%.2f", cost)
+    }
+}
+
 enum ClaudeEvent: Sendable {
     case sessionStarted(sessionID: String, cliSessionID: String?)
     case cliReady(sessionID: String)
@@ -575,7 +649,7 @@ enum ClaudeEvent: Sendable {
     case toolStarted(sessionID: String, ToolCall)
     case toolUpdated(sessionID: String, ToolCall)
     case permissionRequested(PermissionRequest)
-    case turnCompleted(sessionID: String)
+    case turnCompleted(sessionID: String, usage: TurnUsage?)
     case stderr(sessionID: String, String)
     case exited(sessionID: String)
     case failed(sessionID: String, String)

@@ -85,6 +85,7 @@ extension AppModel {
         toolCallsBySession.removeValue(forKey: session.id)
         pendingPermissions.removeAll { $0.sessionID == session.id }
         permissionRulesBySession.removeValue(forKey: session.id)
+        usageBySession.removeValue(forKey: session.id)
         composerTextBySession.removeValue(forKey: session.id)
         attachmentsBySession.removeValue(forKey: session.id)
         pendingUserMessagesBySession.removeValue(forKey: session.id)

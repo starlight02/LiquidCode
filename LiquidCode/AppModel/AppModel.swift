@@ -63,6 +63,8 @@ final class AppModel: ObservableObject {
     @Published var turnPhaseBySession: [String: TurnPhase] = [:]
     // Latest TodoWrite checklist per session (authoritative current list, not history).
     @Published var todosBySession: [String: SessionTodoState] = [:]
+    // Cumulative token/cost meter per session (from CLI result events). Not persisted.
+    @Published var usageBySession: [String: SessionUsage] = [:]
     @Published var currentError: AppError?
 
     @Published var composerText = ""

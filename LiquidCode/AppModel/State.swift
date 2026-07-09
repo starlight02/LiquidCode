@@ -89,6 +89,13 @@ extension AppModel {
         return todosBySession[selectedSessionID]
     }
 
+    var selectedSessionUsage: SessionUsage? {
+        guard let selectedSessionID else {
+            return nil
+        }
+        return usageBySession[selectedSessionID]
+    }
+
     var activeProvider: ProviderRecord? {
         nil
     }

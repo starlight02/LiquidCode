@@ -276,10 +276,8 @@ extension AppModel {
             upsertTool(tool, sessionID: sessionID)
         case .permissionRequested(let permission):
             handlePermissionRequested(permission)
-        case .turnCompleted(let sessionID):
-            flushStreamingMessage(sessionID: sessionID)
-            finishTurn(sessionID: sessionID, shouldDrainQueue: true)
-            reloadSessions()
+        case .turnCompleted(let sessionID, let usage):
+            handleTurnCompleted(sessionID: sessionID, usage: usage)
         case .stderr(let sessionID, let text):
             if text.lowercased().contains("error") {
                 appendMessage(ChatMessage(role: .error, content: text), sessionID: sessionID)
@@ -657,6 +655,17 @@ extension AppModel {
             tools.append(tool)
         }
         toolCallsBySession[sessionID] = tools
+    }
+
+    private func handleTurnCompleted(sessionID: String, usage: TurnUsage?) {
+        if let usage {
+            var sessionUsage = usageBySession[sessionID] ?? SessionUsage()
+            sessionUsage.accumulate(usage)
+            usageBySession[sessionID] = sessionUsage
+        }
+        flushStreamingMessage(sessionID: sessionID)
+        finishTurn(sessionID: sessionID, shouldDrainQueue: true)
+        reloadSessions()
     }
 
     /// Surfaces a permission card, or silently auto-allows when a session rule matches.
