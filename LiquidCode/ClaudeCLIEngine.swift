@@ -1330,7 +1330,7 @@ enum ClaudeChildEnvironmentBuilder {
         }
         env["PATH"] = enrichedPath
         let isNative = provider.map(isNativeAnthropic) ?? true
-        let capabilities = provider.map { capabilities(for: $0, isNative: isNative) } ?? .nativeAnthropic
+        let capabilities = provider.map { capabilities(for: $0, isNative: isNative) } ?? ProviderRuntimeCapabilities.nativeAnthropic
 
         if let provider {
             if !isNative {
@@ -1390,7 +1390,7 @@ enum ClaudeChildEnvironmentBuilder {
 
     private static func capabilities(for provider: ProviderRecord, isNative: Bool) -> ProviderRuntimeCapabilities {
         if isNative {
-            return .nativeAnthropic
+            return ProviderRuntimeCapabilities.nativeAnthropic
         }
         let override = provider.extraEnv[partialOverrideKey].flatMap(parseBoolOverride)
         return ProviderRuntimeCapabilities(
