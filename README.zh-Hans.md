@@ -126,7 +126,8 @@ GitHub Actions：
 | Workflow | 触发 | 作用 |
 |---|---|---|
 | `CI` | PR / push main | 质量门禁、单测、未签名 arm64 release smoke |
-| `Release` | `v*` tag / release / 手动 | 通用二进制发布（有 secrets 则签名+公证，否则 unsigned） |
+| `Release` | `v*` tag / release / 手动 | 通用二进制发布（DMG+PKG+updater；有 secrets 则签名+公证） |
+| `Cut Release` | 手动 workflow_dispatch | 读取 MARKETING_VERSION，打 `vX.Y.Z` tag 并触发 Release |
 
 本地脚本：
 
@@ -136,6 +137,9 @@ GitHub Actions：
 ./scripts/ci-select-xcode.sh
 ./scripts/build-release.sh
 ./scripts/verify-release-artifacts.sh
+./scripts/package-macos-pkg.sh path/to/LiquidCode.app
+./scripts/cut-release.sh --dry-run   # 读版本预览 tag
+./scripts/cut-release.sh             # 本地打 tag 并 push
 ```
 
 签名模式与 alma-onebot-bridge 一致：要么配齐全部 Apple + updater secrets，要么

@@ -44,6 +44,7 @@ echo "    Version:   $version ($build)"
 
 shopt -s nullglob
 dmgs=("$BUILD_DIR"/*.dmg)
+pkgs=("$BUILD_DIR"/*.pkg)
 tarballs=("$BUILD_DIR"/*.app.tar.gz)
 sigs=("$BUILD_DIR"/*.app.tar.gz.sig)
 shas=("$BUILD_DIR"/*.app.tar.gz.sha256)
@@ -51,14 +52,19 @@ latest=("$BUILD_DIR"/latest.json)
 shopt -u nullglob
 
 [[ ${#dmgs[@]} -eq 1 ]] || fail "Expected exactly one DMG in $BUILD_DIR (found ${#dmgs[@]})"
+[[ ${#pkgs[@]} -eq 1 ]] || fail "Expected exactly one PKG in $BUILD_DIR (found ${#pkgs[@]})"
 [[ ${#tarballs[@]} -eq 1 ]] || fail "Expected exactly one .app.tar.gz in $BUILD_DIR"
 [[ ${#sigs[@]} -eq 1 ]] || fail "Expected exactly one .app.tar.gz.sig in $BUILD_DIR"
 [[ ${#shas[@]} -eq 1 ]] || fail "Expected exactly one .app.tar.gz.sha256 in $BUILD_DIR"
 [[ ${#latest[@]} -eq 1 ]] || fail "Expected latest.json in $BUILD_DIR"
 
 dmg="${dmgs[0]}"
+pkg="${pkgs[0]}"
 info "hdiutil verify $(basename "$dmg")"
 hdiutil verify "$dmg"
+
+info "pkgutil --check-signature $(basename "$pkg") (best-effort for unsigned)"
+pkgutil --check-signature "$pkg" || true
 
 info "latest.json contract"
 python3 - "$latest" "$version" "$build" "$(basename "$dmg")" "$(basename "${tarballs[0]}")" "$(basename "${sigs[0]}")" "$(awk '{print $1}' "${shas[0]}")" <<'PY'

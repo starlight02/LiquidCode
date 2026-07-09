@@ -69,6 +69,7 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      INSTALLER_SIGN_IDENTITY: ${{ secrets.INSTALLER_SIGN_IDENTITY }}
       LIQUIDCODE_ARCHS: "arm64 x86_64"
 
     steps:
@@ -211,9 +212,16 @@ jobs:
             export UPDATER_SIGNING_PRIVATE_KEY="${TAURI_SIGNING_PRIVATE_KEY}"
             export UPDATER_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
             export CODESIGN_IDENTITY
+            # Optional Developer ID Installer identity for PKG; app/DMG still use Application identity.
+            if [[ -n "${INSTALLER_SIGN_IDENTITY:-}" ]]; then
+              export INSTALLER_SIGN_IDENTITY
+            else
+              unset INSTALLER_SIGN_IDENTITY || true
+              echo "INSTALLER_SIGN_IDENTITY not set; PKG will be unsigned even in signed mode."
+            fi
           else
             export RELEASE_SIGNING_REQUIRED=0
-            unset CODESIGN_IDENTITY NOTARY_KEYCHAIN_PROFILE UPDATER_SIGNING_PRIVATE_KEY UPDATER_SIGNING_PRIVATE_KEY_PASSWORD || true
+            unset CODESIGN_IDENTITY NOTARY_KEYCHAIN_PROFILE UPDATER_SIGNING_PRIVATE_KEY UPDATER_SIGNING_PRIVATE_KEY_PASSWORD INSTALLER_SIGN_IDENTITY || true
           fi
 
           # build-release.sh only does real GH uploads when RELEASE_SIGNING_REQUIRED=1.
@@ -234,7 +242,7 @@ jobs:
           fi
 
           if [[ "${SIGNING_MODE}" == "signed" ]]; then
-            export RELEASE_NOTES="Signed and notarized macOS release for ${GITHUB_REF_NAME}. Assets: DMG, updater tarball, signature, checksum, latest.json."
+            export RELEASE_NOTES="Signed and notarized macOS release for ${GITHUB_REF_NAME}. Assets: DMG, PKG, updater tarball, signature, checksum, latest.json."
           else
             export RELEASE_NOTES="Unsigned/ad-hoc macOS release for ${GITHUB_REF_NAME}. Gatekeeper will warn; not for production distribution."
           fi
@@ -253,6 +261,7 @@ jobs:
           name: LiquidCode-macOS-${{ env.SIGNING_MODE }}
           path: |
             .build-release/*.dmg
+            .build-release/*.pkg
             .build-release/*.app.tar.gz
             .build-release/*.sha256
             .build-release/*.app.tar.gz.sig
@@ -271,7 +280,7 @@ jobs:
           if [[ "${SIGNING_MODE}" == "unsigned" ]]; then
             NOTES="Unsigned/ad-hoc macOS release for $TAG_NAME. Gatekeeper will warn because this build has no Developer ID signature or notarization."
           else
-            NOTES="Signed and notarized macOS release for $TAG_NAME. Assets: DMG installer, updater tarball, signature, checksum, and latest.json."
+            NOTES="Signed and notarized macOS release for $TAG_NAME. Assets: DMG installer, PKG installer, updater tarball, signature, checksum, and latest.json."
           fi
 
           if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
@@ -284,6 +293,7 @@ jobs:
 
           gh release upload "$TAG_NAME" \
             .build-release/*.dmg \
+            .build-release/*.pkg \
             .build-release/*.app.tar.gz \
             .build-release/*.app.tar.gz.sig \
             .build-release/*.app.tar.gz.sha256 \

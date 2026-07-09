@@ -48,6 +48,8 @@ command -v shasum >/dev/null || fail "shasum not found"
 command -v python3 >/dev/null || fail "python3 not found"
 command -v lipo >/dev/null || fail "lipo not found"
 command -v spctl >/dev/null || fail "spctl not found"
+command -v pkgbuild >/dev/null || fail "pkgbuild not found"
+command -v productbuild >/dev/null || fail "productbuild not found"
 [[ -x "$PLISTBUDDY" ]] || fail "PlistBuddy not found at $PLISTBUDDY"
 
 if release_truthy "$RELEASE_SIGNING_REQUIRED"; then
@@ -194,6 +196,13 @@ info "Creating DMG: $DMG"
 hdiutil create -volname "$DISPLAY_NAME" -srcfolder "$APP" -ov -format UDZO "$DMG"
 hdiutil verify "$DMG"
 
+info "Creating PKG installer"
+PKG="$(
+  PKG_OUT_DIR="$BUILD_DIR"   INSTALLER_SIGN_IDENTITY="${INSTALLER_SIGN_IDENTITY:-}"   NOTARY_KEYCHAIN_PROFILE="${NOTARY_KEYCHAIN_PROFILE:-}"     "$ROOT/scripts/package-macos-pkg.sh" "$APP" | tail -n 1
+)"
+[[ -f "$PKG" ]] || fail "PKG was not produced (got: $PKG)"
+info "PKG artifact: $PKG"
+
 info "Creating updater tarball and checksum"
 (cd "$BUILD_DIR" && tar -czf "$UPDATER_TARBALL" "$APP_NAME.app")
 shasum -a 256 "$UPDATER_TARBALL" > "$UPDATER_SHA"
@@ -248,9 +257,10 @@ if failed:
     raise SystemExit("ERROR: latest.json validation failed: " + ", ".join(failed))
 PY
 
-ARTIFACTS=("$DMG" "$UPDATER_TARBALL" "$UPDATER_SIG" "$UPDATER_SHA" "$LATEST_JSON")
+ARTIFACTS=("$DMG" "$PKG" "$UPDATER_TARBALL" "$UPDATER_SIG" "$UPDATER_SHA" "$LATEST_JSON")
 ARTIFACT_PURPOSES=(
   "macOS installer DMG"
+  "macOS installer PKG"
   "Tauri-compatible updater payload"
   "Updater minisign/Tauri signature"
   "Updater payload SHA-256 checksum"
@@ -268,7 +278,7 @@ for artifact_index in "${!ARTIFACTS[@]}"; do
 done
 
 export RELEASE_NAME="${RELEASE_NAME:-$DISPLAY_NAME $RELEASE_TAG_VALUE}"
-export RELEASE_NOTES="${RELEASE_NOTES:-Archive-derived macOS release for $DISPLAY_NAME $VERSION. Assets: DMG installer, updater tarball, updater signature, checksum, and latest.json manifest.}"
+export RELEASE_NOTES="${RELEASE_NOTES:-Archive-derived macOS release for $DISPLAY_NAME $VERSION. Assets: DMG installer, PKG installer, updater tarball, updater signature, checksum, and latest.json manifest.}"
 if release_truthy "$RELEASE_UPLOAD_ENABLED" || release_truthy "$RELEASE_UPLOAD_DRY_RUN_ENABLED"; then
   release_upload_artifacts "$RELEASE_UPLOAD_DRY_RUN_ENABLED" "$RELEASE_TAG_VALUE" "${ARTIFACTS[@]}"
 else
@@ -278,6 +288,7 @@ fi
 info "Release artifacts"
 echo "$APP"
 echo "$DMG"
+echo "$PKG"
 echo "$UPDATER_TARBALL"
 echo "$UPDATER_SIG"
 echo "$UPDATER_SHA"

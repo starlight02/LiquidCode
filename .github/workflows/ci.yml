@@ -125,6 +125,7 @@ jobs:
           name: LiquidCode-macOS-adhoc-arm64
           path: |
             .build-release/*.dmg
+            .build-release/*.pkg
             .build-release/*.app.tar.gz
             .build-release/*.sha256
             .build-release/*.app.tar.gz.sig

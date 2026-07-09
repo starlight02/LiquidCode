@@ -197,6 +197,19 @@ validate_release_artifact_matrix() {
     fi
   done
 
+  # PKG may be Developer ID Installer signed or unsigned/ad-hoc.
+  found=0
+  for artifact in "$@"; do
+    base="$(basename "$artifact")"
+    if [[ "$base" == "LiquidCode-$version.pkg" || "$base" == "LiquidCode-$version-unsigned.pkg" ]]; then
+      found=1
+      break
+    fi
+  done
+  if [[ "$found" != "1" ]]; then
+    missing+=("LiquidCode-$version.pkg")
+  fi
+
   if [[ "${#missing[@]}" -gt 0 ]]; then
     fail "Incomplete release artifact matrix for $tag; missing: ${missing[*]}"
   fi

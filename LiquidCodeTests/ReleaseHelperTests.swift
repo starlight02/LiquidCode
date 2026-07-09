@@ -29,6 +29,7 @@ final class ReleaseHelperTests: XCTestCase {
         let fixture = try ReleaseFixture()
         let artifacts = [
             "LiquidCode-0.1.0.dmg",
+            "LiquidCode-0.1.0.pkg",
             "LiquidCode-0.1.0.app.tar.gz",
             "LiquidCode-0.1.0.app.tar.gz.sig",
             "LiquidCode-0.1.0.app.tar.gz.sha256",
