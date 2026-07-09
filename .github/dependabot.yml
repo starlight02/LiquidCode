@@ -7,9 +7,10 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
-      time: "09:17"
+      interval: daily
+      # Run early-but-not-on-the-hour to avoid the global Dependabot fleet queue.
+      time: "03:17"
+      timezone: Asia/Shanghai
     open-pull-requests-limit: 5
     labels:
       - dependencies

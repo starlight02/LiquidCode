@@ -23,7 +23,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Select Xcode with modern macOS SDK
         run: ./scripts/ci-select-xcode.sh
@@ -73,7 +73,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Select Xcode with modern macOS SDK
         run: ./scripts/ci-select-xcode.sh
@@ -235,11 +235,12 @@ jobs:
         run: ./scripts/verify-release-artifacts.sh
 
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: LiquidCode-macOS-${{ env.SIGNING_MODE }}
           path: |
             .build-release/*.pkg
+          include-hidden-files: true
           if-no-files-found: error
 
       - name: Attach artifacts to GitHub Release

@@ -22,7 +22,7 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Select Xcode with modern macOS SDK
         run: ./scripts/ci-select-xcode.sh
@@ -46,13 +46,13 @@ jobs:
     runs-on: macos-26
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Select Xcode with modern macOS SDK
         run: ./scripts/ci-select-xcode.sh
 
       - name: Cache DerivedData
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .xcode-derived
           key: xcode-derived-${{ runner.os }}-${{ hashFiles('LiquidCode.xcodeproj/project.pbxproj', 'LiquidCode/**/*.swift', 'LiquidCodeTests/**/*.swift', 'Config/**') }}
@@ -79,13 +79,13 @@ jobs:
       - test
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Select Xcode with modern macOS SDK
         run: ./scripts/ci-select-xcode.sh
 
       - name: Cache DerivedData
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .xcode-derived
           key: xcode-derived-release-${{ runner.os }}-${{ hashFiles('LiquidCode.xcodeproj/project.pbxproj', 'LiquidCode/**/*.swift', 'Config/**') }}
@@ -121,10 +121,11 @@ jobs:
         run: ./scripts/verify-release-artifacts.sh
 
       - name: Upload ad-hoc PKG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: LiquidCode-macOS-adhoc-arm64-pkg
           path: |
             .build-release/*.pkg
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
