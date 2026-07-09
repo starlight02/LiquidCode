@@ -181,7 +181,7 @@ jobs:
 
       - name: Download the unsigned PKG built by CI
         if: steps.guard.outputs.fresh == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: LiquidCode-macOS-adhoc-arm64-pkg
           path: release-assets
