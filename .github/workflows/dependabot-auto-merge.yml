@@ -12,6 +12,12 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Dependabot's job is to bump action pins inside .github/workflows/*.yml; merging
+  # such PRs requires the separate `workflows` scope (GitHub refuses otherwise with
+  # "without workflows permission"). Repo default is read, so declare it here for
+  # this auto-merge workflow only — least-privilege scoped to Dependabot PRs that
+  # already passed the CI PKG build gate.
+  workflows: write
   actions: read
   checks: read
 
