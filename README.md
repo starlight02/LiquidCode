@@ -121,6 +121,30 @@ xcodebuild \
   build
 ```
 
+
+## Continuous Integration
+
+GitHub Actions workflows:
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `CI` (`.github/workflows/ci.yml`) | PR / push to main | Quality gate, unit tests, unsigned arm64 release smoke + artifact upload |
+| `Release` (`.github/workflows/release.yml`) | `v*` tags / published release / manual | Full universal release (signed+notarized when secrets are present, otherwise unsigned) |
+
+Local helpers used by CI:
+
+```bash
+./scripts/verify-version.sh              # MARKETING_VERSION / build number
+./scripts/verify-version.sh --tag v0.1.0 # tag must match MARKETING_VERSION
+./scripts/ci-select-xcode.sh             # pick Xcode with macOS 26/27 SDK
+./scripts/build-release.sh               # archive → DMG + updater payload + latest.json
+./scripts/verify-release-artifacts.sh    # post-build codesign/lipo/DMG/latest.json checks
+```
+
+Signing mode is all-or-nothing (same rule as alma-onebot-bridge): either configure
+every Apple + updater signing secret, or configure none and accept unsigned
+Gatekeeper warnings. Partial secret sets fail the Release workflow.
+
 ## Acknowledgements
 
 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE): A Beautiful Desktop Client for Claude Code

@@ -21,6 +21,7 @@ RELEASE_SIGNING_REQUIRED="${RELEASE_SIGNING_REQUIRED:-0}"
 RELEASE_HELPERS="$ROOT/scripts/release-helpers.sh"
 # shellcheck source=scripts/release-helpers.sh
 source "$RELEASE_HELPERS"
+export COPYFILE_DISABLE=1
 
 if [[ -f "$ROOT/.env" ]]; then
   set -a
@@ -88,6 +89,18 @@ if release_truthy "$RELEASE_CREATE_DRAFT_ENABLED"; then
 fi
 
 cd "$ROOT"
+
+if [[ "$RELEASE_TAG_VALUE" =~ ^v[0-9] ]]; then
+  info "Verifying MARKETING_VERSION against RELEASE_TAG=$RELEASE_TAG_VALUE"
+  "$ROOT/scripts/verify-version.sh" --tag "$RELEASE_TAG_VALUE"
+else
+  info "Verifying MARKETING_VERSION metadata"
+  "$ROOT/scripts/verify-version.sh"
+  if [[ -n "$RELEASE_TAG_VALUE" ]]; then
+    info "RELEASE_TAG=$RELEASE_TAG_VALUE is not a v* version tag; skipping tag/version equality check"
+  fi
+fi
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
@@ -107,7 +120,37 @@ xcodebuild \
 
 [[ -d "$ARCHIVE_APP" ]] || fail "Xcode archive did not produce $ARCHIVE_APP"
 ditto "$ARCHIVE_APP" "$APP"
+xattr -cr "$APP" 2>/dev/null || true
+find "$APP" \( -name ".DS_Store" -o -name "._*" \) -delete 2>/dev/null || true
 [[ -f "$PLIST" ]] || fail "Archived app is missing Info.plist: $PLIST"
+
+# Embed git provenance (mirrors alma-onebot-bridge macOS packaging).
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git_commit="$(git rev-parse --short=12 HEAD)"
+  git_version="$(git describe --tags --always 2>/dev/null || printf '%s' "$git_commit")"
+  git_dirty=false
+  if ! git diff --quiet --ignore-submodules -- || ! git diff --cached --quiet --ignore-submodules --; then
+    git_dirty=true
+    git_version="$git_version-dirty"
+  fi
+else
+  git_commit=unknown
+  git_version=unknown
+  git_dirty=false
+fi
+set_plist_string() {
+  local key="$1"
+  local value="$2"
+  if "$PLISTBUDDY" -c "Print :$key" "$PLIST" >/dev/null 2>&1; then
+    "$PLISTBUDDY" -c "Set :$key $value" "$PLIST"
+  else
+    "$PLISTBUDDY" -c "Add :$key string $value" "$PLIST"
+  fi
+}
+set_plist_string "LiquidCodeGitCommit" "$git_commit"
+set_plist_string "LiquidCodeGitVersion" "$git_version"
+set_plist_string "LiquidCodeGitDirty" "$git_dirty"
+info "Embedded git provenance: $git_commit ($git_version)"
 [[ -f "$SIDECAR" ]] || fail "Archived app is missing sidecar from Xcode Resources phase: $SIDECAR_RELATIVE"
 chmod +x "$SIDECAR"
 

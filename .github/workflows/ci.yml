@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref; tag/release refs stay unique.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality (SwiftLint / SwiftFormat / Periphery)
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode with modern macOS SDK
+        run: ./scripts/ci-select-xcode.sh
+
+      - name: Install quality tools
+        run: |
+          set -euo pipefail
+          brew bundle install --file=Brewfile
+          command -v swiftlint
+          command -v swiftformat
+          command -v periphery
+
+      - name: Verify version metadata
+        run: ./scripts/verify-version.sh
+
+      - name: Run quality check
+        run: ./scripts/quality-check.sh
+
+  test:
+    name: Xcode unit tests
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode with modern macOS SDK
+        run: ./scripts/ci-select-xcode.sh
+
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: .xcode-derived
+          key: xcode-derived-${{ runner.os }}-${{ hashFiles('LiquidCode.xcodeproj/project.pbxproj', 'LiquidCode/**/*.swift', 'LiquidCodeTests/**/*.swift', 'Config/**') }}
+          restore-keys: |
+            xcode-derived-${{ runner.os }}-
+
+      - name: Run unit tests
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project LiquidCode.xcodeproj \
+            -scheme LiquidCode \
+            -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath .xcode-derived \
+            CODE_SIGNING_ALLOWED=NO
+
+  build:
+    name: Release build (unsigned)
+    runs-on: macos-26
+    needs:
+      - quality
+      - test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode with modern macOS SDK
+        run: ./scripts/ci-select-xcode.sh
+
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: .xcode-derived
+          key: xcode-derived-release-${{ runner.os }}-${{ hashFiles('LiquidCode.xcodeproj/project.pbxproj', 'LiquidCode/**/*.swift', 'Config/**') }}
+          restore-keys: |
+            xcode-derived-release-${{ runner.os }}-
+
+      - name: Xcode Release build
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project LiquidCode.xcodeproj \
+            -scheme LiquidCode \
+            -configuration Release \
+            -derivedDataPath .xcode-derived \
+            -destination 'generic/platform=macOS' \
+            build \
+            ARCHS="arm64" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Archive-derived ad-hoc release artifacts (arm64 smoke)
+        env:
+          RELEASE_SIGNING_REQUIRED: "0"
+          LIQUIDCODE_ARCHS: "arm64"
+          RELEASE_UPLOAD: "0"
+          RELEASE_UPLOAD_DRY_RUN: "0"
+        run: ./scripts/build-release.sh
+
+      - name: Verify ad-hoc release artifacts
+        env:
+          REQUIRE_NOTARIZED: "0"
+          LIQUIDCODE_ARCHS: "arm64"
+        run: ./scripts/verify-release-artifacts.sh
+
+      - name: Upload ad-hoc smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: LiquidCode-macOS-adhoc-arm64
+          path: |
+            .build-release/*.dmg
+            .build-release/*.app.tar.gz
+            .build-release/*.sha256
+            .build-release/*.app.tar.gz.sig
+            .build-release/latest.json
+          if-no-files-found: error
+          retention-days: 7

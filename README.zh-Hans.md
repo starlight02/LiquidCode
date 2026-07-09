@@ -118,6 +118,29 @@ xcodebuild \
   build
 ```
 
+
+## 持续集成
+
+GitHub Actions：
+
+| Workflow | 触发 | 作用 |
+|---|---|---|
+| `CI` | PR / push main | 质量门禁、单测、未签名 arm64 release smoke |
+| `Release` | `v*` tag / release / 手动 | 通用二进制发布（有 secrets 则签名+公证，否则 unsigned） |
+
+本地脚本：
+
+```bash
+./scripts/verify-version.sh
+./scripts/verify-version.sh --tag v0.1.0
+./scripts/ci-select-xcode.sh
+./scripts/build-release.sh
+./scripts/verify-release-artifacts.sh
+```
+
+签名模式与 alma-onebot-bridge 一致：要么配齐全部 Apple + updater secrets，要么
+全部不配走 unsigned；半配会让 Release workflow 失败。
+
 ## 致谢
 
 [TOKENICODE](https://github.com/yiliqi78/TOKENICODE)：Claude Code 精美桌面客户端
