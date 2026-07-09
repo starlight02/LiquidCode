@@ -504,3 +504,14 @@
 "Plan ready for review" = "计划待审阅";
 "Turn completed" = "回合完成";
 "Claude finished a turn" = "Claude 完成了一轮回复";
+"Diffs" = "差异";
+"Diff Review" = "差异审查";
+"Code edits from this session, grouped by file." = "本会话中的代码编辑，按文件分组。";
+"No diffs yet" = "暂无差异";
+"Edit, Write, and apply_patch tool calls will appear here." = "Edit、Write 与 apply_patch 工具调用会显示在这里。";
+"Open Full Diff" = "打开完整差异";
+"Open file" = "打开文件";
+"Copy" = "复制";
+"Diff copied to clipboard" = "差异已复制到剪贴板";
+"No session selected" = "未选择会话";
+"Open a chat to review code edits." = "打开对话以审查代码编辑。";

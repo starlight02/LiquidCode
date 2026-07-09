@@ -19,6 +19,7 @@ func toolPreviewMaxHeight(fontSize: CGFloat, verticalPadding: CGFloat = 20, visi
 }
 
 struct ToolDisplayItemView: View {
+    @EnvironmentObject var model: AppModel
     let item: TranscriptToolItem
     var compact: Bool
     var autoExpanded: Bool
@@ -153,6 +154,15 @@ struct ToolDisplayItemView: View {
                         ToolSectionView(title: L("TARGET"), text: file, monospace: true, tint: tint)
                     }
                     ToolDiffSectionView(diff: diff, tint: tint)
+                    Button {
+                        let path = payloadValue("file_path") ?? payloadValue("path")
+                        model.openDiffReview(path: path)
+                    } label: {
+                        Label(L("Open Full Diff"), systemImage: "arrow.up.right.square")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .pointingHandCursor()
                 }
             } else if let command = payloadValue("command") {
                 ToolSectionView(title: L("COMMAND"), text: command, monospace: true, tint: tint)
@@ -680,6 +690,17 @@ struct PermissionInlineCardView: View {
                     .onAppear { if editedInput.isEmpty {
                         editedInput = permission.inputJSON
                     } } }
+            if toolPayloadDiff(permission.inputJSON, toolName: permission.toolName) != nil {
+                Button {
+                    let path = SessionDiffBuilder.filePath(in: permission.inputJSON)
+                    model.openDiffReview(path: path)
+                } label: {
+                    Label(L("Open Full Diff"), systemImage: "doc.text.magnifyingglass")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .pointingHandCursor()
+            }
             HStack {
                 Button(L("Deny"), role: .destructive) { model.respondPermission(permission, allow: false) }
                     .buttonStyle(.plain)
@@ -1879,6 +1900,7 @@ struct SecondaryPanelView: View {
                 case .plan: PlanInspectorView()
                 case .agent: AgentInspectorView()
                 case .skills: SkillsPanelView()
+                case .diffs: SessionDiffReviewView()
                 }
             }
         }
@@ -2002,23 +2024,33 @@ struct FilePanelView: View {
     }
 
     private var thisTurnSummary: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "doc.badge.ellipsis")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.mint)
-            Text(L("This turn"))
-                .font(.caption.weight(.semibold))
-            Text(LF("%d changed", changedCount))
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Color.mint.opacity(0.16))
-                .foregroundStyle(.mint)
-                .clipShape(Capsule())
-            Spacer(minLength: 0)
+        Button {
+            model.openDiffReview()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.badge.ellipsis")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.mint)
+                Text(L("This turn"))
+                    .font(.caption.weight(.semibold))
+                Text(LF("%d changed", changedCount))
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color.mint.opacity(0.16))
+                    .foregroundStyle(.mint)
+                    .clipShape(Capsule())
+                Spacer(minLength: 0)
+                Text(L("Open Full Diff"))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .buttonStyle(.plain)
+        .pointingHandCursor()
     }
 
     private var emptyState: some View {

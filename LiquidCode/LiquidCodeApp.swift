@@ -159,6 +159,10 @@ struct LiquidCodeCommands: Commands {
         }
         CommandMenu(L("Panels")) {
             Button(L("Files")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .files }.keyboardShortcut("1", modifiers: [.command, .option])
+            Button(L("Diffs")) {
+                LiquidCodeMainWindowController.shared.show(model: model)
+                model.openDiffReview()
+            }.keyboardShortcut("6", modifiers: [.command, .option])
             Button(L("Skills")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .skills }.keyboardShortcut("2", modifiers: [.command, .option])
             Button(L("Plan")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .plan }.keyboardShortcut("5", modifiers: [.command, .option])
             Button("MCP") { LiquidCodeMainWindowController.shared.show(model: model); model.settingsTab = .mcp; model.settingsOpen = true }.keyboardShortcut(

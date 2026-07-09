@@ -504,3 +504,14 @@
 "Plan ready for review" = "Plan ready for review";
 "Turn completed" = "Turn completed";
 "Claude finished a turn" = "Claude finished a turn";
+"Diffs" = "Diffs";
+"Diff Review" = "Diff Review";
+"Code edits from this session, grouped by file." = "Code edits from this session, grouped by file.";
+"No diffs yet" = "No diffs yet";
+"Edit, Write, and apply_patch tool calls will appear here." = "Edit, Write, and apply_patch tool calls will appear here.";
+"Open Full Diff" = "Open Full Diff";
+"Open file" = "Open file";
+"Copy" = "Copy";
+"Diff copied to clipboard" = "Diff copied to clipboard";
+"No session selected" = "No session selected";
+"Open a chat to review code edits." = "Open a chat to review code edits.";

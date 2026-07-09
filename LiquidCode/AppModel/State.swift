@@ -147,6 +147,13 @@ extension AppModel {
         pendingPermissions.count
     }
 
+    /// Opens the Diff Review inspector and optionally focuses a file path.
+    func openDiffReview(path: String? = nil) {
+        focusedDiffPath = path
+        secondaryTab = .diffs
+        secondaryOpen = true
+    }
+
     func rebuildTranscriptDisplayItems(sessionID: String) {
         let messages = messagesBySession[sessionID] ?? []
         displayItemsBySession[sessionID] = TranscriptDisplayBuilder.displayItems(

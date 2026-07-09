@@ -67,6 +67,8 @@ final class AppModel: ObservableObject {
     @Published var usageBySession: [String: SessionUsage] = [:]
     // Current git branch for workingDirectory; nil when not a repo or unknown.
     @Published var gitBranch: String?
+    // Path to focus/scroll in Diff Review when opening from a tool or permission card.
+    @Published var focusedDiffPath: String?
     @Published var currentError: AppError?
 
     @Published var composerText = ""

@@ -185,6 +185,7 @@ enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
     case plan = "Plan"
     case agent = "Agents"
     case skills = "Skills"
+    case diffs = "Diffs"
     var id: String {
         rawValue
     }
@@ -199,6 +200,7 @@ enum SecondaryTab: String, CaseIterable, Identifiable, Sendable {
         case .plan: "list.bullet.rectangle"
         case .agent: "point.3.connected.trianglepath.dotted"
         case .skills: "sparkles"
+        case .diffs: "doc.text.magnifyingglass"
         }
     }
 }
