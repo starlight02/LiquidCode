@@ -1304,6 +1304,17 @@ struct SidebarView: View {
                     Text(group.name)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .lineLimit(1)
+                    if !group.path.isEmpty, group.path == model.workingDirectory, let branch = model.gitBranch, !branch.isEmpty {
+                        Text(branch)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.primary.opacity(0.06))
+                            .clipShape(Capsule())
+                            .help(L("Git branch"))
+                    }
                     Spacer(minLength: 4)
                     Text("\(group.sessions.count)")
                         .font(.caption2)
@@ -1605,6 +1616,9 @@ struct ChatPanelView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if let branch = model.gitBranch, !branch.isEmpty {
+                    GitBranchBadgeView(branch: branch)
+                }
                 Button {
                     model.secondaryTab = .agent
                     model.secondaryOpen = true
@@ -1939,6 +1953,26 @@ extension AppModel {
 }
 
 /// Compact session usage chip for the chat header. Hidden when the provider omits usage.
+struct GitBranchBadgeView: View {
+    let branch: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.caption2.weight(.semibold))
+            Text(branch)
+                .font(.caption.monospacedDigit())
+                .lineLimit(1)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(.thinMaterial)
+        .clipShape(Capsule())
+        .help(L("Git branch"))
+    }
+}
+
 struct UsageMeterView: View {
     let label: String
 

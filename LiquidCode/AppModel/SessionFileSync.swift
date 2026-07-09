@@ -114,5 +114,27 @@ extension AppModel {
             sessions[idx].preview = String(last.transcriptPreview.prefix(120))
             sessions[idx].modifiedAt = Date()
         }
+        maybeShowExternalSessionSyncTip()
+    }
+
+    /// One-shot product education: GUI follows external `claude --resume` live, but the reverse is a CLI hard limit.
+    func maybeShowExternalSessionSyncTip() {
+        guard !hasShownExternalSessionSyncTip else {
+            return
+        }
+        hasShownExternalSessionSyncTip = true
+        UserDefaults.standard.set(true, forKey: "liquidcode.shownExternalSessionSyncTip")
+        toastInfo(
+            "Following external Claude",
+            L("LiquidCode can follow an external claude --resume live. Messages you send here do not reverse-sync into an already-running external CLI process.")
+        )
+    }
+
+    /// Always-available help entry for the CLI session sync hard limit (Phase K).
+    func showCLISessionSyncHelp() {
+        toastInfo(
+            "CLI Session Sync Limits",
+            L("LiquidCode can follow an external claude --resume live. Messages you send here do not reverse-sync into an already-running external CLI process.")
+        )
     }
 }

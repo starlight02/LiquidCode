@@ -61,6 +61,7 @@ extension AppModel {
             startWatchingWorkspaceDeferred()
             reloadFileTreeDeferred()
             reloadMCPAndSkillsDeferred()
+            refreshGitBranch()
         }
 
         guard let id = selectedSessionID else { return }
@@ -371,11 +372,25 @@ extension AppModel {
             fileChangeBadges[path] = fileChangeBadges[path] ?? "M"
         }
         reloadFileTreeDeferred(debounceNanoseconds: 80_000_000)
+        // Branch switches (checkout) also arrive as FSEvents on .git — keep badge fresh.
+        refreshGitBranch()
     }
 
     func resetWorkspaceChangeState() {
         changedFiles.removeAll()
         fileChangeBadges.removeAll()
+    }
+
+    /// Probes the current working directory for a git branch. Fail-soft: non-git → nil.
+    func refreshGitBranch() {
+        let root = workingDirectory
+        guard !root.isEmpty else {
+            gitBranch = nil
+            return
+        }
+        // Run off the main actor-sensitive path cheaply; Shell.capture is synchronous
+        // and typically <10ms. Keep it on MainActor for simple @Published write.
+        gitBranch = GitStatusService.currentBranch(at: root)
     }
 
     private func appendMessage(_ message: ChatMessage, sessionID: String) {

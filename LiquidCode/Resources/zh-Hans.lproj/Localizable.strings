@@ -489,3 +489,9 @@
 "Waiting for permission…" = "等待权限批准…";
 "Waiting for your answer…" = "等待你的回答…";
 "Todo list cleared." = "待办列表已清空。";
+"Git branch" = "Git 分支";
+"This turn" = "本轮变更";
+"CLI Session Sync Limits" = "CLI 会话同步限制";
+"CLI Session Sync" = "CLI 会话同步";
+"Following external Claude" = "正在跟随外部 Claude";
+"LiquidCode can follow an external claude --resume live. Messages you send here do not reverse-sync into an already-running external CLI process." = "LiquidCode 可以实时跟随终端里的外部 claude --resume；你在 GUI 里发送的消息不会反向同步到已经在运行的外部 CLI 进程。";

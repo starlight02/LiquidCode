@@ -489,3 +489,9 @@
 "Waiting for permission…" = "Waiting for permission…";
 "Waiting for your answer…" = "Waiting for your answer…";
 "Todo list cleared." = "Todo list cleared.";
+"CLI Session Sync Limits" = "CLI Session Sync Limits";
+"Git branch" = "Git branch";
+"LiquidCode can follow an external claude --resume live. Messages you send here do not reverse-sync into an already-running external CLI process." = "LiquidCode can follow an external claude --resume live. Messages you send here do not reverse-sync into an already-running external CLI process.";
+"CLI Session Sync" = "CLI Session Sync";
+"Following external Claude" = "Following external Claude";
+"This turn" = "This turn";

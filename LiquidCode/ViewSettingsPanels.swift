@@ -1911,6 +1911,12 @@ struct FilePanelView: View {
             if model.workingDirectory.isEmpty {
                 emptyState
             } else {
+                if let branch = model.gitBranch, !branch.isEmpty {
+                    gitBranchRow(branch)
+                }
+                if changedCount > 0 {
+                    thisTurnSummary
+                }
                 if !deletedChangeBadges.isEmpty {
                     deletedBadges
                 }
@@ -1978,6 +1984,41 @@ struct FilePanelView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+    }
+
+    private func gitBranchRow(_ branch: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(branch)
+                .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .help(L("Git branch"))
+    }
+
+    private var thisTurnSummary: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.badge.ellipsis")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.mint)
+            Text(L("This turn"))
+                .font(.caption.weight(.semibold))
+            Text(LF("%d changed", changedCount))
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color.mint.opacity(0.16))
+                .foregroundStyle(.mint)
+                .clipShape(Capsule())
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
     }
 
     private var emptyState: some View {

@@ -152,6 +152,8 @@ struct LiquidCodeCommands: Commands {
             Button(L("Send")) { model.sendComposer() }.keyboardShortcut(.return, modifiers: [])
             Button(L("Interrupt")) { model.interrupt() }.keyboardShortcut(".")
             Picker(L("Mode"), selection: $model.settings.sessionMode) { ForEach(SessionMode.allCases) { Text($0.label).tag($0) } }
+            Divider()
+            Button(L("CLI Session Sync")) { model.showCLISessionSyncHelp() }
         }
         CommandMenu(L("Panels")) {
             Button(L("Files")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .files }.keyboardShortcut("1", modifiers: [.command, .option])

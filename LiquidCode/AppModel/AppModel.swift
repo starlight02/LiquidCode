@@ -65,6 +65,8 @@ final class AppModel: ObservableObject {
     @Published var todosBySession: [String: SessionTodoState] = [:]
     // Cumulative token/cost meter per session (from CLI result events). Not persisted.
     @Published var usageBySession: [String: SessionUsage] = [:]
+    // Current git branch for workingDirectory; nil when not a repo or unknown.
+    @Published var gitBranch: String?
     @Published var currentError: AppError?
 
     @Published var composerText = ""
@@ -129,6 +131,8 @@ final class AppModel: ObservableObject {
     // periphery:ignore
     let onboardingService = OnboardingService()
     var filePreviewCleanContent = ""
+    // One-shot education toast for external CLI → GUI jsonl follow (Phase K).
+    var hasShownExternalSessionSyncTip: Bool = UserDefaults.standard.bool(forKey: "liquidcode.shownExternalSessionSyncTip")
 
     init(
         engine: ClaudeEngine = ClaudeEngineFactory.makeDefault(),

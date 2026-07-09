@@ -68,6 +68,7 @@ extension AppModel {
         guard let id, let session = sessions.first(where: { $0.id == id }) else {
             cancelFilePreviewLoad()
             workingDirectory = ""
+            refreshGitBranch()
             fileTree = []
             selectedFilePath = nil
             filePreview = ""
@@ -170,6 +171,7 @@ extension AppModel {
             skills = []
             resetWorkspaceChangeState()
             startWatchingWorkspaceDeferred()
+            refreshGitBranch()
             reloadFileTreeDeferred()
             reloadMCPAndSkillsDeferred()
         } else {
@@ -233,6 +235,7 @@ extension AppModel {
             fileSystem.registerWorkspace(projectDir)
             rememberProject(projectDir)
             startWatchingWorkspaceDeferred()
+            refreshGitBranch()
             reloadFileTreeDeferred()
             reloadMCPAndSkillsDeferred()
         }
@@ -268,6 +271,7 @@ extension AppModel {
         fileSystem.registerWorkspace(projectDir)
         rememberProject(projectDir)
         startWatchingWorkspaceDeferred()
+        refreshGitBranch()
         reloadFileTreeDeferred()
         reloadMCPAndSkillsDeferred()
     }
@@ -311,6 +315,7 @@ extension AppModel {
         composerText = preservedText
         attachments = preservedAttachments
         workingDirectory = ""
+        refreshGitBranch()
         cancelFilePreviewLoad()
         fileTree = []
         selectedFilePath = nil
@@ -374,6 +379,7 @@ extension AppModel {
             rememberProject(projectDir)
         }
         startWatchingWorkspaceDeferred()
+        refreshGitBranch()
         reloadFileTreeDeferred()
         reloadMCPAndSkillsDeferred()
         if showToast {
