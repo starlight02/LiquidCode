@@ -1221,10 +1221,21 @@ struct SidebarView: View {
                 .pointingHandCursor()
                 .help(L("Open agent activity"))
             Spacer()
-            Button { model.settingsOpen = true } label: { Label(L("Settings"), systemImage: "gearshape") }
-                .buttonStyle(.plain)
-                .pointingHandCursor()
-                .help(L("Open settings"))
+            Button {
+                model.settingsTab = .general
+                withAnimation(.snappy(duration: 0.2)) {
+                    model.settingsOpen = true
+                }
+            } label: {
+                Label(L("Settings"), systemImage: "gearshape")
+                    .frame(minHeight: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .liquidGlassButton(radius: 10)
+            .pointingHandCursor()
+            .help(L("Open settings"))
+            .accessibilityLabel(L("Settings"))
         }
         .font(.system(size: 14, weight: .medium))
         .foregroundStyle(.secondary)

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 
 extension AppModel {
     func loadSessionGroups() {
@@ -72,8 +73,16 @@ extension AppModel {
         commandPaletteOpen = false
         switch command.kind {
         case .newChat: newChat()
-        case .settings: settingsOpen = true
-        case .mcpSettings: settingsTab = .mcp; settingsOpen = true
+        case .settings:
+            settingsTab = .general
+            withAnimation(.snappy(duration: 0.2)) {
+                settingsOpen = true
+            }
+        case .mcpSettings:
+            settingsTab = .mcp
+            withAnimation(.snappy(duration: 0.2)) {
+                settingsOpen = true
+            }
         case .panel(let tab): secondaryTab = tab; secondaryOpen = true
         case .mode(let mode): setComposerMode(mode)
         case .model(let model): setComposerModel(model)

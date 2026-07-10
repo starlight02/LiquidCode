@@ -2567,6 +2567,7 @@ struct SettingsPanelView: View {
             Color.black
                 .opacity(0.26)
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
                 .pointingHandCursor()
                 .onTapGesture { model.settingsOpen = false }
             GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 30) {
@@ -2598,7 +2599,10 @@ struct SettingsPanelView: View {
             }
             .padding(32)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        .zIndex(1000)
     }
 
     private var settingsHeader: some View {

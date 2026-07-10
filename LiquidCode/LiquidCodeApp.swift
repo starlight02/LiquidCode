@@ -106,7 +106,16 @@ struct LiquidCodeApp: App {
 
     var body: some Scene {
         Settings {
-            EmptyView()
+            // Keep the Settings scene registered for macOS menu plumbing, but immediately
+            // route into the in-app settings overlay instead of showing an empty window.
+            Color.clear
+                .frame(width: 1, height: 1)
+                .onAppear {
+                    LiquidCodeMainWindowController.shared.show(model: appDelegate.model)
+                    appDelegate.model.settingsTab = .general
+                    appDelegate.model.settingsOpen = true
+                    NSApp.keyWindow?.close()
+                }
         }
         .commands {
             LiquidCodeCommands(model: appDelegate.model)
@@ -139,7 +148,10 @@ struct LiquidCodeCommands: Commands {
         CommandGroup(replacing: .appSettings) {
             Button(L("Settings")) {
                 LiquidCodeMainWindowController.shared.show(model: model)
-                model.settingsOpen = true
+                model.settingsTab = .general
+                withAnimation(.snappy(duration: 0.2)) {
+                    model.settingsOpen = true
+                }
             }
             .keyboardShortcut(",")
         }

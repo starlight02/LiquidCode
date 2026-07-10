@@ -19,41 +19,46 @@ struct CommandPaletteView: View {
     @FocusState private var queryFocused: Bool
 
     var body: some View {
-        Color.black
-            .opacity(0.18)
-            .ignoresSafeArea()
-            .pointingHandCursor()
-            .onTapGesture { close() }
-        GlassPanel(role: .commandPalette, prominence: .prominent, cornerRadius: 22) {
-            VStack(spacing: 0) {
-                TextField(L("Type a command or session action"), text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.title3)
-                    .padding(16)
-                    .focused($queryFocused)
-                    .accessibilityLabel(L("Command Palette"))
-                    .onKeyPress(.downArrow) {
-                        moveSelection(by: 1)
-                        return .handled
-                    }
-                    .onKeyPress(.upArrow) {
-                        moveSelection(by: -1)
-                        return .handled
-                    }
-                    .onKeyPress(.return) {
-                        runSelectedCommand()
-                        return .handled
-                    }
-                    .onKeyPress(.escape) {
-                        close()
-                        return .handled
-                    }
-                    .onChange(of: query) { _, _ in selectedIndex = 0 }
-                Divider()
-                commandList
+        ZStack {
+            Color.black
+                .opacity(0.18)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .pointingHandCursor()
+                .onTapGesture { close() }
+            GlassPanel(role: .commandPalette, prominence: .prominent, cornerRadius: 22) {
+                VStack(spacing: 0) {
+                    TextField(L("Type a command or session action"), text: $query)
+                        .textFieldStyle(.plain)
+                        .font(.title3)
+                        .padding(16)
+                        .focused($queryFocused)
+                        .accessibilityLabel(L("Command Palette"))
+                        .onKeyPress(.downArrow) {
+                            moveSelection(by: 1)
+                            return .handled
+                        }
+                        .onKeyPress(.upArrow) {
+                            moveSelection(by: -1)
+                            return .handled
+                        }
+                        .onKeyPress(.return) {
+                            runSelectedCommand()
+                            return .handled
+                        }
+                        .onKeyPress(.escape) {
+                            close()
+                            return .handled
+                        }
+                        .onChange(of: query) { _, _ in selectedIndex = 0 }
+                    Divider()
+                    commandList
+                }
+                .frame(width: 620, height: 520)
             }
-            .frame(width: 620, height: 520)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
         .onAppear {
             selectedIndex = 0
             Task { @MainActor in queryFocused = true }

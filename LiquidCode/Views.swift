@@ -86,18 +86,24 @@ struct AppShellView: View {
 
                 if model.settingsOpen {
                     SettingsPanelView()
+                        .zIndex(1000)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
                 if model.commandPaletteOpen {
                     CommandPaletteView()
+                        .zIndex(1001)
                 }
                 if let toast = model.toast {
                     ToastBannerView(toast: toast)
+                        .zIndex(1100)
                 }
                 if model.changelogOpen {
                     ChangelogSheetView()
+                        .zIndex(1002)
                 }
                 if let lightbox = model.imageLightbox {
                     ImageLightboxOverlayView(content: lightbox) { model.imageLightbox = nil }
+                        .zIndex(1200)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
