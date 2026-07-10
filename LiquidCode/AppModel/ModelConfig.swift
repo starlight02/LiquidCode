@@ -130,9 +130,18 @@ extension AppModel {
         commandPaletteOpen = false
         changelogOpen = false
         imageLightbox = nil
-        // Open immediately so the control feels responsive. Backdrop dismiss is gated in
-        // SettingsPanelView until after the opening click ends.
-        settingsOpen = true
+        // Already open: tab switch is enough; avoid re-inserting the backdrop mid-gesture.
+        if settingsOpen {
+            return
+        }
+        // Defer past the current mouse-up. Synchronously setting settingsOpen inserts the
+        // dismiss backdrop into the same click sequence, which either:
+        // 1) auto-dismisses Settings (flash-close), or
+        // 2) races .disabled(settingsOpen) on the shell and makes the button feel dead.
+        // Backdrop dismiss is also gated in SettingsPanelView until after appear.
+        DispatchQueue.main.async { [weak self] in
+            self?.settingsOpen = true
+        }
     }
 
     func closeSettings() {

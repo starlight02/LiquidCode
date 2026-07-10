@@ -1342,6 +1342,11 @@ struct ChangelogEntry: Identifiable, Codable, Hashable, Sendable {
 }
 
 let bundledChangelog: [ChangelogEntry] = [
+    .init(version: "0.1.9", date: "2026-07-10", items: [
+        "Keep the sidebar glass silhouette while moving Agents/Settings out of the glassEffect hit tree.",
+        "Defer Settings open past the current mouse-up so the dismiss backdrop no longer eats the same click.",
+        "Lock Settings hit-testing invariants with regression tests so the dead-button loop stops recurring."
+    ]),
     .init(version: "0.1.8", date: "2026-07-10", items: [
         "Fix Settings button hit-testing and open/dismiss race in the sidebar footer.",
         "Keep Agents/Settings inside the unified glass sidebar while moving the resize strip to the gutter.",

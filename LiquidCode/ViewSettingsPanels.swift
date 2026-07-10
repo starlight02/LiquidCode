@@ -2611,7 +2611,8 @@ struct SettingsPanelView: View {
         .onAppear {
             allowsBackdropDismiss = false
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(350))
+                // Cover open animation + deferred openSettings main.async hop.
+                try? await Task.sleep(for: .milliseconds(400))
                 allowsBackdropDismiss = true
             }
         }

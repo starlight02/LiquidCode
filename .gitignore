@@ -1,6 +1,7 @@
 .build/
 DerivedData/
 .xcode-derived/
+.xcode-derived*/
 .build-release/
 *.xcresult
 .swiftpm/

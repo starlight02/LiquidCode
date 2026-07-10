@@ -38,11 +38,20 @@ struct PaneResizeHandle<G: Gesture>: View {
     }
 }
 
+/// Layout constants for the sidebar Agents/Settings footer.
+/// Keep in sync with AppShellView's PaneResizeHandle bottomExclusion.
+enum SidebarFooterMetrics {
+    /// Divider + vertical padding + control row. Used to reserve space under ScrollView
+    /// and to exclude the resize strip from the footer hit band.
+    static let reservedHeight: CGFloat = 72
+}
+
 private struct SidebarFooterButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .padding(.horizontal, 2)
-            .padding(.vertical, 4)
+            .labelStyle(.titleAndIcon)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.55 : 1)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
@@ -1105,10 +1114,12 @@ struct SidebarView: View {
             workingDirectory: model.workingDirectory,
             selectedSessionID: model.selectedSessionID
         )
-        // Footer must live inside the same GlassPanel as the session list — splitting it
-        // creates a detached strip that breaks the liquid glass silhouette.
-        // Hit-testing safety comes from: non-interactive glass strokes, gutter resize handle,
-        // and an explicit footer contentShape / button styles.
+        // Glass silhouette must stay one panel, but footer controls must NOT live inside
+        // the glassEffect content tree. macOS 26 glass expands edge hit-testing and
+        // swallows the trailing Settings control while Agents often still works.
+        // Layout: GlassPanel paints the full sidebar; footer is an overlay sibling so it
+        // keeps the unified look while owning real button hits. Resize lives in the gutter
+        // (AppShellView) with bottomExclusion covering this footer band.
         GlassPanel(role: .sidebar, prominence: .regular, cornerRadius: LiquidGlassToken.panelRadius) {
             VStack(spacing: 0) {
                 sidebarHeader
@@ -1141,9 +1152,21 @@ struct SidebarView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                 }
+                // Reserve the footer band so session rows never sit under the overlay.
+                Color.clear
+                    .frame(height: SidebarFooterMetrics.reservedHeight)
+                    .allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            VStack(spacing: 0) {
                 Divider().opacity(0.5)
                 sidebarFooter
             }
+            // Transparent fill keeps liquid glass visible underneath while owning hits.
+            .background(Color.clear)
+            .contentShape(Rectangle())
+            .zIndex(50)
         }
         .sheet(item: $renameTarget) { session in
             VStack(alignment: .leading, spacing: 16) {
@@ -1259,6 +1282,7 @@ struct SidebarView: View {
             .buttonStyle(SidebarFooterButtonStyle())
             .pointingHandCursor()
             .help(L("Open agent activity"))
+            .accessibilityLabel(L("Agents"))
 
             Spacer(minLength: 8)
 
@@ -1270,14 +1294,17 @@ struct SidebarView: View {
             .buttonStyle(SidebarFooterButtonStyle())
             .pointingHandCursor()
             .help(L("Open settings"))
+            .accessibilityLabel(L("Settings"))
+            // Trailing control is the one glass edge chrome historically steals.
+            .zIndex(2)
         }
         .font(.system(size: 14, weight: .medium))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
         // Expand the interactive hit box without changing the quiet text look.
         .contentShape(Rectangle())
-        .zIndex(50)
     }
 
     @ViewBuilder private var taskGroupsHeader: some View {

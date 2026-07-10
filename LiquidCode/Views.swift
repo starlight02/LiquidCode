@@ -39,7 +39,7 @@ struct AppShellView: View {
                         PaneResizeHandle(
                             title: "Resize sidebar",
                             topExclusion: 12,
-                            bottomExclusion: 72,
+                            bottomExclusion: SidebarFooterMetrics.reservedHeight,
                             dragGesture: sidebarResizeGesture
                         )
                         .frame(width: 8)
