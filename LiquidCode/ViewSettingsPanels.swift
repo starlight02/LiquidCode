@@ -2635,9 +2635,9 @@ struct SettingsPanelView: View {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("LiquidCode v0.1.0")
+                    Text("LiquidCode v\(UpdateService.currentAppVersion())")
                         .font(.caption.weight(.semibold))
-                    Text(L("Interaction parity"))
+                    Text(LF("Build %@", UpdateService.currentAppBuild()))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -2666,7 +2666,17 @@ struct SettingsPanelView: View {
             }
             Spacer()
             Button(L("Changelog")) { model.showChangelog() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
-            Button(L("Check CLI")) { model.refreshCLIStatus() }.buttonStyle(.plain).liquidGlassButton(radius: 10)
+            Button { model.refreshCLIStatus() } label: {
+                HStack(spacing: 6) {
+                    if model.cliStatusRefreshing {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(model.cliStatusRefreshing ? L("Checking…") : L("Check CLI"))
+                }
+            }
+            .buttonStyle(.plain)
+            .liquidGlassButton(radius: 10)
+            .disabled(model.cliStatusRefreshing || model.cliOperationInProgress)
         }
         .font(.caption)
         .padding(.horizontal, 24)
@@ -2695,25 +2705,13 @@ struct SettingsPanelView: View {
                             .liquidGlassButton(active: model.settings.theme == theme, radius: 16)
                         }
                     }
-                    Text(L("Accent"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 10) {
-                        ForEach(AccentTheme.allCases) { accent in
-                            Button { model.settings.accent = accent; model.persistSettings() } label: {
-                                HStack { Circle().fill(accent.color).frame(width: 16, height: 16); Text(L(accent.rawValue.capitalized)); Spacer() }
-                            }
-                            .buttonStyle(.plain)
-                            .liquidGlassButton(active: model.settings.accent == accent, radius: 14)
-                        }
-                    }
                 }
             }
 
             SettingsSectionCard(title: L("Notifications"), subtitle: L("Alert when Claude needs you while LiquidCode is in the background"), icon: "bell") {
                 Toggle(isOn: Binding(
                     get: { model.settings.notificationsEnabled },
-                    set: { model.settings.notificationsEnabled = $0; model.persistSettings() }
+                    set: { model.setBackgroundNotificationsEnabled($0) }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L("Background notifications"))
@@ -2724,33 +2722,66 @@ struct SettingsPanelView: View {
                     }
                 }
                 .toggleStyle(.switch)
+                Text(L("macOS will ask for notification permission the first time this is enabled."))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
 
-            SettingsSectionCard(title: L("Updates"), subtitle: L("Check the release feed and verify signed downloads"), icon: "arrow.down.app") {
-                VStack(alignment: .leading, spacing: 10) {
-                    TextField(L("latest.json URL (optional)"), text: Binding(
-                        get: { model.settings.updateManifestURL },
-                        set: { model.settings.updateManifestURL = $0; model.persistSettings() }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+            SettingsSectionCard(title: L("Updates"), subtitle: L("Check GitHub Releases for new versions"), icon: "arrow.down.app") {
+                VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
-                        Button(model.appUpdateChecking ? L("Checking…") : L("Check for Updates")) {
-                            model.checkForAppUpdates(openDownload: false)
+                        Button {
+                            model.checkForAppUpdates()
+                        } label: {
+                            HStack(spacing: 7) {
+                                if model.appUpdateChecking {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                                Text(model.appUpdateChecking ? L("Checking…") : L("Check for Updates"))
+                            }
                         }
                         .buttonStyle(.plain)
                         .liquidGlassButton(active: true, radius: 10)
                         .disabled(model.appUpdateChecking)
-                        if case .available(_, let latest, _) = model.appUpdateStatus {
-                            Button(LF("Download %@", latest)) {
-                                model.checkForAppUpdates(openDownload: true)
+                        if model.appUpdateRelease != nil {
+                            Button {
+                                model.openAppUpdateRelease()
+                            } label: {
+                                Label(L("Open GitHub Release"), systemImage: "safari")
                             }
                             .buttonStyle(.plain)
                             .liquidGlassButton(radius: 10)
                         }
+                        Spacer()
+                        Text(LF("Current version %@ (%@)", UpdateService.currentAppVersion(), UpdateService.currentAppBuild()))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                     Text(updateStatusLabel(model.appUpdateStatus))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let release = model.appUpdateRelease {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(release.displayName)
+                                .font(.callout.weight(.semibold))
+                            if let publishedAt = release.publishedAt {
+                                Text(LF("Published %@", publishedAt.formatted(date: .abbreviated, time: .omitted)))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            if !release.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(release.body)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(5)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             }
 
@@ -2819,9 +2850,22 @@ struct SettingsPanelView: View {
                             }
                         }
                         Spacer()
+                        if server.source == "LiquidCode" {
+                            Toggle(isOn: Binding(
+                                get: { server.enabled },
+                                set: { model.setMCPServerEnabled(server, enabled: $0) }
+                            )) {
+                                Text(L("Enabled"))
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .help(server.enabled ? L("Disable MCP server") : L("Enable MCP server"))
+                        }
                         Button(L("Test")) { model.testMCPServer(server) }
                             .buttonStyle(.plain)
                             .liquidGlassButton(radius: 10)
+                            .disabled(server.runtimeStatus == .testing)
                         if server.source == "LiquidCode" {
                             Button(L("Edit")) {
                                 if let result = promptForMCPServer(title: L("Edit MCP server"), defaultName: server.name, defaultCommand: mcpCommandLine(server)) {
@@ -2859,8 +2903,8 @@ struct SettingsPanelView: View {
         switch status {
         case .upToDate(let current):
             return LF("Up to date · %@", current)
-        case .available(let current, let latest, let build):
-            return LF("Update available · %@ → %@ (build %@)", current, latest, build)
+        case .available(let current, let release):
+            return LF("Update available · %@ → %@", current, release.version)
         case .unknown(let reason):
             return reason
         }
@@ -2874,7 +2918,8 @@ struct SettingsPanelView: View {
     }
 
     private var cliContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let busy = model.cliOperationInProgress
+        return VStack(alignment: .leading, spacing: 16) {
             SettingsSectionCard(title: L("Claude Code CLI"), subtitle: L("Native install, update, login and repair"), icon: "terminal") {
                 HStack(alignment: .top, spacing: 14) {
                     StatusDot(color: model.cliStatus.installed ? .mint : .orange)
@@ -2916,10 +2961,50 @@ struct SettingsPanelView: View {
                             .textSelection(.enabled)
                     }
                 }
-                HStack {
-                    Button(L("Refresh")) { model.refreshCLIStatus() }; Button(L("Install / Update")) { model.installOrUpdateCLI() }; Button(L("Login")) { model.openClaudeLogin()
-                    }; Button(L("Repair")) { model.repairCLI() }; Button(L("Open Config")) { model.openClaudeConfig() } }
+                HStack(spacing: 10) {
+                    Button { model.installOrUpdateCLI() } label: {
+                        HStack(spacing: 7) {
+                            if busy {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: model.cliStatus.installed ? "arrow.down.circle" : "square.and.arrow.down")
+                            }
+                            Text(L("Install / Update"))
+                        }
+                    }
                     .buttonStyle(.plain)
+                    .liquidGlassButton(active: true, radius: 10)
+                    .disabled(busy || model.cliStatusRefreshing)
+
+                    Button { model.refreshCLIStatus() } label: {
+                        Label(model.cliStatusRefreshing ? L("Checking…") : L("Refresh"), systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(radius: 10)
+                    .disabled(busy || model.cliStatusRefreshing)
+
+                    Button { model.openClaudeLogin() } label: {
+                        Label(L("Login"), systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(radius: 10)
+                    .disabled(busy || !model.cliStatus.installed)
+
+                    Button { model.repairCLI() } label: {
+                        Label(L("Repair"), systemImage: "wrench.and.screwdriver")
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(radius: 10)
+                    .disabled(busy || model.cliStatusRefreshing)
+
+                    Spacer()
+
+                    Button { model.openClaudeConfig() } label: {
+                        Label(L("Open Config"), systemImage: "doc.text")
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(radius: 10)
+                }
             }
         }
     }
@@ -2936,13 +3021,24 @@ struct SettingsPanelView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.primary.opacity(0.04))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            HStack { Button(L("Reveal Logs")) { model.revealLogs() }; Button(L("Copy Diagnostics")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(
-                "LiquidCode \(model.cliStatus.version ?? "unknown")\nLogs: \(AppPaths.shared.logs.path)",
-                forType: .string
-            ); model.toastSuccess(L("Copied diagnostics"), AppPaths.shared.logs.path) } }
+            Text(model.diagnosticsReport())
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.03))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            HStack(spacing: 10) {
+                Button(L("Reveal Logs")) { model.revealLogs() }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(radius: 10)
+                Button(L("Copy Diagnostics")) { model.copyDiagnosticsToPasteboard() }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(active: true, radius: 10)
+            }
         }
     }
-
 }
 
 struct SettingsSectionCard<Content: View>: View {

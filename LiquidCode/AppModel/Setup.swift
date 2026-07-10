@@ -154,14 +154,23 @@ extension AppModel {
     }
 
     func refreshCLIStatus() {
-        cliStatus = cliService.status(checkForUpdates: false)
+        guard !cliStatusRefreshing else {
+            return
+        }
+        cliStatusRefreshing = true
         DispatchQueue.global(qos: .utility).async { [cliService] in
             let updated = cliService.status(checkForUpdates: true)
-            Task { @MainActor in self.cliStatus = updated }
+            Task { @MainActor in
+                self.cliStatus = updated
+                self.cliStatusRefreshing = false
+            }
         }
     }
 
     func installOrUpdateCLI() {
+        guard !cliOperationInProgress else {
+            return
+        }
         setupProgress = SetupProgress(phase: .checking, percent: 0.05, message: L("Checking Claude CLI release sources"))
         DispatchQueue.global(qos: .userInitiated).async { [cliService] in
             let result = cliService.installOrUpdate(progress: { event in
@@ -177,11 +186,30 @@ extension AppModel {
     }
 
     func repairCLI() {
-        let report = cliService.repairCLI()
-        refreshCLIStatus()
-        let removed = report.removed.isEmpty ? L("No files removed") : LF("Removed %d app-local broken item(s)", report.removed.count)
-        let notes = report.notes.prefix(3).joined(separator: "\n")
-        toastInfo("CLI repair complete", [removed, notes].filter { !$0.isEmpty }.joined(separator: "\n"))
+        guard !cliOperationInProgress else {
+            return
+        }
+        setupProgress = SetupProgress(phase: .installing, percent: 0.15, message: L("Repairing Claude CLI"))
+        DispatchQueue.global(qos: .userInitiated).async { [cliService] in
+            let report = cliService.repairCLI()
+            Task { @MainActor in
+                let removed = report.removed.isEmpty ? L("No files removed") : LF("Removed %d app-local broken item(s)", report.removed.count)
+                let notes = report.notes.prefix(3).joined(separator: "\n")
+                let message = [removed, notes].filter { !$0.isEmpty }.joined(separator: "\n")
+                self.setupProgress = SetupProgress(phase: .complete, percent: 1, message: message)
+                self.refreshCLIStatus()
+                self.toastInfo("CLI repair complete", message)
+            }
+        }
+    }
+
+    var cliOperationInProgress: Bool {
+        switch setupProgress.phase {
+        case .checking, .downloading, .installing:
+            return true
+        case .idle, .authenticating, .complete, .failed:
+            return false
+        }
     }
 
     private func setupPhase(from phase: CLIProgressEvent.Phase) -> SetupProgress.Phase {
@@ -197,106 +225,118 @@ extension AppModel {
     }
 
     func openClaudeLogin() {
-        cliService.openTerminalLogin(); setupProgress = SetupProgress(phase: .authenticating, percent: 0.5, message: L("Claude login opened in Terminal"))
+        guard cliStatus.installed else {
+            toastWarning("CLI missing", "Install Claude Code CLI before logging in.")
+            return
+        }
+        cliService.openTerminalLogin()
+        setupProgress = SetupProgress(phase: .complete, percent: 1, message: L("Claude login opened in Terminal"))
+        toastInfo("Claude Code CLI", "Claude login opened in Terminal")
     }
 
     func openClaudeConfig() {
-        let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json").path
-        do { try fileSystem.open(path, sessionID: nil) } catch { showError("Open Claude config failed", error.localizedDescription) }
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
+        do {
+            if !FileManager.default.fileExists(atPath: url.path) {
+                try Data("{}\n".utf8).write(to: url, options: [.atomic])
+            }
+            try fileSystem.open(url.path, sessionID: nil)
+        } catch {
+            showError("Open Claude config failed", error.localizedDescription)
+        }
     }
 
     func revealLogs() {
         do { try fileSystem.reveal(AppPaths.shared.logs.path, sessionID: nil) } catch { showError("Reveal logs failed", error.localizedDescription) }
     }
 
+    func diagnosticsReport() -> String {
+        let version = UpdateService.currentAppVersion()
+        let build = UpdateService.currentAppBuild()
+        let os = ProcessInfo.processInfo.operatingSystemVersionString
+        let cliVersion = cliStatus.version ?? "unknown"
+        let cliPath = cliPathOrMissing()
+        let auth = cliStatus.authStatus
+        let theme = settings.theme.rawValue
+        let project = workingDirectory.isEmpty ? "(none)" : workingDirectory
+        let session = selectedSessionID ?? "(none)"
+        return [
+            "LiquidCode \(version) (\(build))",
+            "macOS \(os)",
+            "CLI \(cliVersion) · \(cliPath)",
+            "Auth \(auth)",
+            "Theme \(theme)",
+            "Project \(project)",
+            "Session \(session)",
+            "Logs \(AppPaths.shared.logs.path)",
+            "App Support \(AppPaths.shared.appSupport.path)"
+        ].joined(separator: "\n")
+    }
+
+    private func cliPathOrMissing() -> String {
+        cliStatus.path ?? "missing"
+    }
+
+    func copyDiagnosticsToPasteboard() {
+        let report = diagnosticsReport()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(report, forType: .string)
+        toastSuccess("Copied diagnostics", AppPaths.shared.logs.path)
+    }
+
+    func setBackgroundNotificationsEnabled(_ enabled: Bool) {
+        settings.notificationsEnabled = enabled
+        persistSettings()
+        if enabled {
+            AttentionNotificationService.shared.requestAuthorizationIfNeeded()
+        }
+    }
+
     func showChangelog() {
         changelogOpen = true
     }
 
-    func checkForAppUpdates(openDownload: Bool = false) {
+    func checkForAppUpdates(openRelease: Bool = false) {
         guard !appUpdateChecking else {
-            return
-        }
-        guard let feed = UpdateService.resolvedManifestURL(settingsURL: settings.updateManifestURL) else {
-            appUpdateStatus = .unknown(reason: "No update feed configured")
-            toastWarning("Updates", "Set an update feed URL in Settings → General, or ship LiquidCodeUpdateManifestURL in Info.plist.")
             return
         }
         appUpdateChecking = true
         let localVersion = UpdateService.currentAppVersion()
-        let localBuild = UpdateService.currentAppBuild()
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task { @MainActor in
             do {
-                let data = try UpdateService.fetchData(from: feed)
-                let manifest = try UpdateService.parseManifest(data)
-                let availability = UpdateService.availability(
-                    manifest: manifest,
-                    localVersion: localVersion,
-                    localBuild: localBuild
-                )
-                Task { @MainActor in
-                    self.appUpdateStatus = availability
-                    self.appUpdateChecking = false
-                    switch availability {
-                    case .upToDate(let current):
-                        self.toastSuccess("Up to date", LF("LiquidCode %@ is current.", current))
-                    case .available(_, let latest, _):
-                        self.toastInfo("Update available", LF("LiquidCode %@ is ready.", latest))
-                        if openDownload {
-                            self.downloadAndVerifyUpdate(manifest: manifest, manifestURL: feed)
-                        }
-                    case .unknown(let reason):
-                        self.toastWarning("Updates", reason)
+                let release = try await UpdateService.fetchLatestRelease()
+                let availability = UpdateService.availability(release: release, localVersion: localVersion)
+                self.appUpdateStatus = availability
+                self.appUpdateRelease = if case .available = availability { release } else { nil }
+                self.appUpdateChecking = false
+                switch availability {
+                case .upToDate(let current):
+                    self.toastSuccess("Up to date", LF("LiquidCode %@ is current.", current))
+                case .available(_, let availableRelease):
+                    self.toastInfo("Update available", LF("LiquidCode %@ is ready.", availableRelease.version))
+                    if openRelease {
+                        self.openAppUpdateRelease()
                     }
+                case .unknown(let reason):
+                    self.toastWarning("Updates", reason)
                 }
             } catch {
-                Task { @MainActor in
-                    self.appUpdateChecking = false
-                    self.appUpdateStatus = .unknown(reason: error.localizedDescription)
-                    self.toastWarning("Update check failed", error.localizedDescription)
-                }
+                self.appUpdateChecking = false
+                self.appUpdateRelease = nil
+                self.appUpdateStatus = .unknown(reason: error.localizedDescription)
+                self.toastWarning("Update check failed", error.localizedDescription)
             }
         }
     }
 
-    /// Downloads the updater tarball, verifies checksum + signature, then reveals it in Finder.
-    func downloadAndVerifyUpdate(manifest: UpdateManifest, manifestURL: URL) {
-        guard let artifactURL = UpdateService.artifactURL(named: manifest.platform.updater, manifestURL: manifestURL) else {
-            toastWarning("Update download failed", "Could not resolve updater URL")
+    func openAppUpdateRelease() {
+        guard let release = appUpdateRelease else {
+            toastWarning("Updates", "Check for updates before opening a release.")
             return
         }
-        toastInfo("Downloading update", artifactURL.lastPathComponent)
-        DispatchQueue.global(qos: .userInitiated).async {
-            do {
-                let payload = try UpdateService.fetchData(from: artifactURL, timeout: 120)
-                let verification = UpdateService.verify(
-                    payload: payload,
-                    checksum: manifest.platform.checksum,
-                    signature: manifest.platform.signature
-                )
-                switch verification {
-                case .rejected(let reason):
-                    Task { @MainActor in
-                        self.toastWarning("Update rejected", reason)
-                    }
-                case .verified(let kind):
-                    let dir = AppPaths.shared.appSupport.appendingPathComponent("Updates", isDirectory: true)
-                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                    let dest = dir.appendingPathComponent(manifest.platform.updater)
-                    try payload.write(to: dest, options: [.atomic])
-                    Task { @MainActor in
-                        NSWorkspace.shared.activateFileViewerSelecting([dest])
-                        self.toastSuccess(
-                            "Update verified",
-                            LF("%@ ready · %@ — quit LiquidCode and replace the app to install.", dest.lastPathComponent, kind.rawValue)
-                        )
-                    }
-                }
-            } catch {
-                Task { @MainActor in
-                    self.toastWarning("Update download failed", error.localizedDescription)
-                }
-            }
+        guard NSWorkspace.shared.open(release.htmlURL) else {
+            toastWarning("Updates", "Could not open the GitHub release page.")
+            return
         }
     }
 
