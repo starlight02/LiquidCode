@@ -14,7 +14,7 @@ final class MCPExtensionsRegressionTests: XCTestCase {
             args: ["hello"],
             source: "LiquidCode"
         )
-        let result = await MCPRuntimeProbe.evaluate(server)
+        let result = await MCPRuntimeProbe.evaluate(server, timeout: 2)
         // A real MCP handshake is required; plain /bin/echo must fail instead of false-positive OK.
         XCTAssertEqual(result.status, .failed)
         XCTAssertNotNil(result.error)
@@ -48,21 +48,18 @@ final class MCPExtensionsRegressionTests: XCTestCase {
         XCTAssertEqual(result.status, .failed)
     }
 
-    func testHTTPProbeAcceptsLocalhostWhenListening() async {
-        // Prefer a known-good loopback if available; otherwise skip soft.
+    func testHTTPProbeRejectsUnsupportedSchemeWithoutNetwork() async {
         let server = MCPServer(
-            name: "local-http",
+            name: "file-url",
             transport: "http",
             command: nil,
-            url: "http://127.0.0.1:9/", // discard port — typically closed
+            url: "file:///tmp/not-mcp",
             args: [],
             source: "Test"
         )
-        let result = await MCPRuntimeProbe.evaluate(server)
-        // Port 9 is almost always closed → failed is expected; just ensure probe returns a terminal status.
-        XCTAssertTrue(result.status == .failed || result.status == .ok)
-        XCTAssertNotEqual(result.status, .idle)
-        XCTAssertNotEqual(result.status, .testing)
+        let result = await MCPRuntimeProbe.evaluate(server, timeout: 1)
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertNotNil(result.error)
     }
 
     func testTestMCPServerWritesRuntimeStatus() async {

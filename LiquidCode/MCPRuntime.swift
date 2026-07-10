@@ -38,7 +38,7 @@ enum MCPRuntimeProbe {
     }
 
     private static let protocolVersion = "2025-06-18"
-    private static let defaultTimeout: TimeInterval = 10
+    private static let defaultTimeout: TimeInterval = 5
 
     static func evaluate(
         _ server: MCPServer,
@@ -52,7 +52,14 @@ enum MCPRuntimeProbe {
                 case "stdio":
                     return try await StdioProbe(server: server).run()
                 case "http", "streamable-http":
-                    return try await HTTPProbe(server: server, session: urlSession).run()
+                    // Validate configuration before allocating a URLSession so pure
+                    // invalid-URL cases never touch the network stack.
+                    let probe = try HTTPProbe.make(
+                        server: server,
+                        session: Self.probeSession(from: urlSession, timeout: timeout),
+                        timeout: timeout
+                    )
+                    return try await probe.run()
                 default:
                     throw ProbeError.unsupportedTransport(server.transport.isEmpty ? "unknown" : server.transport)
                 }
@@ -116,8 +123,25 @@ enum MCPRuntimeProbe {
             guard let first = try await group.next() else {
                 throw ProbeError.invalidResponse("MCP probe ended without a result")
             }
+            group.cancelAll()
             return first
         }
+    }
+
+    private static func probeSession(from session: URLSession, timeout: TimeInterval) -> URLSession {
+        // Keep probes independent of any ambient proxy/session defaults so a dead local
+        // endpoint fails fast instead of waiting on the shared session timeout.
+        if session !== URLSession.shared {
+            return session
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = max(1, min(timeout, 5))
+        configuration.timeoutIntervalForResource = max(1, min(timeout, 5))
+        configuration.waitsForConnectivity = false
+        configuration.allowsConstrainedNetworkAccess = true
+        configuration.allowsExpensiveNetworkAccess = true
+        configuration.connectionProxyDictionary = [:]
+        return URLSession(configuration: configuration)
     }
 
     private static func initializeRequest(id: Int) -> [String: Any] {
@@ -208,15 +232,35 @@ enum MCPRuntimeProbe {
 
         func run() async throws -> Int {
             try await withTaskCancellationHandler {
-                try await Task.detached(priority: .userInitiated) {
-                    try self.runBlocking()
-                }.value
+                // Keep the blocking process work off the cooperative pool, but make sure
+                // cancellation/timeout always reaches stop() so pipe reads cannot hang forever.
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int, Error>) in
+                    let lock = NSLock()
+                    var resumed = false
+                    let resumeOnce: (Swift.Result<Int, Error>) -> Void = { result in
+                        lock.lock()
+                        defer { lock.unlock() }
+                        guard !resumed else {
+                            return
+                        }
+                        resumed = true
+                        continuation.resume(with: result)
+                    }
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        do {
+                            resumeOnce(.success(try self.runBlocking()))
+                        } catch {
+                            resumeOnce(.failure(error))
+                        }
+                    }
+                }
             } onCancel: {
                 self.stop()
             }
         }
 
         private func runBlocking() throws -> Int {
+            try throwIfCancelled()
             let environment = ProcessInfo.processInfo.environment.merging(server.environment) { _, configured in configured }
             guard let command = server.command?.trimmingCharacters(in: .whitespacesAndNewlines), !command.isEmpty else {
                 throw ProbeError.invalidConfiguration("No command configured for \(server.name)")
@@ -224,6 +268,7 @@ enum MCPRuntimeProbe {
             guard let executable = resolveExecutable(command, path: environment["PATH"]) else {
                 throw ProbeError.invalidConfiguration("Command not found: \(command)")
             }
+            try throwIfCancelled()
 
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = server.args
@@ -415,8 +460,10 @@ enum MCPRuntimeProbe {
     private struct HTTPProbe: Sendable {
         let server: MCPServer
         let session: URLSession
+        let timeout: TimeInterval
+        let url: URL
 
-        func run() async throws -> Int {
+        static func make(server: MCPServer, session: URLSession, timeout: TimeInterval) throws -> HTTPProbe {
             guard
                 let urlString = server.url?.trimmingCharacters(in: .whitespacesAndNewlines),
                 let url = URL(string: urlString),
@@ -425,7 +472,10 @@ enum MCPRuntimeProbe {
                 url.host != nil else {
                 throw ProbeError.invalidConfiguration("Invalid MCP URL")
             }
+            return HTTPProbe(server: server, session: session, timeout: timeout, url: url)
+        }
 
+        func run() async throws -> Int {
             let initialize = try await send(MCPRuntimeProbe.initializeRequest(id: 1), to: url, sessionID: nil, expectsResponse: true)
             guard let initializeMessage = initialize.message else {
                 throw ProbeError.invalidResponse("MCP initialize returned no JSON-RPC response")
@@ -471,6 +521,7 @@ enum MCPRuntimeProbe {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.httpBody = try JSONSerialization.data(withJSONObject: object)
+            request.timeoutInterval = max(1, min(timeout, 5))
             for (field, value) in server.headers {
                 request.setValue(value, forHTTPHeaderField: field)
             }
