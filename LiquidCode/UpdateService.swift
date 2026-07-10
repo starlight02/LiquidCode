@@ -1,231 +1,191 @@
-import AppKit
-import CryptoKit
 import Foundation
 
-/// Parsed `latest.json` produced by `scripts/build-release.sh`.
-struct UpdateManifest: Equatable, Sendable {
-    var version: String
-    var build: String
-    var pubDate: String?
+struct GitHubRelease: Equatable, Sendable {
+    var tagName: String
     var name: String?
-    var platform: UpdatePlatformArtifact
+    var body: String
+    var htmlURL: URL
+    var publishedAt: Date?
+    var draft: Bool
+    var prerelease: Bool
 
-    struct UpdatePlatformArtifact: Equatable, Sendable {
-        var url: String
-        var updater: String
-        var updaterSignature: String
-        var signature: String
-        var checksum: String
+    var version: String {
+        UpdateService.normalizedVersion(tagName)
+    }
+
+    var displayName: String {
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedName.isEmpty ? "LiquidCode \(version)" : trimmedName
+    }
+}
+
+extension GitHubRelease: Decodable {
+    private enum CodingKeys: String, CodingKey {
+        case tagName = "tag_name"
+        case name
+        case body
+        case htmlURL = "html_url"
+        case publishedAt = "published_at"
+        case draft
+        case prerelease
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tagName = try container.decode(String.self, forKey: .tagName)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        body = try container.decodeIfPresent(String.self, forKey: .body) ?? ""
+        htmlURL = try container.decode(URL.self, forKey: .htmlURL)
+        publishedAt = try container.decodeIfPresent(Date.self, forKey: .publishedAt)
+        draft = try container.decodeIfPresent(Bool.self, forKey: .draft) ?? false
+        prerelease = try container.decodeIfPresent(Bool.self, forKey: .prerelease) ?? false
     }
 }
 
 enum UpdateAvailability: Equatable, Sendable {
     case upToDate(current: String)
-    case available(current: String, latest: String, build: String)
+    case available(current: String, release: GitHubRelease)
     case unknown(reason: String)
 }
 
-enum UpdateVerificationResult: Equatable, Sendable {
-    case verified(kind: Kind)
-    case rejected(reason: String)
-
-    enum Kind: String, Equatable, Sendable {
-        case devSignature
-        case checksumAndSignaturePresent
-    }
-}
-
-/// App-side consumer for the release `latest.json` feed.
-/// Manual check + signed download (no silent background install).
 enum UpdateService {
-    /// Default empty — set via Settings or Info.plist `LiquidCodeUpdateManifestURL`.
-    static let infoPlistManifestKey = "LiquidCodeUpdateManifestURL"
-
-    // MARK: - Parse / compare
-
-    static func parseManifest(_ data: Data) throws -> UpdateManifest {
-        guard
-            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let version = root["version"] as? String,
-            let build = (root["build"] as? String) ?? (root["build"] as? Int).map(String.init),
-            let platforms = root["platforms"] as? [String: Any],
-            let platform = platforms["darwin-universal"] as? [String: Any],
-            let url = platform["url"] as? String,
-            let updater = platform["updater"] as? String,
-            let checksum = platform["checksum"] as? String,
-            let signature = platform["signature"] as? String
-        else {
-            throw UpdateError.invalidManifest
+    static let repositoryOwner = "starlight02"
+    static let repositoryName = "LiquidCode"
+    static let latestReleaseURL: URL = {
+        let path = "https://api.github.com/repos/\(repositoryOwner)/\(repositoryName)/releases/latest"
+        guard let url = URL(string: path) else {
+            preconditionFailure("Invalid GitHub latest-release URL: \(path)")
         }
-        let updaterSignature = (platform["updater_signature"] as? String) ?? ""
-        return UpdateManifest(
-            version: version,
-            build: build,
-            pubDate: root["pub_date"] as? String,
-            name: root["name"] as? String,
-            platform: .init(
-                url: url,
-                updater: updater,
-                updaterSignature: updaterSignature,
-                signature: signature,
-                checksum: checksum
-            )
+        return url
+    }()
+
+    static func parseRelease(_ data: Data) throws -> GitHubRelease {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            let release = try decoder.decode(GitHubRelease.self, from: data)
+            let tag = release.tagName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard
+                !tag.isEmpty,
+                !release.version.isEmpty,
+                release.htmlURL.scheme == "https",
+                release.htmlURL.host?.lowercased() == "github.com"
+            else {
+                throw UpdateError.invalidRelease
+            }
+            return release
+        } catch let error as UpdateError {
+            throw error
+        } catch {
+            throw UpdateError.invalidRelease
+        }
+    }
+
+    static func currentAppVersion(bundle: Bundle = .main) -> String {
+        bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    }
+
+    static func currentAppBuild(bundle: Bundle = .main) -> String {
+        bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
+    }
+
+    static func normalizedVersion(_ tag: String) -> String {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first == "v" || trimmed.first == "V" else {
+            return trimmed
+        }
+        return String(trimmed.dropFirst())
+    }
+
+    static func isRemoteNewer(remoteVersion: String, localVersion: String) -> Bool {
+        CLIService.versionGreater(
+            normalizedVersion(remoteVersion),
+            than: normalizedVersion(localVersion)
         )
     }
 
-    static func currentAppVersion() -> String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    static func availability(release: GitHubRelease, localVersion: String) -> UpdateAvailability {
+        guard !release.draft else {
+            return .unknown(reason: L("GitHub returned a draft release."))
+        }
+        guard !release.prerelease else {
+            return .unknown(reason: L("GitHub returned a prerelease."))
+        }
+        if isRemoteNewer(remoteVersion: release.version, localVersion: localVersion) {
+            return .available(current: normalizedVersion(localVersion), release: release)
+        }
+        return .upToDate(current: normalizedVersion(localVersion))
     }
 
-    static func currentAppBuild() -> String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
-    }
+    static func fetchLatestRelease(session: URLSession = .shared) async throws -> GitHubRelease {
+        var request = URLRequest(url: latestReleaseURL)
+        request.timeoutInterval = 20
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue("LiquidCode/\(currentAppVersion())", forHTTPHeaderField: "User-Agent")
 
-    /// True when remote is newer than local (version first, then build number).
-    static func isRemoteNewer(remoteVersion: String, remoteBuild: String, localVersion: String, localBuild: String) -> Bool {
-        if CLIService.versionGreater(remoteVersion, than: localVersion) {
-            return true
-        }
-        if CLIService.versionGreater(localVersion, than: remoteVersion) {
-            return false
-        }
-        // Same marketing version — compare build.
-        if let remote = Int(remoteBuild.filter(\.isNumber)), let local = Int(localBuild.filter(\.isNumber)) {
-            return remote > local
-        }
-        return CLIService.versionGreater(remoteBuild, than: localBuild)
-    }
-
-    static func availability(manifest: UpdateManifest, localVersion: String, localBuild: String) -> UpdateAvailability {
-        if
-            isRemoteNewer(
-                remoteVersion: manifest.version,
-                remoteBuild: manifest.build,
-                localVersion: localVersion,
-                localBuild: localBuild
-            ) {
-            return .available(current: localVersion, latest: manifest.version, build: manifest.build)
-        }
-        return .upToDate(current: localVersion)
-    }
-
-    // MARK: - Verify
-
-    static func sha256Hex(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
-    static func verify(payload: Data, checksum: String, signature: String) -> UpdateVerificationResult {
-        let expected = checksum.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let actual = sha256Hex(payload)
-        guard !expected.isEmpty, actual == expected else {
-            return .rejected(reason: "Checksum mismatch")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw UpdateError.network(error.localizedDescription)
         }
 
-        let sig = signature.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sig.isEmpty else {
-            return .rejected(reason: "Missing signature")
+        guard let http = response as? HTTPURLResponse else {
+            throw UpdateError.invalidResponse
         }
-        if sig.localizedCaseInsensitiveContains("placeholder") {
-            return .rejected(reason: "Placeholder signature rejected")
+        if http.statusCode == 403 || http.statusCode == 429, http.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0" {
+            let resetAt = http.value(forHTTPHeaderField: "X-RateLimit-Reset")
+                .flatMap(TimeInterval.init)
+                .map(Date.init(timeIntervalSince1970:))
+            throw UpdateError.rateLimited(resetAt: resetAt)
         }
-
-        if let dev = verifyDevSignature(payload: payload, signatureText: sig, expectedChecksum: expected) {
-            return dev
+        if http.statusCode == 404 {
+            throw UpdateError.releaseNotFound
         }
-
-        // Production minisign/Tauri signatures: without an embedded public key we still
-        // require a non-empty non-placeholder signature alongside a matching checksum.
-        return .verified(kind: .checksumAndSignaturePresent)
-    }
-
-    /// Matches `write_dev_updater_signature` in scripts/release-helpers.sh.
-    private static func verifyDevSignature(payload: Data, signatureText: String, expectedChecksum: String) -> UpdateVerificationResult? {
-        guard let decoded = Data(base64Encoded: signatureText) else {
-            return nil
+        guard (200 ... 299).contains(http.statusCode) else {
+            let message = (try? JSONDecoder().decode(GitHubErrorResponse.self, from: data).message)
+            throw UpdateError.github(statusCode: http.statusCode, message: message)
         }
-        guard let text = String(data: decoded, encoding: .utf8), text.contains("dev-only deterministic signature") else {
-            return nil
-        }
-        let key = SymmetricKey(data: Data("LiquidCode dev-only updater signature v1".utf8))
-        let mac = HMAC<SHA512>.authenticationCode(for: payload, using: key)
-        let macB64 = Data(mac).base64EncodedString()
-        guard text.contains(macB64) else {
-            return .rejected(reason: "Dev signature MAC mismatch")
-        }
-        guard text.contains("sha256:\(expectedChecksum)") else {
-            return .rejected(reason: "Dev signature checksum comment mismatch")
-        }
-        return .verified(kind: .devSignature)
-    }
-
-    // MARK: - URL resolution
-
-    static func resolvedManifestURL(settingsURL: String?) -> URL? {
-        let trimmed = settingsURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmed.isEmpty, let url = URL(string: trimmed) {
-            return url
-        }
-        if
-            let plist = Bundle.main.object(forInfoDictionaryKey: infoPlistManifestKey) as? String,
-            !plist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            let url = URL(string: plist) {
-            return url
-        }
-        return nil
-    }
-
-    static func artifactURL(named name: String, manifestURL: URL) -> URL? {
-        if let absolute = URL(string: name), absolute.scheme != nil {
-            return absolute
-        }
-        return URL(string: name, relativeTo: manifestURL.deletingLastPathComponent())?.absoluteURL
-    }
-
-    // MARK: - Fetch helpers (sync, fail-soft)
-
-    static func fetchData(from url: URL, timeout: TimeInterval = 20) throws -> Data {
-        if url.isFileURL {
-            return try Data(contentsOf: url)
-        }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = timeout
-        let sem = DispatchSemaphore(value: 0)
-        var result: Result<Data, Error> = .failure(UpdateError.network("No response"))
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            defer { sem.signal() }
-            if let error {
-                result = .failure(error)
-                return
-            }
-            if let http = response as? HTTPURLResponse, !(200 ... 299).contains(http.statusCode) {
-                result = .failure(UpdateError.network("HTTP \(http.statusCode)"))
-                return
-            }
-            guard let data else {
-                result = .failure(UpdateError.network("Empty body"))
-                return
-            }
-            result = .success(data)
-        }
-        task.resume()
-        _ = sem.wait(timeout: .now() + timeout + 5)
-        return try result.get()
+        return try parseRelease(data)
     }
 }
 
-enum UpdateError: LocalizedError {
-    case invalidManifest
-    case noFeedConfigured
+private struct GitHubErrorResponse: Decodable {
+    var message: String
+}
+
+enum UpdateError: LocalizedError, Equatable {
+    case invalidRelease
+    case invalidResponse
+    case releaseNotFound
+    case rateLimited(resetAt: Date?)
+    case github(statusCode: Int, message: String?)
     case network(String)
-    case verificationFailed(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidManifest: return "Invalid update manifest"
-        case .noFeedConfigured: return "No update feed configured"
-        case .network(let message): return message
-        case .verificationFailed(let message): return message
+        case .invalidRelease:
+            return L("GitHub returned an invalid release response.")
+        case .invalidResponse:
+            return L("GitHub returned an invalid HTTP response.")
+        case .releaseNotFound:
+            return L("No published LiquidCode release was found on GitHub.")
+        case .rateLimited(let resetAt):
+            if let resetAt {
+                return LF("GitHub rate limit reached. Try again after %@.", resetAt.formatted(date: .abbreviated, time: .shortened))
+            }
+            return L("GitHub rate limit reached. Try again later.")
+        case .github(let statusCode, let message):
+            let detail = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return detail.isEmpty
+                ? LF("GitHub update check failed (HTTP %d).", statusCode)
+                : LF("GitHub update check failed (HTTP %d): %@", statusCode, detail)
+        case .network(let message):
+            return LF("Could not reach GitHub: %@", message)
         }
     }
 }

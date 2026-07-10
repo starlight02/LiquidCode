@@ -6,19 +6,18 @@
 
 LiquidCode is a native macOS app for Claude Code. It gives the CLI a proper
 desktop home: project and session lists on the left, chat in the middle, and
-Provider, MCP, Skills, and CLI setup in Settings instead of scattered dotfiles.
+MCP, Skills, and CLI setup in Settings instead of scattered dotfiles.
 
 ## Configure
 
-- First launch guides you through Claude CLI/provider setup and can migrate
-  existing provider configuration with backup/rollback.
-- Open **Settings → Provider** to add Anthropic/OpenAI-compatible providers,
-  model mappings, proxy, and extra environment variables.
+- First launch checks your Claude Code CLI installation and keeps existing
+  Claude configuration intact.
 - Open **Settings → MCP** to manage app-local MCP servers. LiquidCode also
   reads Claude MCP config and creates per-session scratch config when launching
   the CLI.
 - Open **Settings → CLI** to diagnose, install, update, repair, or log in to
   Claude Code.
+- Open **Settings → General** to check the latest published GitHub Release.
 
 ## Install from a local release build
 

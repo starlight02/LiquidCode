@@ -4,19 +4,17 @@
   <img src="docs/assets/liquidcode-screenshot.png" alt="LiquidCode 应用截图" width="960">
 </p>
 
-LiquidCode 是 Claude Code 的原生 macOS 客户端。它把 CLI 放进一个像样的桌面应用里：左侧管理项目和会话，中间直接聊天，Provider、MCP、Skills 和
+LiquidCode 是 Claude Code 的原生 macOS 客户端。它把 CLI 放进一个像样的桌面应用里：左侧管理项目和会话，中间直接聊天，MCP、Skills 和
 CLI 安装/登录/修复都放进设置页，不用再到处翻 dotfiles。
 
 ## 配置
 
-- 首次启动会引导你完成 Claude CLI/provider 设置，并可迁移现有 provider 配置，
-  迁移前会提供备份/回滚。
-- 打开 **Settings → Provider**，添加 Anthropic/OpenAI-compatible providers、
-  model mappings、proxy 和 extra environment variables。
+- 首次启动会检查 Claude Code CLI 安装状态，并保留已有 Claude 配置。
 - 打开 **Settings → MCP**，管理应用本地 MCP servers。LiquidCode 也会读取
   Claude MCP config，并在启动 CLI 时创建每个会话专用的 scratch config。
 - 打开 **Settings → CLI**，诊断、安装、更新、修复 Claude Code，或登录
   Claude Code。
+- 打开 **Settings → General**，检查最新发布的 GitHub Release。
 
 ## 从本地 release 构建安装
 
