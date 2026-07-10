@@ -1342,6 +1342,11 @@ struct ChangelogEntry: Identifiable, Codable, Hashable, Sendable {
 }
 
 let bundledChangelog: [ChangelogEntry] = [
+    .init(version: "0.1.8", date: "2026-07-10", items: [
+        "Fix Settings button hit-testing and open/dismiss race in the sidebar footer.",
+        "Keep Agents/Settings inside the unified glass sidebar while moving the resize strip to the gutter.",
+        "Harden settings panel backdrop dismiss so the panel no longer flashes closed."
+    ]),
     .init(version: "0.1.0", date: "2026-07-02", items: [
         "Native SwiftUI/AppKit shell with a sidebar-chat-secondary layout.",
         "Claude Code stream-json process bridge with stdio permission control.",
