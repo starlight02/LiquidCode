@@ -44,7 +44,7 @@ lipo -archs .build-release/LiquidCode.app/Contents/MacOS/LiquidCode
 ### 产物
 
 - `.pkg` — 唯一安装包格式（安装到 `/Applications/LiquidCode.app`）
-- `SHA256SUMS` — PKG 的完整性校验文件（`shasum -a 256 -c SHA256SUMS`）
+- `.pkg.sha256` — 与 PKG 一一对应的完整性侧车文件（`shasum -a 256 -c LiquidCode-*.pkg.sha256`）
 - 中间产物 `.build-release/LiquidCode.app` 仅供检查，CI 不上传
 
 ## 发布门禁
@@ -65,7 +65,7 @@ LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 ./scripts/build-release.sh
 
 - `LiquidCode.app` 来自 Xcode `.xcarchive`（保留在 `.build-release/` 便于检查）。
 - `.pkg` 是唯一分发安装包（安装到 `/Applications/LiquidCode.app`）。
-- 每个 GitHub Release 都会附带 `SHA256SUMS`，用于校验 PKG 完整性。
+- 每个 GitHub Release 都会附带对应的 `.pkg.sha256` 侧车文件，用于校验 PKG 完整性。
 - PKG 文件名使用构建出的 app 的 `CFBundleShortVersionString`（来自 Xcode `MARKETING_VERSION`）。
 
 

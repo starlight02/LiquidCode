@@ -240,7 +240,7 @@ jobs:
           name: LiquidCode-macOS-${{ env.SIGNING_MODE }}
           path: |
             .build-release/*.pkg
-            .build-release/SHA256SUMS
+            .build-release/*.pkg.sha256
           include-hidden-files: true
           if-no-files-found: error
 
@@ -254,15 +254,21 @@ jobs:
           TAG_NAME="${GITHUB_REF_NAME}"
 
           if [[ "${SIGNING_MODE}" == "unsigned" ]]; then
-            NOTES="Unsigned/ad-hoc macOS PKG for $TAG_NAME. Gatekeeper will warn because this build has no Developer ID signature or notarization. Verify with: shasum -a 256 -c SHA256SUMS"
+            NOTES="Unsigned/ad-hoc macOS PKG for $TAG_NAME. Gatekeeper will warn because this build has no Developer ID signature or notarization."
           else
-            NOTES="Signed and notarized macOS release for $TAG_NAME. Assets: PKG installer + SHA256SUMS. Verify with: shasum -a 256 -c SHA256SUMS"
+            NOTES="Signed and notarized macOS release for $TAG_NAME."
           fi
 
-          [[ -s .build-release/SHA256SUMS ]] || { echo "SHA256SUMS missing or empty" >&2; exit 1; }
+          shopt -s nullglob
+          checksums=(.build-release/*.pkg.sha256)
+          shopt -u nullglob
+          [[ ${#checksums[@]} -ge 1 ]] || { echo "Missing .pkg.sha256 sidecar under .build-release/" >&2; exit 1; }
+          for sum in "${checksums[@]}"; do
+            [[ -s "$sum" ]] || { echo "Empty checksum file: $sum" >&2; exit 1; }
+          done
           (
             cd .build-release
-            shasum -a 256 -c SHA256SUMS
+            shasum -a 256 -c ./*.pkg.sha256
           )
 
           if ! gh release view "$TAG_NAME" >/dev/null 2>&1; then
@@ -275,6 +281,6 @@ jobs:
 
           gh release upload "$TAG_NAME" \
             .build-release/*.pkg \
-            .build-release/SHA256SUMS \
+            .build-release/*.pkg.sha256 \
             --clobber
 

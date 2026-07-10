@@ -3,7 +3,7 @@
 # Output:
 #   .build-release/LiquidCode.app
 #   .build-release/LiquidCode-<ver>[-unsigned].pkg
-#   .build-release/SHA256SUMS
+#   .build-release/LiquidCode-<ver>[-unsigned].pkg.sha256
 set -euo pipefail
 
 APP_NAME="LiquidCode"
@@ -371,15 +371,15 @@ else
   info "Notarization skipped"
 fi
 
-# SHA256SUMS is the public integrity file for release consumers.
-# Format matches GNU coreutils / shasum -c expectations (hash + two spaces + basename).
-CHECKSUMS="$BUILD_DIR/SHA256SUMS"
+# Per-artifact .sha256 sidecar (alma-onebot-bridge style).
+# Format matches GNU coreutils / shasum -c (hash + two spaces + basename).
+CHECKSUMS="${PKG}.sha256"
 info "Writing $CHECKSUMS"
 (
   cd "$BUILD_DIR"
-  shasum -a 256 "$(basename "$PKG")" >SHA256SUMS
+  shasum -a 256 "$(basename "$PKG")" >"$(basename "$PKG").sha256"
 )
-[[ -s "$CHECKSUMS" ]] || fail "Failed to write SHA256SUMS"
+[[ -s "$CHECKSUMS" ]] || fail "Failed to write $CHECKSUMS"
 info "Checksum:"
 cat "$CHECKSUMS"
 

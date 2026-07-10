@@ -29,7 +29,7 @@ final class ReleaseHelperTests: XCTestCase {
         let fixture = try ReleaseFixture()
         let artifacts = [
             "LiquidCode-0.1.0.pkg",
-            "SHA256SUMS"
+            "LiquidCode-0.1.0.pkg.sha256"
         ].map { fixture.root.appendingPathComponent($0) }
         for artifact in artifacts {
             try Data(artifact.lastPathComponent.utf8).write(to: artifact)

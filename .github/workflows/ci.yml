@@ -126,7 +126,7 @@ jobs:
           name: LiquidCode-macOS-adhoc-arm64-pkg
           path: |
             .build-release/*.pkg
-            .build-release/SHA256SUMS
+            .build-release/*.pkg.sha256
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
@@ -239,18 +239,20 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          assets=(release-assets/*.pkg release-assets/SHA256SUMS)
-          [[ ${#assets[@]} -ge 2 ]] || { echo "Expected PKG + SHA256SUMS under release-assets/" >&2; ls -la release-assets/ >&2; exit 1; }
-          # Fail closed if the checksum file is missing or empty.
-          [[ -s release-assets/SHA256SUMS ]] || { echo "SHA256SUMS missing or empty" >&2; exit 1; }
+          assets=(release-assets/*.pkg release-assets/*.pkg.sha256)
+          [[ ${#assets[@]} -ge 2 ]] || { echo "Expected PKG + .pkg.sha256 under release-assets/" >&2; ls -la release-assets/ >&2; exit 1; }
+          # Fail closed if any checksum sidecar is missing or empty.
+          for sum in release-assets/*.pkg.sha256; do
+            [[ -s "$sum" ]] || { echo "Checksum missing or empty: $sum" >&2; exit 1; }
+          done
           (
             cd release-assets
-            shasum -a 256 -c SHA256SUMS
+            shasum -a 256 -c ./*.pkg.sha256
           )
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "LiquidCode $TAG" \
-            --notes "Automated unsigned/ad-hoc macOS PKG for $TAG (build $BUILD) from ${COMMIT:0:7}. Gatekeeper will warn — no Developer ID signature or notarization; not for production distribution. Verify with: shasum -a 256 -c SHA256SUMS" \
+            --notes "Automated unsigned/ad-hoc macOS PKG for $TAG (build $BUILD) from ${COMMIT:0:7}. Gatekeeper will warn — no Developer ID signature or notarization; not for production distribution." \
             "${assets[@]}"
-          echo "Published release $TAG with the unsigned PKG + SHA256SUMS."
+          echo "Published release $TAG with the unsigned PKG + .pkg.sha256 sidecar."
 

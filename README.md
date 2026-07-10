@@ -47,7 +47,7 @@ lipo -archs .build-release/LiquidCode.app/Contents/MacOS/LiquidCode
 ### Artifacts
 
 - `.pkg` — only installer format (installs to `/Applications/LiquidCode.app`)
-- `SHA256SUMS` — integrity file for the PKG (`shasum -a 256 -c SHA256SUMS`)
+- `.pkg.sha256` — per-artifact integrity sidecar (`shasum -a 256 -c LiquidCode-*.pkg.sha256`)
 - Intermediate `.build-release/LiquidCode.app` is kept for inspection; not uploaded by CI
 
 ## Release gates
@@ -68,7 +68,7 @@ LIQUIDCODE_ARCHS=arm64 RELEASE_UPLOAD_DRY_RUN=1 ./scripts/build-release.sh
 
 - `LiquidCode.app` comes from the Xcode `.xcarchive` (kept under `.build-release/` for inspection).
 - `.pkg` is the only shipped installer (installs to `/Applications/LiquidCode.app`).
-- `SHA256SUMS` ships alongside the PKG on every GitHub Release for integrity verification.
+- Each GitHub Release ships a matching `.pkg.sha256` sidecar for integrity verification.
 - PKG filename uses `CFBundleShortVersionString` from the built app (sourced from Xcode `MARKETING_VERSION`).
 
 

@@ -62,18 +62,18 @@ package_app="$CHECK_DIR/$APP_NAME-component.pkg/Payload/Applications/$APP_NAME.a
 [[ -x "$package_app/Contents/MacOS/$APP_NAME" ]] || fail "Installed app binary not executable"
 codesign --verify --deep --strict --verbose=2 "$package_app"
 
-CHECKSUMS="$BUILD_DIR/SHA256SUMS"
-info "verify SHA256SUMS"
+CHECKSUMS="${pkg}.sha256"
+info "verify $(basename "$CHECKSUMS")"
 [[ -f "$CHECKSUMS" ]] || fail "Missing integrity file: $CHECKSUMS"
 [[ -s "$CHECKSUMS" ]] || fail "Empty integrity file: $CHECKSUMS"
 # shasum -c expects relative paths as written (basename of the PKG).
 (
   cd "$BUILD_DIR"
-  shasum -a 256 -c SHA256SUMS
+  shasum -a 256 -c "$(basename "$CHECKSUMS")"
 )
 # Ensure the listed file is exactly the one PKG we just verified.
 listed="$(awk 'NF>=2 {print $NF; exit}' "$CHECKSUMS")"
-[[ "$listed" == "$(basename "$pkg")" ]] || fail "SHA256SUMS lists '$listed' but PKG is '$(basename "$pkg")'"
+[[ "$listed" == "$(basename "$pkg")" ]] || fail "$(basename "$CHECKSUMS") lists '$listed' but PKG is '$(basename "$pkg")'"
 
 if [[ "$REQUIRE_NOTARIZED" == "1" ]]; then
   info "stapler validate PKG"
