@@ -15,28 +15,121 @@ func settingsTabIcon(_ tab: SettingsTab) -> String {
 struct CommandPaletteView: View {
     @EnvironmentObject var model: AppModel
     @State private var query = ""
+    @State private var selectedIndex = 0
+    @FocusState private var queryFocused: Bool
+
     var body: some View {
         Color.black
             .opacity(0.18)
             .ignoresSafeArea()
             .pointingHandCursor()
-            .onTapGesture { model.commandPaletteOpen = false }
+            .onTapGesture { close() }
         GlassPanel(role: .commandPalette, prominence: .prominent, cornerRadius: 22) {
             VStack(spacing: 0) {
-                TextField(L("Type a command or session action"), text: $query).textFieldStyle(.plain).font(.title3).padding(16)
+                TextField(L("Type a command or session action"), text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.title3)
+                    .padding(16)
+                    .focused($queryFocused)
+                    .accessibilityLabel(L("Command Palette"))
+                    .onKeyPress(.downArrow) {
+                        moveSelection(by: 1)
+                        return .handled
+                    }
+                    .onKeyPress(.upArrow) {
+                        moveSelection(by: -1)
+                        return .handled
+                    }
+                    .onKeyPress(.return) {
+                        runSelectedCommand()
+                        return .handled
+                    }
+                    .onKeyPress(.escape) {
+                        close()
+                        return .handled
+                    }
+                    .onChange(of: query) { _, _ in selectedIndex = 0 }
                 Divider()
-                ScrollView { LazyVStack(alignment: .leading, spacing: 4) { ForEach(model.filteredPaletteCommands(query)) { cmd in
-                    Button { model.runCommand(cmd) } label: {
-                        VStack(alignment: .leading) { Text(cmd.title).font(.headline); Text(cmd.subtitle).font(.caption).foregroundStyle(.secondary) }
-                            .frame(
-                                maxWidth: .infinity,
-                                alignment: .leading
-                            )
-                            .padding(10) }
-                        .buttonStyle(.plain)
-                        .pointingHandCursor() } }.padding(8) }
-            }.frame(width: 620, height: 520)
+                commandList
+            }
+            .frame(width: 620, height: 520)
         }
+        .onAppear {
+            selectedIndex = 0
+            Task { @MainActor in queryFocused = true }
+        }
+        .onKeyPress(.escape) {
+            close()
+            return .handled
+        }
+    }
+
+    private var commands: [PaletteCommand] {
+        model.filteredPaletteCommands(query)
+    }
+
+    @ViewBuilder private var commandList: some View {
+        if commands.isEmpty {
+            ContentUnavailableView.search(text: query)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
+                            Button { model.runCommand(command) } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(command.title).font(.headline)
+                                    Text(command.subtitle).font(.caption).foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background {
+                                    if index == selectedIndex {
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color.primary.opacity(0.08))
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .pointingHandCursor()
+                            .id(command.id)
+                            .accessibilityLabel(command.title)
+                            .accessibilityHint(command.subtitle)
+                        }
+                    }
+                    .padding(8)
+                }
+                .onChange(of: selectedIndex) { _, index in
+                    guard commands.indices.contains(index) else {
+                        return
+                    }
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        proxy.scrollTo(commands[index].id, anchor: .center)
+                    }
+                }
+            }
+        }
+    }
+
+    private func moveSelection(by offset: Int) {
+        guard !commands.isEmpty else {
+            selectedIndex = 0
+            return
+        }
+        selectedIndex = (selectedIndex + offset + commands.count) % commands.count
+    }
+
+    private func runSelectedCommand() {
+        guard commands.indices.contains(selectedIndex) else {
+            return
+        }
+        model.runCommand(commands[selectedIndex])
+    }
+
+    private func close() {
+        model.commandPaletteOpen = false
     }
 }
 

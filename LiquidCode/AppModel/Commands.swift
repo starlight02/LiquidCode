@@ -138,8 +138,24 @@ struct PaletteCommand: Identifiable, Hashable {
     enum Kind: Hashable { case newChat, settings, panel(SecondaryTab), mcpSettings, mode(SessionMode), model(String), sendSlash(String), installCLI, loginCLI,
                                exportCurrent, rewind, changelog }
 
-    let id = UUID()
     let title: String
     let subtitle: String
     let kind: Kind
+
+    var id: String {
+        switch kind {
+        case .newChat: "new-chat"
+        case .settings: "settings"
+        case .panel(let tab): "panel-\(tab.rawValue)"
+        case .mcpSettings: "mcp-settings"
+        case .mode(let mode): "mode-\(mode.rawValue)"
+        case .model(let model): "model-\(model)"
+        case .sendSlash(let slash): "slash-\(slash)"
+        case .installCLI: "install-cli"
+        case .loginCLI: "login-cli"
+        case .exportCurrent: "export-current"
+        case .rewind: "rewind"
+        case .changelog: "changelog"
+        }
+    }
 }

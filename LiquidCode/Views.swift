@@ -76,6 +76,8 @@ struct AppShellView: View {
                 .padding(.top, 10)
                 .padding(.bottom, 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .disabled(model.settingsOpen || model.commandPaletteOpen || model.changelogOpen || model.imageLightbox != nil)
+                .accessibilityHidden(model.settingsOpen || model.commandPaletteOpen || model.changelogOpen || model.imageLightbox != nil)
                 .animation(.snappy(duration: 0.22), value: sidebarOpen)
                 .animation(.snappy(duration: 0.22), value: model.secondaryOpen)
                 .animation(.snappy(duration: 0.22), value: isFilePreviewMode)
