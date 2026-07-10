@@ -145,8 +145,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      # Action-pin PRs touch workflow YAML; auto-merge needs the workflows scope.
-      workflows: write
+      # Action-pin PRs touch workflow YAML; GITHUB_TOKEN has no "workflows"
+      # scope — contents: write is the supported path for that case.
     steps:
       - name: Enable squash auto-merge
         env:
