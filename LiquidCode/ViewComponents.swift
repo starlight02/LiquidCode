@@ -3,11 +3,16 @@ import AppKit
 import SwiftUI
 import WebKit
 
-struct PaneResizeHandle: View {
+/// Edge drag strip that never owns hit-testing outside its interactive middle band.
+/// Gestures must be attached here (not on the outer container), otherwise SwiftUI treats the
+/// full-height strip — including footer/header gutters — as a single drag target and blocks
+/// controls like the sidebar Settings button.
+struct PaneResizeHandle<G: Gesture>: View {
     let title: String
     /// Leave non-interactive gutters so footer/header controls are never stolen by the drag strip.
     var topExclusion: CGFloat = 0
     var bottomExclusion: CGFloat = 0
+    let dragGesture: G
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,13 +25,16 @@ struct PaneResizeHandle: View {
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .help(L(title))
+                // Only the middle band is interactive. Parent-level gestures re-expand the hit box.
+                .gesture(dragGesture)
             Color.clear
                 .frame(height: max(0, bottomExclusion))
                 .allowsHitTesting(false)
         }
         .frame(width: 8)
         .frame(maxHeight: .infinity)
-        .zIndex(20)
+        // Keep local; do not float above sibling footer controls via aggressive zIndex.
+        .zIndex(1)
     }
 }
 
@@ -1068,8 +1076,9 @@ func buildSidebarSessionPlan(
     return plan
 }
 
-struct SidebarView: View {
+struct SidebarView<ResizeGestureType: Gesture>: View {
     var onCollapse: () -> Void = {}
+    var sidebarResizeGesture: ResizeGestureType?
     @EnvironmentObject var model: AppModel
     @State private var renameTarget: SessionRecord?
     @State private var renameText = ""
@@ -1088,35 +1097,50 @@ struct SidebarView: View {
         )
         GlassPanel(role: .sidebar, prominence: .regular, cornerRadius: LiquidGlassToken.panelRadius) {
             VStack(spacing: 0) {
-                sidebarHeader
-                primaryAction
-                searchAndFilters
-                undoBanner
-                Divider().opacity(0.5)
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        taskGroupsHeader
-                        taskGroups(plan: plan, activeSessionIDs: activeSessionIDs)
-                        sessionSection(
-                            "Pinned",
-                            plan.pinned,
-                            activeSessionIDs: activeSessionIDs,
-                            projectGroupsByPath: plan.projectGroupsByPath,
-                            trailing: plan.pinned.isEmpty ? nil : "\(plan.pinned.count)"
-                        )
-                        projectSessionSections(plan.projectGroups, activeSessionIDs: activeSessionIDs, projectGroupsByPath: plan.projectGroupsByPath)
-                        if model.showArchivedSessions {
+                VStack(spacing: 0) {
+                    sidebarHeader
+                    primaryAction
+                    searchAndFilters
+                    undoBanner
+                    Divider().opacity(0.5)
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            taskGroupsHeader
+                            taskGroups(plan: plan, activeSessionIDs: activeSessionIDs)
                             sessionSection(
-                                "Archived",
-                                plan.archived,
+                                "Pinned",
+                                plan.pinned,
                                 activeSessionIDs: activeSessionIDs,
                                 projectGroupsByPath: plan.projectGroupsByPath,
-                                trailing: plan.archived.isEmpty ? nil : "\(plan.archived.count)"
+                                trailing: plan.pinned.isEmpty ? nil : "\(plan.pinned.count)"
                             )
+                            projectSessionSections(plan.projectGroups, activeSessionIDs: activeSessionIDs, projectGroupsByPath: plan.projectGroupsByPath)
+                            if model.showArchivedSessions {
+                                sessionSection(
+                                    "Archived",
+                                    plan.archived,
+                                    activeSessionIDs: activeSessionIDs,
+                                    projectGroupsByPath: plan.projectGroupsByPath,
+                                    trailing: plan.archived.isEmpty ? nil : "\(plan.archived.count)"
+                                )
+                            }
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .trailing) {
+                    if let sidebarResizeGesture {
+                        // Handle lives only above the footer — Settings/Agents stay fully clickable.
+                        PaneResizeHandle(
+                            title: "Resize sidebar",
+                            topExclusion: 16,
+                            bottomExclusion: 0,
+                            dragGesture: sidebarResizeGesture
+                        )
+                        .offset(x: 4)
+                    }
                 }
                 Divider().opacity(0.5)
                 sidebarFooter
@@ -1243,7 +1267,6 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .pointingHandCursor()
             .help(L("Open settings"))
-            .zIndex(30)
         }
         .font(.system(size: 14, weight: .medium))
         .foregroundStyle(.secondary)

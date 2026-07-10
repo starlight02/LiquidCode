@@ -31,15 +31,12 @@ struct AppShellView: View {
             ZStack(alignment: .top) {
                 HStack(spacing: LiquidGlassToken.panelSpacing) {
                     if sidebarOpen {
-                        SidebarView(onCollapse: { sidebarOpen = false })
-                            .frame(width: model.settings.sidebarWidth)
-                            .frame(maxHeight: .infinity)
-                            .overlay(alignment: .trailing) {
-                                // Keep the bottom footer (Agents / Settings) outside the drag strip.
-                                PaneResizeHandle(title: "Resize sidebar", topExclusion: 12, bottomExclusion: 64)
-                                    .offset(x: 4)
-                                    .gesture(sidebarResizeGesture)
-                            }
+                        SidebarView(
+                            onCollapse: { sidebarOpen = false },
+                            sidebarResizeGesture: sidebarResizeGesture
+                        )
+                        .frame(width: model.settings.sidebarWidth)
+                        .frame(maxHeight: .infinity)
                     }
 
                     ChatPanelView(
@@ -58,18 +55,22 @@ struct AppShellView: View {
                             .frame(maxHeight: .infinity)
                             .layoutPriority(0)
                             .overlay(alignment: .leading) {
-                                PaneResizeHandle(title: "Resize preview")
-                                    .offset(x: -4)
-                                    .gesture(previewResizeGesture)
+                                PaneResizeHandle(
+                                    title: "Resize preview",
+                                    dragGesture: previewResizeGesture
+                                )
+                                .offset(x: -4)
                             }
                     } else if model.secondaryOpen {
                         SecondaryPanelView(onClose: { model.secondaryOpen = false })
                             .frame(width: secondaryPaneWidth)
                             .frame(maxHeight: .infinity)
                             .overlay(alignment: .leading) {
-                                PaneResizeHandle(title: "Resize secondary panel")
-                                    .offset(x: -4)
-                                    .gesture(secondaryResizeGesture)
+                                PaneResizeHandle(
+                                    title: "Resize secondary panel",
+                                    dragGesture: secondaryResizeGesture
+                                )
+                                .offset(x: -4)
                             }
                     }
                 }
