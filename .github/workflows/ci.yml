@@ -131,6 +131,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  enable-dependabot-automerge:
+    name: Enable Dependabot auto-merge
+    # Native GitHub auto-merge: this only flips the PR flag. Required checks from the
+    # main ruleset (Quality / Xcode unit tests / PKG build) still gate the actual merge.
+    # Keep this inside CI so we do not create a separate workflow that paints red 0s
+    # phantom check-suites on plain pushes to main.
+    if: >
+      github.event_name == 'pull_request' &&
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      # Action-pin PRs touch workflow YAML; auto-merge needs the workflows scope.
+      workflows: write
+    steps:
+      - name: Enable squash auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          gh pr merge --auto --squash "$PR_URL"
+          echo "Auto-merge enabled for $PR_URL"
+
   release:
     name: Tag + publish unsigned release
     runs-on: ubuntu-latest
