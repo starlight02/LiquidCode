@@ -88,10 +88,18 @@ extension AppModel {
 
     func bootstrap() {
         settings = JSONFile.load(AppSettings.self, from: AppPaths.shared.settingsFile) ?? AppSettings()
+        restorePersistedComposerDrafts()
         sendConfigurationBySession = settings.sessionConfigurations
         settings.sidebarWidth = min(450, max(Double(LiquidGlassToken.sidebarWidth), settings.sidebarWidth))
         settings.secondaryWidth = min(Double(LiquidGlassToken.inspectorMaxWidth), max(Double(LiquidGlassToken.inspectorMinWidth), settings.secondaryWidth))
-        syncComposerDefaultsFromClaudeUserSettings()
+        // Restore per-session composer configs first, then overlay Claude defaults for the
+        // start screen only. Persist once at the end so a mid-bootstrap write cannot drop
+        // sessionConfigurations while other maps are still being rebuilt.
+        let preservedSessionConfigurations = sendConfigurationBySession
+        syncComposerDefaultsFromClaudeUserSettings(persist: false)
+        sendConfigurationBySession = preservedSessionConfigurations
+        settings.sessionConfigurations = preservedSessionConfigurations
+        persistSettings()
         recentProjects = JSONFile.load([RecentProject].self, from: AppPaths.shared.recentProjectsFile) ?? []
         // Filter out temp/system directories from recent projects
         let tempRoot = NSTemporaryDirectory()
@@ -150,7 +158,7 @@ extension AppModel {
         defaultComposerConfiguration = configuration
     }
 
-    func syncComposerDefaultsFromClaudeUserSettings() {
+    func syncComposerDefaultsFromClaudeUserSettings(persist: Bool = true) {
         let defaults = claudeUserSettings.loadComposerDefaults()
         modelDisplayNames = defaults.modelDisplayNames
         if let model = defaults.model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -167,7 +175,11 @@ extension AppModel {
             mode: settings.sessionMode,
             thinkingLevel: settings.thinkingLevel
         )
-        persistSettings()
+        // Always keep the in-memory session map authoritative before any write.
+        settings.sessionConfigurations = sendConfigurationBySession
+        if persist {
+            persistSettings()
+        }
     }
 
     private func applyComposerConfigurationChange(model: String?, mode: SessionMode?, thinkingLevel: ThinkingLevel?) {

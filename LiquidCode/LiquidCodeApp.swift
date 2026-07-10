@@ -22,6 +22,12 @@ final class LiquidCodeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard model.resolveDirtyFileChange() else {
+            return .terminateCancel
+        }
+        guard model.persistComposerDraftsNow() else {
+            return .terminateCancel
+        }
         guard model.hasActiveTurn else {
             return .terminateNow
         }
@@ -75,6 +81,7 @@ final class LiquidCodeMainWindowController: NSObject, NSWindowDelegate {
         window.contentViewController = hosting
         window.isReleasedWhenClosed = false
         window.delegate = self
+        window.setFrameAutosaveName("LiquidCode.MainWindow")
         configureLiquidWindow(window)
         self.window = window
         return window
@@ -137,28 +144,34 @@ struct LiquidCodeCommands: Commands {
             .keyboardShortcut(",")
         }
         CommandGroup(replacing: .newItem) {
-            Button(L("New Window")) { LiquidCodeMainWindowController.shared.show(model: model) }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
             Button(L("New Chat")) {
                 LiquidCodeMainWindowController.shared.show(model: model)
                 model.newChat()
             }
             .keyboardShortcut("n")
-            Button(L("Command Palette")) { model.commandPaletteOpen = true }.keyboardShortcut("k")
+            Button(L("Command Palette")) {
+                LiquidCodeMainWindowController.shared.show(model: model)
+                model.commandPaletteOpen.toggle()
+            }
+            .keyboardShortcut("k")
             Button(L("Next Session")) { model.selectNextSession() }.keyboardShortcut(.tab, modifiers: [.control])
             Button(L("Previous Session")) { model.selectPreviousSession() }.keyboardShortcut(.tab, modifiers: [.control, .shift])
             Button(L("Increase Font Size")) { model.adjustFontSize(1) }.keyboardShortcut("+", modifiers: [.command])
             Button(L("Decrease Font Size")) { model.adjustFontSize(-1) }.keyboardShortcut("-", modifiers: [.command])
         }
         CommandMenu("Claude") {
-            Button(L("Send")) { model.sendComposer() }.keyboardShortcut(.return, modifiers: [])
+            Button(L("Send")) { model.sendComposer() }.keyboardShortcut(.return, modifiers: [.command])
             Button(L("Interrupt")) { model.interrupt() }.keyboardShortcut(".")
             Picker(L("Mode"), selection: $model.settings.sessionMode) { ForEach(SessionMode.allCases) { Text($0.label).tag($0) } }
             Divider()
             Button(L("CLI Session Sync")) { model.showCLISessionSyncHelp() }
         }
         CommandMenu(L("Panels")) {
-            Button(L("Files")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .files }.keyboardShortcut("1", modifiers: [.command, .option])
+            Button(L("Files")) {
+                LiquidCodeMainWindowController.shared.show(model: model)
+                model.secondaryTab = .files
+                model.secondaryOpen = true
+            }.keyboardShortcut("1", modifiers: [.command, .option])
             Button(L("Diffs")) {
                 LiquidCodeMainWindowController.shared.show(model: model)
                 model.openDiffReview()
@@ -167,8 +180,16 @@ struct LiquidCodeCommands: Commands {
                 LiquidCodeMainWindowController.shared.show(model: model)
                 model.openCheckpointTimeline()
             }.keyboardShortcut("7", modifiers: [.command, .option])
-            Button(L("Skills")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .skills }.keyboardShortcut("2", modifiers: [.command, .option])
-            Button(L("Plan")) { LiquidCodeMainWindowController.shared.show(model: model); model.secondaryTab = .plan }.keyboardShortcut("5", modifiers: [.command, .option])
+            Button(L("Skills")) {
+                LiquidCodeMainWindowController.shared.show(model: model)
+                model.secondaryTab = .skills
+                model.secondaryOpen = true
+            }.keyboardShortcut("2", modifiers: [.command, .option])
+            Button(L("Plan")) {
+                LiquidCodeMainWindowController.shared.show(model: model)
+                model.secondaryTab = .plan
+                model.secondaryOpen = true
+            }.keyboardShortcut("5", modifiers: [.command, .option])
             Button("MCP") { LiquidCodeMainWindowController.shared.show(model: model); model.settingsTab = .mcp; model.settingsOpen = true }.keyboardShortcut(
                 "3",
                 modifiers: [.command, .option]
@@ -176,9 +197,8 @@ struct LiquidCodeCommands: Commands {
             Button(L("Agents")) {
                 LiquidCodeMainWindowController.shared.show(model: model)
                 model.secondaryTab = .agent
-                model.secondaryOpen.toggle()
+                model.secondaryOpen = true
             }.keyboardShortcut("4", modifiers: [.command, .option])
-            Button(L("Settings")) { LiquidCodeMainWindowController.shared.show(model: model); model.settingsOpen = true }.keyboardShortcut(",")
         }
     }
 }

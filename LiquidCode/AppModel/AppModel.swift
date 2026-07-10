@@ -95,7 +95,9 @@ final class AppModel: ObservableObject {
     @Published var toast: ToastMessage?
     @Published var changelogOpen = false
     @Published var cliStatus = CLIStatus()
+    @Published var cliStatusRefreshing = false
     @Published var appUpdateStatus: UpdateAvailability = .unknown(reason: "Not checked")
+    @Published var appUpdateRelease: GitHubRelease?
     @Published var appUpdateChecking = false
     @Published var setupProgress = SetupProgress()
     @Published var onboardingPlan = OnboardingPlan.ready
@@ -129,6 +131,7 @@ final class AppModel: ObservableObject {
     var mcpSkillsReloadTask: Task<Void, Never>?
     var workspaceWatchTask: Task<Void, Never>?
     var filePreviewLoadTask: Task<Void, Never>?
+    var draftPersistenceTask: Task<Void, Never>?
     var defaultComposerConfiguration = ComposerSendConfiguration(
         model: AppSettings().selectedModel,
         mode: AppSettings().sessionMode,
@@ -155,6 +158,7 @@ final class AppModel: ObservableObject {
         mcpSkillsReloadTask?.cancel()
         workspaceWatchTask?.cancel()
         filePreviewLoadTask?.cancel()
+        draftPersistenceTask?.cancel()
         sessionFileWatchTask?.cancel()
         directoryWatcher.unwatchAll()
         sessionFileWatcher.unwatchAll()

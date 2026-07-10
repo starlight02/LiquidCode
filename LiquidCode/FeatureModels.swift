@@ -39,6 +39,15 @@ struct PendingUserMessage: Identifiable, Codable, Hashable, Sendable {
     var createdAt: Date = Date()
 }
 
+struct ComposerDraftStore: Codable, Equatable, Sendable {
+    var version = 1
+    var defaultText = ""
+    var defaultAttachments: [AttachmentChip] = []
+    var textBySession: [String: String] = [:]
+    var attachmentsBySession: [String: [AttachmentChip]] = [:]
+    var queuedMessagesBySession: [String: [PendingUserMessage]] = [:]
+}
+
 struct ActiveTurnSnapshot: Codable, Hashable, Sendable {
     var messageID: String
     var content: String

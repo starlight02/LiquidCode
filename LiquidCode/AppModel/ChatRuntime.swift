@@ -9,6 +9,7 @@ extension AppModel {
             return
         }
         pendingUserMessagesBySession[sessionID] = []
+        persistComposerDraftsSoon()
         let merged = queued.map(\.content).joined(separator: "\n\n")
         let mergedAttachments = queued.flatMap(\.attachments)
         let previousSelection = selectedSessionID
@@ -21,6 +22,7 @@ extension AppModel {
         let stopped = activeTurnSnapshots.removeValue(forKey: sessionID)
         turnPhaseBySession.removeValue(forKey: sessionID)
         let queued = pendingUserMessagesBySession.removeValue(forKey: sessionID) ?? []
+        persistComposerDraftsSoon()
         let existingDraft = sessionID == selectedSessionID ? composerText : composerTextBySession[sessionID] ?? ""
         let parts = ([stopped?.content, existingDraft] + queued.map(\.content)).compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         if !parts.isEmpty {
@@ -33,6 +35,86 @@ extension AppModel {
             messagesBySession[sessionID]?.removeAll { $0.id == stopped.messageID }
             rebuildTranscriptDisplayItems(sessionID: sessionID)
         }
+    }
+
+    func cancelQueuedUserMessage(_ messageID: String, sessionID: String? = nil) {
+        guard let id = sessionID ?? selectedSessionID else { return }
+        guard var queue = pendingUserMessagesBySession[id], !queue.isEmpty else { return }
+        let before = queue.count
+        queue.removeAll { $0.id == messageID }
+        guard queue.count != before else { return }
+        if queue.isEmpty {
+            pendingUserMessagesBySession.removeValue(forKey: id)
+        } else {
+            pendingUserMessagesBySession[id] = queue
+        }
+        persistComposerDraftsSoon()
+    }
+
+    func editQueuedUserMessage(_ messageID: String, sessionID: String? = nil) {
+        guard let id = sessionID ?? selectedSessionID else { return }
+        guard
+            var queue = pendingUserMessagesBySession[id],
+            let index = queue.firstIndex(where: { $0.id == messageID }) else {
+            return
+        }
+        let item = queue.remove(at: index)
+        if queue.isEmpty {
+            pendingUserMessagesBySession.removeValue(forKey: id)
+        } else {
+            pendingUserMessagesBySession[id] = queue
+        }
+
+        let existingText = id == selectedSessionID ? composerText : (composerTextBySession[id] ?? "")
+        let mergedText: String
+        if existingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            mergedText = item.content
+        } else if item.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            mergedText = existingText
+        } else {
+            mergedText = existingText + "\n\n" + item.content
+        }
+        setComposerText(mergedText, for: id)
+
+        let existingAttachments = id == selectedSessionID ? attachments : (attachmentsBySession[id] ?? [])
+        setAttachments(existingAttachments + item.attachments, for: id)
+        persistComposerDraftsSoon()
+    }
+
+    func moveQueuedUserMessage(_ messageID: String, offset: Int, sessionID: String? = nil) {
+        guard offset != 0 else { return }
+        guard let id = sessionID ?? selectedSessionID else { return }
+        guard
+            var queue = pendingUserMessagesBySession[id],
+            let index = queue.firstIndex(where: { $0.id == messageID }) else {
+            return
+        }
+        let target = index + offset
+        guard queue.indices.contains(target) else { return }
+        queue.swapAt(index, target)
+        pendingUserMessagesBySession[id] = queue
+        persistComposerDraftsSoon()
+    }
+
+    func clearQueuedUserMessages(sessionID: String? = nil) {
+        guard let id = sessionID ?? selectedSessionID else { return }
+        guard pendingUserMessagesBySession[id]?.isEmpty == false else { return }
+        pendingUserMessagesBySession.removeValue(forKey: id)
+        persistComposerDraftsSoon()
+    }
+
+    func retryLastUserMessage() {
+        guard let last = selectedLastUserMessage else {
+            toastWarning("Nothing to retry", "Send a message first.")
+            return
+        }
+        if let id = selectedSessionID, hasActiveTurn(for: id) {
+            toastWarning("Turn in progress", "Stop the current turn before retrying.")
+            return
+        }
+        setComposerText(last.content)
+        setAttachments(last.attachments)
+        sendComposer()
     }
 
     func sendComposer() {
@@ -62,6 +144,7 @@ extension AppModel {
             reloadFileTreeDeferred()
             reloadMCPAndSkillsDeferred()
             refreshGitBranch()
+            saveSessionMeta()
         }
 
         guard let id = selectedSessionID else { return }
@@ -70,6 +153,7 @@ extension AppModel {
         setAttachments([], for: id)
         if hasActiveTurn(for: id) {
             pendingUserMessagesBySession[id, default: []].append(PendingUserMessage(content: text, attachments: currentAttachments))
+            persistComposerDraftsSoon()
             return
         }
         send(text, attachments: currentAttachments)
@@ -197,6 +281,7 @@ extension AppModel {
         let payload = trimmed.isEmpty ? L("Please revise the plan before execution.") : trimmed
         if hasActiveTurn(for: permission.sessionID) {
             pendingUserMessagesBySession[permission.sessionID, default: []].append(PendingUserMessage(content: payload))
+            persistComposerDraftsSoon()
         } else {
             send(payload)
         }
@@ -211,6 +296,7 @@ extension AppModel {
                 }
                 sessions[idx].cliResumeID = cliID ?? sessions[idx].cliResumeID
                 sessions[idx].isDraft = false
+                saveSessionMeta()
             }
         case .cliReady(let sessionID):
             // Claude Code has received the request and is now working. Promote the

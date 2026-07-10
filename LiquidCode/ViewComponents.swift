@@ -2263,6 +2263,7 @@ struct FindKeyboardBridge: NSViewRepresentable {
 
 struct QueuedUserMessageView: View {
     let message: PendingUserMessage
+    @EnvironmentObject var model: AppModel
     var body: some View {
         HStack(alignment: .top) {
             Spacer(minLength: 80)
@@ -2272,6 +2273,18 @@ struct QueuedUserMessageView: View {
                     Text(L("Queued"))
                     Spacer()
                     Text(message.createdAt, style: .time).font(.caption2).foregroundStyle(.tertiary)
+                    queueActionButton(systemImage: "arrow.up", help: L("Move up")) {
+                        model.moveQueuedUserMessage(message.id, offset: -1)
+                    }
+                    queueActionButton(systemImage: "arrow.down", help: L("Move down")) {
+                        model.moveQueuedUserMessage(message.id, offset: 1)
+                    }
+                    queueActionButton(systemImage: "pencil", help: L("Edit queued message")) {
+                        model.editQueuedUserMessage(message.id)
+                    }
+                    queueActionButton(systemImage: "xmark.circle", help: L("Cancel queued message")) {
+                        model.cancelQueuedUserMessage(message.id)
+                    }
                 }
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
@@ -2292,6 +2305,16 @@ struct QueuedUserMessageView: View {
             .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.accentColor.opacity(0.22)) }
             .frame(maxWidth: 760, alignment: .trailing)
         }
+    }
+
+    private func queueActionButton(systemImage: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.semibold))
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .pointingHandCursor()
     }
 }
 
@@ -2487,6 +2510,18 @@ struct MessageBubbleView: View {
                 MarkdownRendererView(content: message.content, findText: findText, activeOccurrenceIndex: activeOccurrenceIndex)
                     .textSelection(.enabled)
                     .font(.system(size: 13, design: message.role == .tool ? .monospaced : .default))
+                if message.role == .error {
+                    Button {
+                        model.retryLastUserMessage()
+                    } label: {
+                        Label(L("Retry"), systemImage: "arrow.clockwise")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .liquidGlassButton(radius: 10)
+                    .disabled(model.selectedLastUserMessage == nil || model.selectedHasActiveTurn)
+                    .help(L("Retry the last user message"))
+                }
             }
             .padding(10)
             .background(tint.opacity(message.role == .error ? 0.12 : 0.055))
@@ -2855,14 +2890,19 @@ struct HTMLPreviewView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.suppressesIncrementalRendering = true
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.setValue(false, forKey: "drawsBackground")
+        view.allowsBackForwardNavigationGestures = false
+        view.allowsLinkPreview = false
         return view
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
-        let baseURL = basePath.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
-        nsView.loadHTMLString(html, baseURL: baseURL)
+        // Keep previews offline and local-only: no network base URL, no JS, no persistent storage.
+        nsView.loadHTMLString(html, baseURL: nil)
     }
 }
 

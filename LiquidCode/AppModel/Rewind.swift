@@ -166,6 +166,7 @@ extension AppModel {
         streamingTextBySession[sessionID] = ""
         streamingMessagesBySession.removeValue(forKey: sessionID)
         pendingUserMessagesBySession[sessionID] = []
+        persistComposerDraftsSoon()
         pendingPermissions.removeAll { $0.sessionID == sessionID }
         permissionRulesBySession.removeValue(forKey: sessionID)
         toolCallsBySession[sessionID] = []

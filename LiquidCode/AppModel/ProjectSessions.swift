@@ -7,7 +7,7 @@ extension AppModel {
         let generation = reloadSessionsGeneration
         let index = sessionIndex
         let pinnedArchived = JSONFile.load([String: SessionRecord].self, from: AppPaths.shared.sessionMetaFile) ?? [:]
-        let drafts = sessions.filter { $0.isDraft }
+        let drafts = sessions.filter(\.isDraft) + pinnedArchived.values.filter(\.isDraft)
         Task.detached(priority: .utility) {
             let discovered = index.discoverAllSessions()
             await MainActor.run {
@@ -64,7 +64,17 @@ extension AppModel {
         try? JSONFile.save(dict, to: AppPaths.shared.sessionMetaFile)
     }
 
-    func selectSession(_ id: String?) {
+    @discardableResult
+    func selectSession(_ id: String?) -> Bool {
+        if id != selectedSessionID {
+            let targetProject = id.flatMap { target in sessions.first(where: { $0.id == target })?.projectDir }
+            let leavesCurrentProject = id == nil || targetProject.map {
+                PathAccessManager.canonicalPath($0) != PathAccessManager.canonicalPath(workingDirectory)
+            } == true
+            guard !leavesCurrentProject || resolveDirtyFileChange() else {
+                return false
+            }
+        }
         snapshotComposerState(for: selectedSessionID)
         snapshotComposerConfiguration(for: selectedSessionID)
         selectedSessionID = id
@@ -86,7 +96,7 @@ extension AppModel {
             mcpServers = []
             skills = []
             reloadMCPAndSkillsDeferred()
-            return
+            return true
         }
         restoreComposerState(for: id)
         restoreComposerConfiguration(for: id)
@@ -159,7 +169,7 @@ extension AppModel {
                 mcpServers = []
                 skills = []
                 reloadMCPAndSkillsDeferred()
-                return
+                return true
             }
             projectDir = existingProjectDir
         }
@@ -189,6 +199,7 @@ extension AppModel {
                 reloadMCPAndSkillsDeferred()
             }
         }
+        return true
     }
 
     func selectNextSession() {
@@ -217,6 +228,9 @@ extension AppModel {
         panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false; panel.prompt = L("Open Project")
         if panel.runModal() == .OK, let url = panel.url {
             let projectDir = existingDirectoryPath(url.path) ?? url.path
+            guard sameFilePath(workingDirectory, projectDir) || resolveDirtyFileChange() else {
+                return
+            }
             let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
             let session = SessionRecord(id: id, path: nil, project: projectDir, projectDir: projectDir, modifiedAt: Date(), preview: L("New chat"), cliResumeID: nil, isDraft: true)
             sessions.insert(session, at: 0)
@@ -245,6 +259,8 @@ extension AppModel {
             refreshGitBranch()
             reloadFileTreeDeferred()
             reloadMCPAndSkillsDeferred()
+            saveSessionMeta()
+            persistComposerDraftsSoon()
         }
     }
 
@@ -252,6 +268,9 @@ extension AppModel {
         guard let projectDir = existingDirectoryPath(path) else {
             forgetRecentProject(path)
             toastWarning("Project unavailable", LF("%@ no longer exists and was removed from Recent Projects.", path))
+            return
+        }
+        guard sameFilePath(workingDirectory, projectDir) || resolveDirtyFileChange() else {
             return
         }
         let id = "desk_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(6))"
@@ -281,6 +300,8 @@ extension AppModel {
         refreshGitBranch()
         reloadFileTreeDeferred()
         reloadMCPAndSkillsDeferred()
+        saveSessionMeta()
+        persistComposerDraftsSoon()
     }
 
     func chooseWorkingDirectory() {
@@ -312,6 +333,9 @@ extension AppModel {
     }
 
     func clearWorkingDirectory() {
+        guard resolveDirtyFileChange() else {
+            return
+        }
         let preservedText = composerText
         let preservedAttachments = attachments
         snapshotComposerState(for: selectedSessionID)
@@ -338,7 +362,9 @@ extension AppModel {
     }
 
     func returnToStartScreen() {
-        selectSession(nil)
+        guard selectSession(nil) else {
+            return
+        }
         syncComposerDefaultsFromClaudeUserSettings()
         autoSelectClaudeRecentProjectIfNeeded()
     }
@@ -359,6 +385,9 @@ extension AppModel {
             if showToast {
                 toastWarning("Project unavailable", LF("%@ no longer exists.", path))
             }
+            return false
+        }
+        guard sameFilePath(workingDirectory, projectDir) || resolveDirtyFileChange() else {
             return false
         }
         let preservedText = composerText

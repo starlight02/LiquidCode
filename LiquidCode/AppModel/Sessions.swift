@@ -96,6 +96,7 @@ extension AppModel {
             selectedSessionID = sessions.first?.id
         }
         persistSettings()
+        persistComposerDraftsSoon()
         saveSessionMeta()
         toastWarning("Deleted session", LF("Undo is available for %@", session.title))
     }

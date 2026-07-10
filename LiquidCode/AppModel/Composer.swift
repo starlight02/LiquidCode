@@ -32,10 +32,12 @@ extension AppModel {
 
     func snapshotComposerState(for sessionID: String?) {
         guard let sessionID else {
+            persistComposerDraftsSoon()
             return
         }
         composerTextBySession[sessionID] = composerText
         attachmentsBySession[sessionID] = attachments
+        persistComposerDraftsSoon()
     }
 
     func restoreComposerState(for sessionID: String?) {
@@ -53,6 +55,7 @@ extension AppModel {
         if let selectedSessionID {
             composerTextBySession[selectedSessionID] = text
         }
+        persistComposerDraftsSoon()
     }
 
     func setComposerText(_ text: String, for sessionID: String? = nil) {
@@ -63,6 +66,7 @@ extension AppModel {
         if let target {
             composerTextBySession[target] = text
         }
+        persistComposerDraftsSoon()
     }
 
     func setAttachments(_ next: [AttachmentChip], for sessionID: String? = nil) {
@@ -73,10 +77,66 @@ extension AppModel {
         if let target {
             attachmentsBySession[target] = next
         }
+        persistComposerDraftsSoon()
     }
 
     func appendToComposer(_ suffix: String) {
         setComposerText(composerText + suffix)
+    }
+
+    func restorePersistedComposerDrafts() {
+        guard let stored = JSONFile.load(ComposerDraftStore.self, from: AppPaths.shared.composerDraftsFile) else {
+            return
+        }
+        composerText = stored.defaultText
+        attachments = stored.defaultAttachments
+        composerTextBySession = stored.textBySession
+        attachmentsBySession = stored.attachmentsBySession
+        pendingUserMessagesBySession = stored.queuedMessagesBySession
+    }
+
+    func persistComposerDraftsSoon() {
+        let snapshot = composerDraftSnapshot()
+        let url = AppPaths.shared.composerDraftsFile
+        draftPersistenceTask?.cancel()
+        draftPersistenceTask = Task.detached(priority: .utility) {
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+                try Task.checkCancellation()
+                try JSONFile.save(snapshot, to: url)
+            } catch {
+                return
+            }
+        }
+    }
+
+    @discardableResult
+    func persistComposerDraftsNow() -> Bool {
+        draftPersistenceTask?.cancel()
+        draftPersistenceTask = nil
+        do {
+            try JSONFile.save(composerDraftSnapshot(), to: AppPaths.shared.composerDraftsFile)
+            return true
+        } catch {
+            showError("Save drafts failed", error.localizedDescription)
+            return false
+        }
+    }
+
+    private func composerDraftSnapshot() -> ComposerDraftStore {
+        var textBySession = composerTextBySession
+        var storedAttachmentsBySession = attachmentsBySession
+        if let selectedSessionID {
+            textBySession[selectedSessionID] = composerText
+            storedAttachmentsBySession[selectedSessionID] = attachments
+        }
+        return ComposerDraftStore(
+            defaultText: selectedSessionID == nil ? composerText : "",
+            defaultAttachments: selectedSessionID == nil ? attachments : [],
+            textBySession: textBySession,
+            attachmentsBySession: storedAttachmentsBySession,
+            queuedMessagesBySession: pendingUserMessagesBySession
+        )
     }
 
     func resetChatFindIndex() {
