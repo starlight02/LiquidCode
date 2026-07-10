@@ -2561,6 +2561,8 @@ struct SettingsPanelView: View {
     @EnvironmentObject var model: AppModel
     @State private var mcpName = ""
     @State private var mcpCommand = ""
+    /// Prevent the opening click from immediately dismissing the panel via the dimmed backdrop.
+    @State private var allowsBackdropDismiss = false
 
     var body: some View {
         ZStack {
@@ -2568,8 +2570,11 @@ struct SettingsPanelView: View {
                 .opacity(0.26)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .pointingHandCursor()
-                .onTapGesture { model.closeSettings() }
+                .pointingHandCursor(enabled: allowsBackdropDismiss)
+                .onTapGesture {
+                    guard allowsBackdropDismiss else { return }
+                    model.closeSettings()
+                }
             GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 30) {
                 VStack(spacing: 0) {
                     settingsHeader
@@ -2600,9 +2605,23 @@ struct SettingsPanelView: View {
             .padding(32)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
+        // Do not put a full-screen contentShape/tap here — only the dimmed backdrop dismisses.
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
         .zIndex(1000)
+        .onAppear {
+            allowsBackdropDismiss = false
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(280))
+                allowsBackdropDismiss = true
+            }
+        }
+        .onDisappear {
+            allowsBackdropDismiss = false
+        }
+        .onKeyPress(.escape) {
+            model.closeSettings()
+            return .handled
+        }
     }
 
     private var settingsHeader: some View {
