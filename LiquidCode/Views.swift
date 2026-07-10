@@ -35,7 +35,8 @@ struct AppShellView: View {
                             .frame(width: model.settings.sidebarWidth)
                             .frame(maxHeight: .infinity)
                             .overlay(alignment: .trailing) {
-                                PaneResizeHandle(title: "Resize sidebar")
+                                // Keep the bottom footer (Agents / Settings) outside the drag strip.
+                                PaneResizeHandle(title: "Resize sidebar", topExclusion: 12, bottomExclusion: 64)
                                     .offset(x: 4)
                                     .gesture(sidebarResizeGesture)
                             }

@@ -124,6 +124,19 @@ extension AppModel {
         try? JSONFile.save(settings, to: AppPaths.shared.settingsFile)
     }
 
+    func openSettings(tab: SettingsTab = .general) {
+        settingsTab = tab
+        // Opening settings always wins over other overlays so the control never looks dead.
+        commandPaletteOpen = false
+        changelogOpen = false
+        imageLightbox = nil
+        settingsOpen = true
+    }
+
+    func closeSettings() {
+        settingsOpen = false
+    }
+
     func setComposerMode(_ mode: SessionMode) {
         settings.sessionMode = mode
         applyComposerConfigurationChange(model: nil, mode: mode, thinkingLevel: nil)

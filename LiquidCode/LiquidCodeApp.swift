@@ -112,8 +112,7 @@ struct LiquidCodeApp: App {
                 .frame(width: 1, height: 1)
                 .onAppear {
                     LiquidCodeMainWindowController.shared.show(model: appDelegate.model)
-                    appDelegate.model.settingsTab = .general
-                    appDelegate.model.settingsOpen = true
+                    appDelegate.model.openSettings()
                     NSApp.keyWindow?.close()
                 }
         }
@@ -148,10 +147,7 @@ struct LiquidCodeCommands: Commands {
         CommandGroup(replacing: .appSettings) {
             Button(L("Settings")) {
                 LiquidCodeMainWindowController.shared.show(model: model)
-                model.settingsTab = .general
-                withAnimation(.snappy(duration: 0.2)) {
-                    model.settingsOpen = true
-                }
+                model.openSettings()
             }
             .keyboardShortcut(",")
         }
@@ -202,7 +198,10 @@ struct LiquidCodeCommands: Commands {
                 model.secondaryTab = .plan
                 model.secondaryOpen = true
             }.keyboardShortcut("5", modifiers: [.command, .option])
-            Button("MCP") { LiquidCodeMainWindowController.shared.show(model: model); model.settingsTab = .mcp; model.settingsOpen = true }.keyboardShortcut(
+            Button("MCP") {
+                LiquidCodeMainWindowController.shared.show(model: model)
+                model.openSettings(tab: .mcp)
+            }.keyboardShortcut(
                 "3",
                 modifiers: [.command, .option]
             )

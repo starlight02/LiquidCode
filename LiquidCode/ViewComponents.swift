@@ -5,14 +5,28 @@ import WebKit
 
 struct PaneResizeHandle: View {
     let title: String
+    /// Leave non-interactive gutters so footer/header controls are never stolen by the drag strip.
+    var topExclusion: CGFloat = 0
+    var bottomExclusion: CGFloat = 0
+
     var body: some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(width: 8)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .help(L(title))
-            .zIndex(20)
+        VStack(spacing: 0) {
+            Color.clear
+                .frame(height: max(0, topExclusion))
+                .allowsHitTesting(false)
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: 8)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .help(L(title))
+            Color.clear
+                .frame(height: max(0, bottomExclusion))
+                .allowsHitTesting(false)
+        }
+        .frame(width: 8)
+        .frame(maxHeight: .infinity)
+        .zIndex(20)
     }
 }
 
@@ -1222,16 +1236,14 @@ struct SidebarView: View {
                 .help(L("Open agent activity"))
             Spacer()
             Button {
-                model.settingsTab = .general
-                withAnimation(.snappy(duration: 0.2)) {
-                    model.settingsOpen = true
-                }
+                model.openSettings()
             } label: {
                 Label(L("Settings"), systemImage: "gearshape")
             }
             .buttonStyle(.plain)
             .pointingHandCursor()
             .help(L("Open settings"))
+            .zIndex(30)
         }
         .font(.system(size: 14, weight: .medium))
         .foregroundStyle(.secondary)

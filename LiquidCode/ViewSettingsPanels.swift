@@ -2569,7 +2569,7 @@ struct SettingsPanelView: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .pointingHandCursor()
-                .onTapGesture { model.settingsOpen = false }
+                .onTapGesture { model.closeSettings() }
             GlassPanel(role: .floatingCard, prominence: .prominent, cornerRadius: 30) {
                 VStack(spacing: 0) {
                     settingsHeader
@@ -2610,7 +2610,7 @@ struct SettingsPanelView: View {
             Text(L("Settings"))
                 .font(.system(size: 25, weight: .bold, design: .rounded))
             Spacer()
-            ToolbarIconButton(systemImage: "xmark", help: "Close settings") { model.settingsOpen = false }
+            ToolbarIconButton(systemImage: "xmark", help: "Close settings") { model.closeSettings() }
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 20)

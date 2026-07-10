@@ -74,15 +74,9 @@ extension AppModel {
         switch command.kind {
         case .newChat: newChat()
         case .settings:
-            settingsTab = .general
-            withAnimation(.snappy(duration: 0.2)) {
-                settingsOpen = true
-            }
+            openSettings()
         case .mcpSettings:
-            settingsTab = .mcp
-            withAnimation(.snappy(duration: 0.2)) {
-                settingsOpen = true
-            }
+            openSettings(tab: .mcp)
         case .panel(let tab): secondaryTab = tab; secondaryOpen = true
         case .mode(let mode): setComposerMode(mode)
         case .model(let model): setComposerModel(model)
