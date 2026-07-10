@@ -2624,10 +2624,13 @@ struct SettingsPanelView: View {
                         Image(systemName: settingsTabIcon(tab))
                             .frame(width: 18)
                         Text(tab.label)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                            .truncationMode(.tail)
                         if tab == .cli && model.cliStatus.updateAvailable {
                             Circle().fill(Color.red).frame(width: 7, height: 7)
                         }
-                        Spacer()
+                        Spacer(minLength: 0)
                     }
                     .font(.system(size: 15, weight: model.settingsTab == tab ? .semibold : .medium))
                     .liquidGlassRow(active: model.settingsTab == tab, radius: 12)
@@ -2650,7 +2653,7 @@ struct SettingsPanelView: View {
             .liquidGlassCard(role: .floatingCard, prominence: .subtle, radius: 16)
         }
         .padding(18)
-        .frame(width: 190)
+        .frame(width: 210)
     }
 
     private var settingsFooter: some View {
