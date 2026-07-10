@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Status capsule for an MCP server row (idle / testing / ok / failed + tool count).
+/// Status capsule for an MCP server row (idle / testing / ok / failed / unsupported + tool count).
 struct MCPRuntimeBadge: View {
     let server: MCPServer
 
@@ -31,6 +31,7 @@ struct MCPRuntimeBadge: View {
         case .testing: return .orange
         case .ok: return .mint
         case .failed: return .red
+        case .unsupported: return .secondary
         }
     }
 }
@@ -98,9 +99,7 @@ struct ExtensionsSettingsContent: View {
             }
         }
         .onAppear {
-            if model.claudePlugins.isEmpty && model.claudeHooks.isEmpty {
-                model.reloadClaudeExtensions()
-            }
+            model.reloadClaudeExtensions()
         }
     }
 
@@ -147,6 +146,15 @@ struct ExtensionsSettingsContent: View {
                 }
             }
             Spacer(minLength: 0)
+            if let path = plugin.installPath, !path.isEmpty {
+                Button {
+                    model.requestRevealFile(path)
+                } label: {
+                    Label(L("Reveal"), systemImage: "folder")
+                }
+                .buttonStyle(.plain)
+                .liquidGlassButton(radius: 10)
+            }
         }
         .padding(12)
         .background(Color.primary.opacity(0.035))

@@ -5,7 +5,7 @@ import XCTest
 final class MCPExtensionsRegressionTests: XCTestCase {
     // MARK: - MCPRuntimeProbe
 
-    func testStdioProbeFindsExistingBinary() {
+    func testStdioProbeRejectsNonMCPBinary() async {
         let server = MCPServer(
             name: "echo-server",
             transport: "stdio",
@@ -14,13 +14,14 @@ final class MCPExtensionsRegressionTests: XCTestCase {
             args: ["hello"],
             source: "LiquidCode"
         )
-        let result = MCPRuntimeProbe.evaluate(server)
-        XCTAssertEqual(result.status, .ok)
-        XCTAssertNil(result.error)
+        let result = await MCPRuntimeProbe.evaluate(server)
+        // A real MCP handshake is required; plain /bin/echo must fail instead of false-positive OK.
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertNotNil(result.error)
         XCTAssertTrue(result.detail.contains("echo-server"))
     }
 
-    func testStdioProbeFailsMissingCommand() {
+    func testStdioProbeFailsMissingCommand() async {
         let server = MCPServer(
             name: "missing",
             transport: "stdio",
@@ -29,12 +30,12 @@ final class MCPExtensionsRegressionTests: XCTestCase {
             args: [],
             source: "LiquidCode"
         )
-        let result = MCPRuntimeProbe.evaluate(server)
+        let result = await MCPRuntimeProbe.evaluate(server)
         XCTAssertEqual(result.status, .failed)
         XCTAssertNotNil(result.error)
     }
 
-    func testHTTPProbeRejectsInvalidURL() {
+    func testHTTPProbeRejectsInvalidURL() async {
         let server = MCPServer(
             name: "bad",
             transport: "http",
@@ -43,11 +44,11 @@ final class MCPExtensionsRegressionTests: XCTestCase {
             args: [],
             source: "LiquidCode"
         )
-        let result = MCPRuntimeProbe.evaluate(server)
+        let result = await MCPRuntimeProbe.evaluate(server)
         XCTAssertEqual(result.status, .failed)
     }
 
-    func testHTTPProbeAcceptsLocalhostWhenListening() throws {
+    func testHTTPProbeAcceptsLocalhostWhenListening() async {
         // Prefer a known-good loopback if available; otherwise skip soft.
         let server = MCPServer(
             name: "local-http",
@@ -57,14 +58,14 @@ final class MCPExtensionsRegressionTests: XCTestCase {
             args: [],
             source: "Test"
         )
-        let result = MCPRuntimeProbe.evaluate(server)
+        let result = await MCPRuntimeProbe.evaluate(server)
         // Port 9 is almost always closed → failed is expected; just ensure probe returns a terminal status.
         XCTAssertTrue(result.status == .failed || result.status == .ok)
         XCTAssertNotEqual(result.status, .idle)
         XCTAssertNotEqual(result.status, .testing)
     }
 
-    func testTestMCPServerWritesRuntimeStatus() throws {
+    func testTestMCPServerWritesRuntimeStatus() async {
         let model = AppModel(engine: ExtensionsStubEngine())
         model.mcpServers = [
             MCPServer(
@@ -78,12 +79,20 @@ final class MCPExtensionsRegressionTests: XCTestCase {
         ]
         XCTAssertEqual(model.mcpServers[0].runtimeStatus, .idle)
         model.testMCPServer(model.mcpServers[0])
-        XCTAssertEqual(model.mcpServers[0].runtimeStatus, .ok)
+        XCTAssertEqual(model.mcpServers[0].runtimeStatus, .testing)
+
+        let deadline = Date().addingTimeInterval(3)
+        while model.mcpServers[0].runtimeStatus == .testing, Date() < deadline {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        // /bin/echo is not a real MCP server; expect a terminal failure after async probe.
+        XCTAssertEqual(model.mcpServers[0].runtimeStatus, .failed)
         XCTAssertNotNil(model.mcpServers[0].lastTestedAt)
-        XCTAssertNil(model.mcpServers[0].lastError)
+        XCTAssertNotNil(model.mcpServers[0].lastError)
     }
 
-    func testTestMCPServerRecordsFailure() {
+    func testTestMCPServerRecordsFailure() async {
         let model = AppModel(engine: ExtensionsStubEngine())
         model.mcpServers = [
             MCPServer(
@@ -96,6 +105,12 @@ final class MCPExtensionsRegressionTests: XCTestCase {
             )
         ]
         model.testMCPServer(model.mcpServers[0])
+        XCTAssertEqual(model.mcpServers[0].runtimeStatus, .testing)
+        let deadline = Date().addingTimeInterval(3)
+        while model.mcpServers[0].runtimeStatus == .testing, Date() < deadline {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertEqual(model.mcpServers[0].runtimeStatus, .failed)
         XCTAssertNotNil(model.mcpServers[0].lastError)
     }

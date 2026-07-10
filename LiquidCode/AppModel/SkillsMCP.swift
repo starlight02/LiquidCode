@@ -236,25 +236,60 @@ extension AppModel {
         saveAppMCPServers()
     }
 
+    func setMCPServerEnabled(_ server: MCPServer, enabled: Bool) {
+        guard let index = mcpServers.firstIndex(where: { $0.name == server.name && $0.source == server.source }) else {
+            return
+        }
+        guard server.source == "LiquidCode" else {
+            toastWarning("MCP is read-only", LF("%@ is managed by %@.", server.name, server.source))
+            return
+        }
+        guard mcpServers[index].enabled != enabled else {
+            return
+        }
+        mcpServers[index].enabled = enabled
+        saveAppMCPServers()
+    }
+
     func testMCPServer(_ server: MCPServer) {
         guard let index = mcpServers.firstIndex(where: { $0.name == server.name && $0.source == server.source }) else {
             return
         }
+        // Prevent overlapping probes for the same server row.
+        if mcpServers[index].runtimeStatus == .testing {
+            return
+        }
+
         mcpServers[index].runtimeStatus = .testing
         mcpServers[index].lastError = nil
 
-        let result = MCPRuntimeProbe.evaluate(mcpServers[index])
-        mcpServers[index].runtimeStatus = result.status
-        mcpServers[index].toolCount = result.toolCount
-        mcpServers[index].lastError = result.error
-        mcpServers[index].lastTestedAt = Date()
+        let snapshot = mcpServers[index]
+        let identity = (name: snapshot.name, source: snapshot.source)
 
-        if result.status == .ok {
-            let tools = result.toolCount.map { LF("%d tools", $0) }
-            let message = tools.map { "\(result.detail) · \($0)" } ?? result.detail
-            toastSuccess("MCP OK", message)
-        } else {
-            toastWarning("MCP failed", result.error ?? result.detail)
+        Task { [weak self] in
+            let result = await MCPRuntimeProbe.evaluate(snapshot)
+            await MainActor.run {
+                guard let self else { return }
+                guard
+                    let current = self.mcpServers.firstIndex(where: {
+                        $0.name == identity.name && $0.source == identity.source
+                    }) else {
+                    return
+                }
+
+                self.mcpServers[current].runtimeStatus = result.status
+                self.mcpServers[current].toolCount = result.toolCount
+                self.mcpServers[current].lastError = result.error
+                self.mcpServers[current].lastTestedAt = Date()
+
+                if result.status == .ok {
+                    let tools = result.toolCount.map { LF("%d tools", $0) }
+                    let message = tools.map { "\(result.detail) · \($0)" } ?? result.detail
+                    self.toastSuccess("MCP OK", message)
+                } else {
+                    self.toastWarning("MCP failed", result.error ?? result.detail)
+                }
+            }
         }
     }
 

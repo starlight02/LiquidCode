@@ -12,6 +12,7 @@ final class AppPaths: @unchecked Sendable {
     let sessionMetaFile: URL
     let mcpFile: URL
     let recentProjectsFile: URL
+    let composerDraftsFile: URL
 
     private init() {
         let fm = FileManager.default
@@ -28,6 +29,7 @@ final class AppPaths: @unchecked Sendable {
         sessionMetaFile = appSupport.appendingPathComponent("sessions.json")
         recentProjectsFile = appSupport.appendingPathComponent("recent.json")
         mcpFile = appSupport.appendingPathComponent("mcp.json")
+        composerDraftsFile = appSupport.appendingPathComponent("composer-drafts.json")
         try? fm.createDirectory(at: appSupport, withIntermediateDirectories: true)
         try? fm.createDirectory(at: logs, withIntermediateDirectories: true)
     }
@@ -853,10 +855,21 @@ final class FileSystemService {
 }
 
 final class MCPService {
+    private let home: URL
+    private let appMCPFile: URL
+
+    init(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        appMCPFile: URL = AppPaths.shared.mcpFile
+    ) {
+        self.home = home
+        self.appMCPFile = appMCPFile
+    }
+
     func loadServers(projectPath: String?) -> [MCPServer] {
         var servers: [MCPServer] = []
-        servers += readMCPFile(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json"), source: "Claude")
-        servers += readMCPFile(AppPaths.shared.mcpFile, source: "LiquidCode")
+        servers += readMCPFile(home.appendingPathComponent(".claude.json"), source: "Claude")
+        servers += readMCPFile(appMCPFile, source: "LiquidCode")
         if let projectPath {
             servers += readMCPFile(URL(fileURLWithPath: projectPath).appendingPathComponent(".liquidcode/mcp.json"), source: "Project")
         }
@@ -866,7 +879,10 @@ final class MCPService {
 
     func saveAppServers(_ servers: [MCPServer]) throws {
         let obj: [String: Any] = ["mcpServers": Dictionary(uniqueKeysWithValues: servers.map { server in
-            var payload: [String: Any] = ["type": server.transport]
+            var payload: [String: Any] = [
+                "type": server.transport,
+                "enabled": server.enabled
+            ]
             if let command = server.command {
                 payload["command"] = command
             }
@@ -876,10 +892,20 @@ final class MCPService {
             if !server.args.isEmpty {
                 payload["args"] = server.args
             }
+            if !server.environment.isEmpty {
+                payload["env"] = server.environment
+            }
+            if !server.headers.isEmpty {
+                payload["headers"] = server.headers
+            }
+            if let workingDirectory = server.workingDirectory, !workingDirectory.isEmpty {
+                payload["cwd"] = workingDirectory
+            }
             return (server.name, payload)
         })]
         let data = try JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: AppPaths.shared.mcpFile, options: [.atomic])
+        try FileManager.default.createDirectory(at: appMCPFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: appMCPFile, options: [.atomic])
     }
 
     private func readMCPFile(_ url: URL, source: String) -> [MCPServer] {
@@ -900,7 +926,10 @@ final class MCPService {
                 command: dict["command"] as? String,
                 url: dict["url"] as? String,
                 args: dict["args"] as? [String] ?? [],
-                enabled: true,
+                environment: stringDictionary(dict["env"]),
+                headers: stringDictionary(dict["headers"]),
+                workingDirectory: dict["cwd"] as? String,
+                enabled: (dict["enabled"] as? Bool) ?? !((dict["disabled"] as? Bool) ?? false),
                 source: source,
                 lastError: nil
             )
@@ -916,6 +945,17 @@ final class MCPService {
             return inner
         }
         return outer
+    }
+
+    private func stringDictionary(_ value: Any?) -> [String: String] {
+        guard let raw = value as? [String: Any] else {
+            return [:]
+        }
+        return raw.reduce(into: [:]) { result, entry in
+            if let value = entry.value as? String {
+                result[entry.key] = value
+            }
+        }
     }
 }
 

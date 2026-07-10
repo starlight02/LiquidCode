@@ -233,8 +233,6 @@ struct AppSettings: Codable, Sendable {
     var sessionConfigurations: [String: ComposerSendConfiguration] = [:]
     /// Post system notifications for permission/question/plan/turn when app is inactive.
     var notificationsEnabled: Bool = true
-    /// Optional HTTPS (or file) URL to `latest.json` for in-app update checks.
-    var updateManifestURL: String = ""
 }
 
 struct SessionRecord: Identifiable, Codable, Hashable, Sendable {
@@ -517,6 +515,7 @@ enum MCPRuntimeStatus: String, Codable, Hashable, Sendable {
     case testing
     case ok
     case failed
+    case unsupported
 
     var label: String {
         switch self {
@@ -524,6 +523,7 @@ enum MCPRuntimeStatus: String, Codable, Hashable, Sendable {
         case .testing: return L("Testing…")
         case .ok: return L("OK")
         case .failed: return L("Failed")
+        case .unsupported: return L("Unsupported")
         }
     }
 }
@@ -538,6 +538,9 @@ struct MCPServer: Identifiable, Codable, Hashable, Sendable {
     var command: String?
     var url: String?
     var args: [String]
+    var environment: [String: String] = [:]
+    var headers: [String: String] = [:]
+    var workingDirectory: String?
     var enabled: Bool = true
     var source: String = "Claude"
     var lastError: String?
