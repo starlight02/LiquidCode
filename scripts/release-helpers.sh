@@ -61,21 +61,24 @@ validate_release_artifacts() {
   done
 }
 
-# Accept LiquidCode-X.Y.Z.pkg or LiquidCode-X.Y.Z-unsigned.pkg
+# Accept LiquidCode-X.Y.Z.pkg or LiquidCode-X.Y.Z-unsigned.pkg, plus SHA256SUMS.
 validate_release_artifact_matrix() {
   local tag="$1"
   shift
   local version
   version="$(release_version_from_tag "$tag")"
-  local found=0 base artifact
+  local found_pkg=0 found_sums=0 base artifact
   for artifact in "$@"; do
     base="$(basename "$artifact")"
     if [[ "$base" == "LiquidCode-$version.pkg" || "$base" == "LiquidCode-$version-unsigned.pkg" ]]; then
-      found=1
-      break
+      found_pkg=1
+    fi
+    if [[ "$base" == "SHA256SUMS" ]]; then
+      found_sums=1
     fi
   done
-  [[ "$found" == "1" ]] || fail "Incomplete release artifact matrix for $tag; missing: LiquidCode-$version.pkg"
+  [[ "$found_pkg" == "1" ]] || fail "Incomplete release artifact matrix for $tag; missing: LiquidCode-$version.pkg"
+  [[ "$found_sums" == "1" ]] || fail "Incomplete release artifact matrix for $tag; missing: SHA256SUMS"
 }
 
 preflight_real_release_upload() {

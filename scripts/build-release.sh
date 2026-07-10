@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Build a signed (or ad-hoc) LiquidCode.app and wrap it as a macOS PKG installer.
-# Output: .build-release/LiquidCode.app + .build-release/LiquidCode-<ver>[-unsigned].pkg
+# Output:
+#   .build-release/LiquidCode.app
+#   .build-release/LiquidCode-<ver>[-unsigned].pkg
+#   .build-release/SHA256SUMS
 set -euo pipefail
 
 APP_NAME="LiquidCode"
@@ -48,6 +51,7 @@ need lipo
 need pkgbuild
 need productbuild
 need python3
+need shasum
 [[ -x "$PLISTBUDDY" ]] || fail "PlistBuddy not found"
 
 if release_truthy "$RELEASE_SIGNING_REQUIRED"; then
@@ -367,7 +371,19 @@ else
   info "Notarization skipped"
 fi
 
-ARTIFACTS=("$PKG")
+# SHA256SUMS is the public integrity file for release consumers.
+# Format matches GNU coreutils / shasum -c expectations (hash + two spaces + basename).
+CHECKSUMS="$BUILD_DIR/SHA256SUMS"
+info "Writing $CHECKSUMS"
+(
+  cd "$BUILD_DIR"
+  shasum -a 256 "$(basename "$PKG")" >SHA256SUMS
+)
+[[ -s "$CHECKSUMS" ]] || fail "Failed to write SHA256SUMS"
+info "Checksum:"
+cat "$CHECKSUMS"
+
+ARTIFACTS=("$PKG" "$CHECKSUMS")
 export RELEASE_NAME="${RELEASE_NAME:-$APP_NAME $RELEASE_TAG_VALUE}"
 export RELEASE_NOTES="${RELEASE_NOTES:-macOS PKG installer for $APP_NAME $VERSION.}"
 if release_truthy "$RELEASE_UPLOAD_ENABLED" || release_truthy "$RELEASE_UPLOAD_DRY_RUN_ENABLED"; then
@@ -379,3 +395,5 @@ fi
 info "Done"
 echo "$APP"
 echo "$PKG"
+echo "$CHECKSUMS"
+

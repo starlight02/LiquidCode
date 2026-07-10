@@ -126,6 +126,7 @@ jobs:
           name: LiquidCode-macOS-adhoc-arm64-pkg
           path: |
             .build-release/*.pkg
+            .build-release/SHA256SUMS
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
@@ -211,9 +212,19 @@ jobs:
           COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          assets=(release-assets/*.pkg release-assets/SHA256SUMS)
+          [[ ${#assets[@]} -ge 2 ]] || { echo "Expected PKG + SHA256SUMS under release-assets/" >&2; ls -la release-assets/ >&2; exit 1; }
+          # Fail closed if the checksum file is missing or empty.
+          [[ -s release-assets/SHA256SUMS ]] || { echo "SHA256SUMS missing or empty" >&2; exit 1; }
+          (
+            cd release-assets
+            shasum -a 256 -c SHA256SUMS
+          )
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "LiquidCode $TAG" \
-            --notes "Automated unsigned/ad-hoc macOS PKG for $TAG (build $BUILD) from ${COMMIT:0:7}. Gatekeeper will warn — no Developer ID signature or notarization; not for production distribution." \
-            release-assets/*.pkg
-          echo "Published release $TAG with the unsigned PKG."
+            --notes "Automated unsigned/ad-hoc macOS PKG for $TAG (build $BUILD) from ${COMMIT:0:7}. Gatekeeper will warn — no Developer ID signature or notarization; not for production distribution. Verify with: shasum -a 256 -c SHA256SUMS" \
+            "${assets[@]}"
+          echo "Published release $TAG with the unsigned PKG + SHA256SUMS."
+
