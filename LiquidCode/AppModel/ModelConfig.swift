@@ -130,14 +130,9 @@ extension AppModel {
         commandPaletteOpen = false
         changelogOpen = false
         imageLightbox = nil
-        // Defer past the current mouse-up. Otherwise the newly inserted dismiss backdrop
-        // receives the same click that opened Settings and immediately closes it.
-        if settingsOpen {
-            return
-        }
-        DispatchQueue.main.async { [weak self] in
-            self?.settingsOpen = true
-        }
+        // Open immediately so the control feels responsive. Backdrop dismiss is gated in
+        // SettingsPanelView until after the opening click ends.
+        settingsOpen = true
     }
 
     func closeSettings() {

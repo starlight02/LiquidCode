@@ -38,6 +38,15 @@ struct PaneResizeHandle<G: Gesture>: View {
     }
 }
 
+private struct SidebarFooterButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.55 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 struct LiquidContentSurface: View {
     let cornerRadius: CGFloat
     @Environment(\.colorScheme) private var colorScheme
@@ -1076,9 +1085,8 @@ func buildSidebarSessionPlan(
     return plan
 }
 
-struct SidebarView<ResizeGestureType: Gesture>: View {
+struct SidebarView: View {
     var onCollapse: () -> Void = {}
-    var sidebarResizeGesture: ResizeGestureType?
     @EnvironmentObject var model: AppModel
     @State private var renameTarget: SessionRecord?
     @State private var renameText = ""
@@ -1095,8 +1103,10 @@ struct SidebarView<ResizeGestureType: Gesture>: View {
             workingDirectory: model.workingDirectory,
             selectedSessionID: model.selectedSessionID
         )
-        GlassPanel(role: .sidebar, prominence: .regular, cornerRadius: LiquidGlassToken.panelRadius) {
-            VStack(spacing: 0) {
+        // Keep the footer outside GlassPanel. macOS 26 glassEffect/stroke can expand the
+        // interactive edge and swallow the trailing Settings control while leaving Agents OK.
+        VStack(spacing: 0) {
+            GlassPanel(role: .sidebar, prominence: .regular, cornerRadius: LiquidGlassToken.panelRadius) {
                 VStack(spacing: 0) {
                     sidebarHeader
                     primaryAction
@@ -1129,22 +1139,17 @@ struct SidebarView<ResizeGestureType: Gesture>: View {
                         .padding(.vertical, 10)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .trailing) {
-                    if let sidebarResizeGesture {
-                        // Handle lives only above the footer — Settings/Agents stay fully clickable.
-                        PaneResizeHandle(
-                            title: "Resize sidebar",
-                            topExclusion: 16,
-                            bottomExclusion: 0,
-                            dragGesture: sidebarResizeGesture
-                        )
-                        .offset(x: 4)
-                    }
-                }
-                Divider().opacity(0.5)
-                sidebarFooter
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider().opacity(0.5)
+            sidebarFooter
+                .background {
+                    // Match sidebar surface without wrapping footer in glass hit-testing.
+                    RoundedRectangle(cornerRadius: 0, style: .continuous)
+                        .fill(Color.primary.opacity(0.0001))
+                        .allowsHitTesting(false)
+                }
         }
         .sheet(item: $renameTarget) { session in
             VStack(alignment: .leading, spacing: 16) {
@@ -1254,24 +1259,44 @@ struct SidebarView<ResizeGestureType: Gesture>: View {
             Button {
                 model.secondaryTab = .agent
                 model.secondaryOpen = true
-            } label: { Label(L("Agents"), systemImage: "point.3.connected.trianglepath.dotted") }
-                .buttonStyle(.plain)
-                .pointingHandCursor()
-                .help(L("Open agent activity"))
-            Spacer()
+            } label: {
+                Label(L("Agents"), systemImage: "point.3.connected.trianglepath.dotted")
+                    .labelStyle(.titleAndIcon)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(SidebarFooterButtonStyle())
+            .pointingHandCursor()
+            .help(L("Open agent activity"))
+            .accessibilityLabel(L("Agents"))
+
+            Spacer(minLength: 8)
+
             Button {
                 model.openSettings()
             } label: {
                 Label(L("Settings"), systemImage: "gearshape")
+                    .labelStyle(.titleAndIcon)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SidebarFooterButtonStyle())
             .pointingHandCursor()
             .help(L("Open settings"))
+            .accessibilityLabel(L("Settings"))
+            // Keep Settings above any residual trailing chrome / glass edge hits.
+            .zIndex(2)
         }
         .font(.system(size: 14, weight: .medium))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        // Own the footer hit region explicitly so edge chrome cannot steal Settings.
+        .background(Color.clear)
     }
 
     @ViewBuilder private var taskGroupsHeader: some View {

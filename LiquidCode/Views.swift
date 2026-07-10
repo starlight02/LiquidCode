@@ -31,11 +31,18 @@ struct AppShellView: View {
             ZStack(alignment: .top) {
                 HStack(spacing: LiquidGlassToken.panelSpacing) {
                     if sidebarOpen {
-                        SidebarView(
-                            onCollapse: { sidebarOpen = false },
-                            sidebarResizeGesture: sidebarResizeGesture
+                        SidebarView(onCollapse: { sidebarOpen = false })
+                            .frame(width: model.settings.sidebarWidth)
+                            .frame(maxHeight: .infinity)
+
+                        // Live in the gutter between panels — never overlay the sidebar footer.
+                        PaneResizeHandle(
+                            title: "Resize sidebar",
+                            topExclusion: 12,
+                            bottomExclusion: 72,
+                            dragGesture: sidebarResizeGesture
                         )
-                        .frame(width: model.settings.sidebarWidth)
+                        .frame(width: 8)
                         .frame(maxHeight: .infinity)
                     }
 

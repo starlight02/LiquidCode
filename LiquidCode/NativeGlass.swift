@@ -127,8 +127,15 @@ struct GlassPanel<Content: View>: View {
                     .frame(maxWidth: pane ? .infinity : nil, maxHeight: pane ? .infinity : nil, alignment: .topLeading)
                     .glassEffect(.regular, in: shape)
                     .clipShape(shape)
-                    .overlay { shape.stroke(Color.white.opacity(structural ? 0.16 : 0.12), lineWidth: 0.75) }
-                    .overlay { shape.stroke(Color.black.opacity(darkStrokeOpacity), lineWidth: 0.5) }
+                    // Decorative strokes must never own hit-testing — they sit above footer controls.
+                    .overlay {
+                        shape.stroke(Color.white.opacity(structural ? 0.16 : 0.12), lineWidth: 0.75)
+                            .allowsHitTesting(false)
+                    }
+                    .overlay {
+                        shape.stroke(Color.black.opacity(darkStrokeOpacity), lineWidth: 0.5)
+                            .allowsHitTesting(false)
+                    }
                     .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
             } else {
                 content
@@ -144,8 +151,12 @@ struct GlassPanel<Content: View>: View {
                             ),
                             lineWidth: 1
                         )
+                        .allowsHitTesting(false)
                     }
-                    .overlay { shape.stroke(Color.black.opacity(darkStrokeOpacity), lineWidth: 0.5) }
+                    .overlay {
+                        shape.stroke(Color.black.opacity(darkStrokeOpacity), lineWidth: 0.5)
+                            .allowsHitTesting(false)
+                    }
                     .shadow(color: .white.opacity(structural ? 0.36 : 0.16), radius: 18, x: -10, y: -10)
                     .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
             }
