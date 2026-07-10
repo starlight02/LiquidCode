@@ -41,9 +41,11 @@ struct PaneResizeHandle<G: Gesture>: View {
 private struct SidebarFooterButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .padding(.horizontal, 2)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.55 : 1)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
     }
 }
 
@@ -1103,53 +1105,45 @@ struct SidebarView: View {
             workingDirectory: model.workingDirectory,
             selectedSessionID: model.selectedSessionID
         )
-        // Keep the footer outside GlassPanel. macOS 26 glassEffect/stroke can expand the
-        // interactive edge and swallow the trailing Settings control while leaving Agents OK.
-        VStack(spacing: 0) {
-            GlassPanel(role: .sidebar, prominence: .regular, cornerRadius: LiquidGlassToken.panelRadius) {
-                VStack(spacing: 0) {
-                    sidebarHeader
-                    primaryAction
-                    searchAndFilters
-                    undoBanner
-                    Divider().opacity(0.5)
-                    ScrollView(.vertical, showsIndicators: true) {
-                        LazyVStack(alignment: .leading, spacing: 4) {
-                            taskGroupsHeader
-                            taskGroups(plan: plan, activeSessionIDs: activeSessionIDs)
+        // Footer must live inside the same GlassPanel as the session list — splitting it
+        // creates a detached strip that breaks the liquid glass silhouette.
+        // Hit-testing safety comes from: non-interactive glass strokes, gutter resize handle,
+        // and an explicit footer contentShape / button styles.
+        GlassPanel(role: .sidebar, prominence: .regular, cornerRadius: LiquidGlassToken.panelRadius) {
+            VStack(spacing: 0) {
+                sidebarHeader
+                primaryAction
+                searchAndFilters
+                undoBanner
+                Divider().opacity(0.5)
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        taskGroupsHeader
+                        taskGroups(plan: plan, activeSessionIDs: activeSessionIDs)
+                        sessionSection(
+                            "Pinned",
+                            plan.pinned,
+                            activeSessionIDs: activeSessionIDs,
+                            projectGroupsByPath: plan.projectGroupsByPath,
+                            trailing: plan.pinned.isEmpty ? nil : "\(plan.pinned.count)"
+                        )
+                        projectSessionSections(plan.projectGroups, activeSessionIDs: activeSessionIDs, projectGroupsByPath: plan.projectGroupsByPath)
+                        if model.showArchivedSessions {
                             sessionSection(
-                                "Pinned",
-                                plan.pinned,
+                                "Archived",
+                                plan.archived,
                                 activeSessionIDs: activeSessionIDs,
                                 projectGroupsByPath: plan.projectGroupsByPath,
-                                trailing: plan.pinned.isEmpty ? nil : "\(plan.pinned.count)"
+                                trailing: plan.archived.isEmpty ? nil : "\(plan.archived.count)"
                             )
-                            projectSessionSections(plan.projectGroups, activeSessionIDs: activeSessionIDs, projectGroupsByPath: plan.projectGroupsByPath)
-                            if model.showArchivedSessions {
-                                sessionSection(
-                                    "Archived",
-                                    plan.archived,
-                                    activeSessionIDs: activeSessionIDs,
-                                    projectGroupsByPath: plan.projectGroupsByPath,
-                                    trailing: plan.archived.isEmpty ? nil : "\(plan.archived.count)"
-                                )
-                            }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
                 }
+                Divider().opacity(0.5)
+                sidebarFooter
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Divider().opacity(0.5)
-            sidebarFooter
-                .background {
-                    // Match sidebar surface without wrapping footer in glass hit-testing.
-                    RoundedRectangle(cornerRadius: 0, style: .continuous)
-                        .fill(Color.primary.opacity(0.0001))
-                        .allowsHitTesting(false)
-                }
         }
         .sheet(item: $renameTarget) { session in
             VStack(alignment: .leading, spacing: 16) {
@@ -1261,15 +1255,10 @@ struct SidebarView: View {
                 model.secondaryOpen = true
             } label: {
                 Label(L("Agents"), systemImage: "point.3.connected.trianglepath.dotted")
-                    .labelStyle(.titleAndIcon)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
             }
             .buttonStyle(SidebarFooterButtonStyle())
             .pointingHandCursor()
             .help(L("Open agent activity"))
-            .accessibilityLabel(L("Agents"))
 
             Spacer(minLength: 8)
 
@@ -1277,26 +1266,18 @@ struct SidebarView: View {
                 model.openSettings()
             } label: {
                 Label(L("Settings"), systemImage: "gearshape")
-                    .labelStyle(.titleAndIcon)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
             }
             .buttonStyle(SidebarFooterButtonStyle())
             .pointingHandCursor()
             .help(L("Open settings"))
-            .accessibilityLabel(L("Settings"))
-            // Keep Settings above any residual trailing chrome / glass edge hits.
-            .zIndex(2)
         }
         .font(.system(size: 14, weight: .medium))
         .foregroundStyle(.secondary)
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .frame(maxWidth: .infinity)
+        // Expand the interactive hit box without changing the quiet text look.
         .contentShape(Rectangle())
-        // Own the footer hit region explicitly so edge chrome cannot steal Settings.
-        .background(Color.clear)
+        .zIndex(50)
     }
 
     @ViewBuilder private var taskGroupsHeader: some View {
