@@ -141,7 +141,7 @@ final class AppModel: ObservableObject {
         mode: AppSettings().sessionMode,
         thinkingLevel: AppSettings().thinkingLevel
     )
-    let cliService = CLIService()
+    let cliService: CLIService
     let shareService = ShareService()
     // periphery:ignore
     let onboardingService = OnboardingService()
@@ -151,10 +151,12 @@ final class AppModel: ObservableObject {
 
     init(
         engine: ClaudeEngine = ClaudeEngineFactory.makeDefault(),
-        claudeUserSettings: ClaudeUserSettingsService = ClaudeUserSettingsService()
+        claudeUserSettings: ClaudeUserSettingsService = ClaudeUserSettingsService(),
+        cliService: CLIService = CLIService()
     ) {
         self.engine = engine
         self.claudeUserSettings = claudeUserSettings
+        self.cliService = cliService
     }
 
     deinit {
