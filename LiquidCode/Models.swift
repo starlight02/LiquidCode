@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -63,9 +64,27 @@ enum ThemeMode: String, Codable, CaseIterable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .system: L("System")
+        case .system: L("Follow System")
         case .light: L("Light")
-        case .dark: L("Dark")
+        case .dark: L("Night")
+        }
+    }
+
+    /// SwiftUI override. `nil` means follow the system color scheme.
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    /// AppKit override. `nil` means inherit the system appearance (menus, materials, titlebar).
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
         }
     }
 }

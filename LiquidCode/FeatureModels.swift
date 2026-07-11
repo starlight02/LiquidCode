@@ -1342,6 +1342,11 @@ struct ChangelogEntry: Identifiable, Codable, Hashable, Sendable {
 }
 
 let bundledChangelog: [ChangelogEntry] = [
+    .init(version: "0.1.10", date: "2026-07-11", items: [
+        "Make Settings theme chips clickable again by dropping nested glass hit-testing.",
+        "Publish nested AppSettings mutations so theme, notifications, and font size refresh reliably.",
+        "Restore true Follow System appearance after forced Night/Light and stop false CLI missing after theme switches."
+    ]),
     .init(version: "0.1.9", date: "2026-07-10", items: [
         "Keep the sidebar glass silhouette while moving Agents/Settings out of the glassEffect hit tree.",
         "Defer Settings open past the current mouse-up so the dismiss backdrop no longer eats the same click.",

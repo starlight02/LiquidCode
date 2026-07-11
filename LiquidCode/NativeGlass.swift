@@ -31,9 +31,9 @@ struct LiquidAppBackdrop: View {
             Color(nsColor: .windowBackgroundColor)
             LinearGradient(
                 colors: colorScheme == .dark ? [
+                    Color(red: 0.03, green: 0.04, blue: 0.08),
                     Color(red: 0.05, green: 0.07, blue: 0.12),
-                    Color(red: 0.08, green: 0.11, blue: 0.18),
-                    Color(red: 0.02, green: 0.04, blue: 0.08)
+                    Color(red: 0.01, green: 0.02, blue: 0.05)
                 ] : [
                     Color(red: 0.88, green: 0.95, blue: 1.00),
                     Color(red: 0.98, green: 0.99, blue: 1.00),
@@ -477,6 +477,25 @@ private final class WindowDragRegionView: NSView {
     override func mouseUp(with event: NSEvent) {
         dragStartWindowOrigin = nil
         dragStartMouseLocation = nil
+    }
+}
+
+@MainActor
+enum AppearanceController {
+    /// Force AppKit chrome (menus, titlebar materials, visual effects) to match the
+    /// selected theme. `nil` restores system follow for night-mode parity with SwiftUI.
+    /// Always write — optional name equality is not a reliable no-op signal when clearing
+    /// a forced dark/light override back to system inheritance.
+    static func apply(_ theme: ThemeMode) {
+        let appearance = theme.nsAppearance
+        NSApp.appearance = appearance
+        for window in NSApp.windows {
+            window.appearance = appearance
+            // Hosting content can retain a prior forced appearance after NSApp is cleared.
+            window.contentView?.appearance = appearance
+            window.contentView?.needsDisplay = true
+            window.invalidateShadow()
+        }
     }
 }
 

@@ -154,13 +154,22 @@ extension AppModel {
     }
 
     func refreshCLIStatus() {
-        guard !cliStatusRefreshing else {
-            return
-        }
+        // Local discovery is cheap and must never leave the UI stuck on the default
+        // CLIStatus(installed: false). Overlapping calls are allowed; only the latest
+        // network writeback applies.
+        let generation = UUID()
+        cliStatusRefreshGeneration = generation
         cliStatusRefreshing = true
+
+        let local = cliService.status(checkForUpdates: false)
+        cliStatus = local
+
         DispatchQueue.global(qos: .utility).async { [cliService] in
             let updated = cliService.status(checkForUpdates: true)
-            Task { @MainActor in
+            DispatchQueue.main.async {
+                guard self.cliStatusRefreshGeneration == generation else {
+                    return
+                }
                 self.cliStatus = updated
                 self.cliStatusRefreshing = false
             }
@@ -285,11 +294,27 @@ extension AppModel {
     }
 
     func setBackgroundNotificationsEnabled(_ enabled: Bool) {
-        settings.notificationsEnabled = enabled
+        var next = settings
+        next.notificationsEnabled = enabled
+        settings = next
         persistSettings()
         if enabled {
             AttentionNotificationService.shared.requestAuthorizationIfNeeded()
         }
+    }
+
+    func setTheme(_ theme: ThemeMode) {
+        // AppSettings is a value type on @Published. Mutating a nested field does not
+        // publish; reassign the whole settings value so SwiftUI re-renders selection.
+        var next = settings
+        next.theme = theme
+        settings = next
+        persistSettings()
+        applyAppearance()
+    }
+
+    func applyAppearance() {
+        AppearanceController.apply(settings.theme)
     }
 
     func showChangelog() {

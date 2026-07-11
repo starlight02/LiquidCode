@@ -96,6 +96,10 @@ final class AppModel: ObservableObject {
     @Published var changelogOpen = false
     @Published var cliStatus = CLIStatus()
     @Published var cliStatusRefreshing = false
+    /// Monotonic gate so only the latest refreshCLIStatus writeback applies.
+    var cliStatusRefreshGeneration = UUID()
+    /// Full bootstrap is one-shot; theme/window rehost must not wipe runtime state.
+    var hasCompletedBootstrap = false
     @Published var appUpdateStatus: UpdateAvailability = .unknown(reason: "Not checked")
     @Published var appUpdateRelease: GitHubRelease?
     @Published var appUpdateChecking = false

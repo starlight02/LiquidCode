@@ -165,6 +165,7 @@
 "Files" = "Files";
 "Find in conversation" = "Find in conversation";
 "Font Size" = "Font Size";
+"Follow System" = "Follow System";
 "Font size: %d" = "Font size: %d";
 "From quick questions to full features — just ask" = "From quick questions to full features — just ask";
 "General" = "General";
@@ -233,6 +234,7 @@
 "Native download failed; trying npm fallback" = "Native download failed; trying npm fallback";
 "Native install, update, login and repair" = "Native install, update, login and repair";
 "New Chat" = "New Chat";
+"Night" = "Night";
 "New Task Group" = "New Task Group";
 "New Window" = "New Window";
 "New chat" = "New chat";

@@ -219,7 +219,9 @@ extension AppModel {
     }
 
     func adjustFontSize(_ delta: Double) {
-        settings.fontSize = min(22, max(11, settings.fontSize + delta))
+        var next = settings
+        next.fontSize = min(22, max(11, settings.fontSize + delta))
+        settings = next
         persistSettings()
     }
 

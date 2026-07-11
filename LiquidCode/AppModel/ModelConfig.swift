@@ -86,8 +86,27 @@ extension AppModel {
             .lowercased()
     }
 
+    /// Lightweight settings restore used before the first window paints.
+    /// Full bootstrap still runs from AppShellView.onAppear for sessions/CLI/MCP.
+    func prepareLaunchAppearance() {
+        settings = JSONFile.load(AppSettings.self, from: AppPaths.shared.settingsFile) ?? settings
+        applyAppearance()
+    }
+
     func bootstrap() {
+        // AppShellView.onAppear can fire more than once (window rehost / identity churn).
+        // Full bootstrap is intentionally one-shot; appearance can still re-apply.
+        if hasCompletedBootstrap {
+            applyAppearance()
+            if !cliStatus.installed && !cliStatusRefreshing {
+                refreshCLIStatus()
+            }
+            return
+        }
+        hasCompletedBootstrap = true
+
         settings = JSONFile.load(AppSettings.self, from: AppPaths.shared.settingsFile) ?? AppSettings()
+        applyAppearance()
         restorePersistedComposerDrafts()
         sendConfigurationBySession = settings.sessionConfigurations
         settings.sidebarWidth = min(450, max(Double(LiquidGlassToken.sidebarWidth), settings.sidebarWidth))
@@ -149,17 +168,23 @@ extension AppModel {
     }
 
     func setComposerMode(_ mode: SessionMode) {
-        settings.sessionMode = mode
+        var next = settings
+        next.sessionMode = mode
+        settings = next
         applyComposerConfigurationChange(model: nil, mode: mode, thinkingLevel: nil)
     }
 
     func setComposerThinkingLevel(_ level: ThinkingLevel) {
-        settings.thinkingLevel = level
+        var next = settings
+        next.thinkingLevel = level
+        settings = next
         applyComposerConfigurationChange(model: nil, mode: nil, thinkingLevel: level)
     }
 
     func setComposerModel(_ model: String) {
-        settings.selectedModel = model
+        var next = settings
+        next.selectedModel = model
+        settings = next
         applyComposerConfigurationChange(model: model, mode: nil, thinkingLevel: nil)
     }
 

@@ -2719,17 +2719,38 @@ struct SettingsPanelView: View {
                         .foregroundStyle(.secondary)
                     HStack(spacing: 10) {
                         ForEach(ThemeMode.allCases) { theme in
-                            Button { model.settings.theme = theme; model.persistSettings() } label: {
+                            // Do not wrap theme chips in liquidGlassButton/.glassEffect —
+                            // macOS 26 glass expands edge hit-testing and deadens clicks
+                            // inside nested floating cards (same class as sidebar Settings).
+                            Button { model.setTheme(theme) } label: {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Image(systemName: theme == .dark ? "moon.fill" : theme == .light ? "sun.max.fill" : "circle.lefthalf.filled")
                                         .font(.title3)
                                     Text(theme.label)
                                         .font(.system(size: 14, weight: .semibold))
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.85)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(model.settings.theme == theme ? Color.primary.opacity(0.12) : Color.primary.opacity(0.05))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .strokeBorder(
+                                            model.settings.theme == theme ? Color.accentColor.opacity(0.45) : Color.primary.opacity(0.08),
+                                            lineWidth: model.settings.theme == theme ? 1.2 : 1
+                                        )
+                                )
+                                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             }
                             .buttonStyle(.plain)
-                            .liquidGlassButton(active: model.settings.theme == theme, radius: 16)
+                            .pointingHandCursor()
+                            .accessibilityLabel(theme.label)
+                            .accessibilityAddTraits(model.settings.theme == theme ? [.isSelected] : [])
                         }
                     }
                 }
@@ -2817,8 +2838,18 @@ struct SettingsPanelView: View {
                     VStack(alignment: .leading) {
                         Text(LF("Font size: %d", Int(model.settings.fontSize)))
                             .font(.caption.weight(.semibold))
-                        Slider(value: $model.settings.fontSize, in: 11 ... 22) { Text(L("Font Size")) }
-                            .onChange(of: model.settings.fontSize) { _, _ in model.persistSettings() }
+                        Slider(
+                            value: Binding(
+                                get: { model.settings.fontSize },
+                                set: { newValue in
+                                    var next = model.settings
+                                    next.fontSize = newValue
+                                    model.settings = next
+                                    model.persistSettings()
+                                }
+                            ),
+                            in: 11 ... 22
+                        ) { Text(L("Font Size")) }
                     }
                     Picker(L("Mode"), selection: $model.settings.sessionMode) { ForEach(SessionMode.allCases) { Text($0.label).tag($0) } }
                         .onChange(of: model.settings.sessionMode) { _, value in model.setComposerMode(value) }

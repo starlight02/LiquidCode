@@ -165,6 +165,7 @@
 "Files" = "文件";
 "Find in conversation" = "在对话中查找";
 "Font Size" = "字号";
+"Follow System" = "跟随系统";
 "Font size: %d" = "字号：%d";
 "From quick questions to full features — just ask" = "从小问题到完整功能，直接告诉我就行";
 "General" = "通用";
@@ -233,6 +234,7 @@
 "Native download failed; trying npm fallback" = "原生下载失败，正在尝试 npm 备用安装";
 "Native install, update, login and repair" = "原生安装、更新、登录与修复";
 "New Chat" = "新建对话";
+"Night" = "夜间";
 "New Task Group" = "新任务组";
 "New Window" = "新建窗口";
 "New chat" = "新建对话";

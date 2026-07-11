@@ -10,6 +10,8 @@ final class LiquidCodeAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         AttentionNotificationRouter.shared.bind(model)
         AttentionNotificationService.shared.configure()
+        // Load theme before first window so night mode does not flash system chrome.
+        model.prepareLaunchAppearance()
         DispatchQueue.main.async {
             LiquidCodeMainWindowController.shared.show(model: self.model)
             NSApp.activate(ignoringOtherApps: true)
@@ -56,6 +58,7 @@ final class LiquidCodeMainWindowController: NSObject, NSWindowDelegate {
 
     private func existingOrCreateWindow(model: AppModel) -> NSWindow {
         if let window {
+            AppearanceController.apply(model.settings.theme)
             return window
         }
         let content = LiquidCodeRootView()
@@ -83,6 +86,7 @@ final class LiquidCodeMainWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         window.setFrameAutosaveName("LiquidCode.MainWindow")
         configureLiquidWindow(window)
+        AppearanceController.apply(model.settings.theme)
         self.window = window
         return window
     }
@@ -127,16 +131,15 @@ private struct LiquidCodeRootView: View {
 
     var body: some View {
         AppShellView()
-            .preferredColorScheme(colorScheme)
+            // Do NOT identity-reset the whole shell on theme change — that re-runs
+            // AppShellView.onAppear → bootstrap() and can leave CLI status stuck at
+            // the default "missing" while refreshCLIStatus is in-flight / dropped.
+            .preferredColorScheme(model.settings.theme.preferredColorScheme)
             .frame(minWidth: LiquidGlassToken.minWindowWidth, minHeight: LiquidGlassToken.minWindowHeight)
-    }
-
-    private var colorScheme: ColorScheme? {
-        switch model.settings.theme {
-        case .system: nil
-        case .light: .light
-        case .dark: .dark
-        }
+            .onAppear { model.applyAppearance() }
+            .onChange(of: model.settings.theme) { _, _ in
+                model.applyAppearance()
+            }
     }
 }
 
